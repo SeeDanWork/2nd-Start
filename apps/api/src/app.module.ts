@@ -13,6 +13,7 @@ import { GuardrailsModule } from './guardrails/guardrails.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { SharingModule } from './sharing/sharing.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
+import { NotificationModule } from './notifications/notification.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { OnboardingModule } from './onboarding/onboarding.module';
     MetricsModule,
     SharingModule,
     OnboardingModule,
+    NotificationModule,
   ],
 })
 export class AppModule {}

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, ParseIntPipe, DefaultValuePipe } from '@nestjs/common';
 import { MetricsService } from './metrics.service';
 import { LedgerWindowType } from '@adcp/shared';
 
@@ -34,5 +34,22 @@ export class MetricsController {
   @Get('today')
   async getToday(@Param('familyId') familyId: string) {
     return this.metricsService.getToday(familyId);
+  }
+
+  @Get('audit')
+  async getAuditLog(
+    @Param('familyId') familyId: string,
+    @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
+  ) {
+    return this.metricsService.getAuditLog(familyId, limit, offset);
+  }
+
+  @Get('summary')
+  async getMonthlySummary(
+    @Param('familyId') familyId: string,
+    @Query('month') month: string,
+  ) {
+    return this.metricsService.getMonthlySummary(familyId, month);
   }
 }

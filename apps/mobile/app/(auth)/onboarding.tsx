@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,14 +14,48 @@ import {
 import { useRouter } from 'expo-router';
 import { colors } from '../../src/theme/colors';
 import { useAuthStore } from '../../src/stores/auth';
+import { apiClient } from '../../src/api/client';
+
+interface Template {
+  id: string;
+  name: string;
+  description: string;
+  constraints: any[];
+}
 
 export default function OnboardingScreen() {
   const [familyName, setFamilyName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState<'create' | 'invite'>('create');
+  const [step, setStep] = useState<'template' | 'create' | 'invite'>('template');
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const { createFamily, family } = useAuthStore();
   const router = useRouter();
+
+  useEffect(() => {
+    loadTemplates();
+  }, []);
+
+  const loadTemplates = async () => {
+    try {
+      const { data } = await apiClient.get('/onboarding/templates');
+      setTemplates(data);
+    } catch {
+      // Templates API not available, skip to manual
+      setStep('create');
+    }
+  };
+
+  const handleSelectTemplate = (templateId: string) => {
+    setSelectedTemplate(templateId);
+    setStep('create');
+  };
+
+  const handleSkipTemplates = () => {
+    setSelectedTemplate(null);
+    setStep('create');
+  };
 
   const handleCreateFamily = async () => {
     setLoading(true);
@@ -30,6 +64,22 @@ export default function OnboardingScreen() {
         familyName.trim() || 'My Family',
         Intl.DateTimeFormat().resolvedOptions().timeZone,
       );
+
+      // If a template was selected, apply its constraints
+      if (selectedTemplate && family) {
+        const template = templates.find((t) => t.id === selectedTemplate);
+        if (template) {
+          const { constraintsApi } = await import('../../src/api/client');
+          for (const c of template.constraints) {
+            try {
+              await constraintsApi.addConstraint(family.id, c);
+            } catch {
+              // Continue with remaining constraints
+            }
+          }
+        }
+      }
+
       setStep('invite');
     } catch (err: any) {
       Alert.alert('Error', err.response?.data?.message || 'Failed to create family.');
@@ -71,11 +121,45 @@ export default function OnboardingScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.inner}>
-        {step === 'create' ? (
+        {step === 'template' ? (
+          <>
+            <Text style={styles.title}>Choose a Pattern</Text>
+            <Text style={styles.subtitle}>
+              Pick a starting schedule pattern. You can customize it later.
+            </Text>
+
+            {templates.length === 0 ? (
+              <ActivityIndicator color={colors.parentA} style={{ marginVertical: 20 }} />
+            ) : (
+              templates.map((t) => (
+                <TouchableOpacity
+                  key={t.id}
+                  style={[
+                    styles.templateCard,
+                    selectedTemplate === t.id && styles.templateCardSelected,
+                  ]}
+                  onPress={() => handleSelectTemplate(t.id)}
+                >
+                  <Text style={styles.templateName}>{t.name}</Text>
+                  <Text style={styles.templateDesc}>{t.description}</Text>
+                  <Text style={styles.templateConstraints}>
+                    {t.constraints.length} rules pre-configured
+                  </Text>
+                </TouchableOpacity>
+              ))
+            )}
+
+            <TouchableOpacity style={styles.linkButton} onPress={handleSkipTemplates}>
+              <Text style={styles.linkText}>Start from scratch</Text>
+            </TouchableOpacity>
+          </>
+        ) : step === 'create' ? (
           <>
             <Text style={styles.title}>Set Up Your Family</Text>
             <Text style={styles.subtitle}>
-              Create your co-parenting family to start scheduling.
+              {selectedTemplate
+                ? `Using "${templates.find((t) => t.id === selectedTemplate)?.name}" template. Customize later in Settings.`
+                : 'Create your co-parenting family to start scheduling.'}
             </Text>
 
             <View style={styles.form}>
@@ -165,7 +249,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 8,
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: 24,
     lineHeight: 22,
     maxWidth: 300,
   },
@@ -211,5 +295,35 @@ const styles = StyleSheet.create({
   linkText: {
     color: colors.parentA,
     fontSize: 14,
+  },
+  templateCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: colors.border,
+  },
+  templateCardSelected: {
+    borderColor: colors.parentA,
+  },
+  templateName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  templateDesc: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  templateConstraints: {
+    fontSize: 12,
+    color: colors.parentA,
+    fontWeight: '600',
   },
 });

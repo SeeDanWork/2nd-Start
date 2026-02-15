@@ -9,9 +9,10 @@ import {
   ActivityIndicator,
   Switch,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { colors } from '../../../src/theme/colors';
 import { useAuthStore } from '../../../src/stores/auth';
-import { constraintsApi, calendarApi } from '../../../src/api/client';
+import { constraintsApi, calendarApi, guardrailsApi, sharingApi } from '../../../src/api/client';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -25,6 +26,7 @@ interface ConstraintData {
 }
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const { family, logout, user } = useAuthStore();
   const [constraints, setConstraints] = useState<ConstraintData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +36,14 @@ export default function SettingsScreen() {
   const [showLockEditor, setShowLockEditor] = useState(false);
   const [lockParent, setLockParent] = useState<'parent_a' | 'parent_b'>('parent_a');
   const [lockDays, setLockDays] = useState<number[]>([]);
+
+  // Guardrails state
+  const [consentRules, setConsentRules] = useState<any[]>([]);
+  const [budgets, setBudgets] = useState<any[]>([]);
+  const [emergency, setEmergency] = useState<any>(null);
+  const [showRuleEditor, setShowRuleEditor] = useState(false);
+  const [ruleType, setRuleType] = useState('fairness_band');
+  const [ruleThreshold, setRuleThreshold] = useState('2');
 
   const fetchConstraints = useCallback(async () => {
     if (!family) return;
@@ -48,9 +58,26 @@ export default function SettingsScreen() {
     }
   }, [family]);
 
+  const fetchGuardrails = useCallback(async () => {
+    if (!family) return;
+    try {
+      const [rulesRes, budgetRes, emergRes] = await Promise.all([
+        guardrailsApi.getConsentRules(family.id),
+        guardrailsApi.getBudgets(family.id),
+        guardrailsApi.getEmergency(family.id),
+      ]);
+      setConsentRules(rulesRes.data || []);
+      setBudgets(budgetRes.data || []);
+      setEmergency(emergRes.data || null);
+    } catch {
+      // Guardrails not configured yet
+    }
+  }, [family]);
+
   useEffect(() => {
     fetchConstraints();
-  }, [fetchConstraints]);
+    fetchGuardrails();
+  }, [fetchConstraints, fetchGuardrails]);
 
   const addLockedNight = async () => {
     if (!family || lockDays.length === 0) return;
@@ -312,6 +339,235 @@ export default function SettingsScreen() {
       <Text style={styles.generateHint}>
         Uses your constraints to compute an optimal, fair schedule for the next 12 weeks.
       </Text>
+
+      {/* Guardrails section */}
+      <Text style={styles.sectionTitle}>Guardrails</Text>
+
+      {/* Auto-approve rules */}
+      <Text style={styles.editorLabel}>Auto-Approve Rules</Text>
+      {consentRules.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyText}>
+            No auto-approve rules. Add rules to auto-approve low-impact proposals.
+          </Text>
+        </View>
+      ) : (
+        consentRules.map((rule: any) => (
+          <View key={rule.id} style={styles.constraintRow}>
+            <View style={styles.constraintInfo}>
+              <Text style={styles.constraintText}>
+                {rule.ruleType === 'fairness_band'
+                  ? `Fairness delta ≤ ${rule.threshold?.maxDelta ?? '?'}`
+                  : rule.ruleType === 'max_transitions'
+                  ? `Max ${rule.threshold?.maxAdditional ?? '?'} extra transitions`
+                  : rule.ruleType === 'max_streak'
+                  ? `Max streak ≤ ${rule.threshold?.maxStreak ?? '?'}`
+                  : rule.ruleType}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.removeButton}
+              onPress={async () => {
+                if (!family || !user) return;
+                try {
+                  await guardrailsApi.removeConsentRule(family.id, rule.id, user.id);
+                  fetchGuardrails();
+                } catch (err: any) {
+                  Alert.alert('Error', err.response?.data?.message || 'Failed to remove rule.');
+                }
+              }}
+            >
+              <Text style={styles.removeButtonText}>X</Text>
+            </TouchableOpacity>
+          </View>
+        ))
+      )}
+
+      {!showRuleEditor ? (
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => setShowRuleEditor(true)}
+        >
+          <Text style={styles.addButtonText}>+ Auto-Approve Rule</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.editorCard}>
+          <Text style={styles.editorLabel}>Rule Type</Text>
+          <View style={styles.toggleRow}>
+            {(['fairness_band', 'max_transitions'] as const).map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[styles.toggleButton, ruleType === t && styles.toggleActive]}
+                onPress={() => setRuleType(t)}
+              >
+                <Text style={[styles.toggleText, ruleType === t && styles.toggleTextActive]}>
+                  {t === 'fairness_band' ? 'Fairness' : 'Transitions'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={styles.editorLabel}>
+            {ruleType === 'fairness_band' ? 'Max overnight delta' : 'Max additional transitions'}
+          </Text>
+          <View style={styles.toggleRow}>
+            {['1', '2', '3'].map((v) => (
+              <TouchableOpacity
+                key={v}
+                style={[styles.dayChip, ruleThreshold === v && styles.dayChipActive]}
+                onPress={() => setRuleThreshold(v)}
+              >
+                <Text style={[styles.dayChipText, ruleThreshold === v && styles.dayChipTextActive]}>{v}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={styles.editorActions}>
+            <TouchableOpacity style={styles.cancelButton} onPress={() => setShowRuleEditor(false)}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.saveButton}
+              onPress={async () => {
+                if (!family || !user) return;
+                try {
+                  const threshold = ruleType === 'fairness_band'
+                    ? { maxDelta: parseInt(ruleThreshold, 10) }
+                    : { maxAdditional: parseInt(ruleThreshold, 10) };
+                  await guardrailsApi.addConsentRule(family.id, {
+                    userId: user.id,
+                    ruleType,
+                    threshold,
+                  });
+                  setShowRuleEditor(false);
+                  fetchGuardrails();
+                } catch (err: any) {
+                  Alert.alert('Error', err.response?.data?.message || 'Failed to add rule.');
+                }
+              }}
+            >
+              <Text style={styles.saveButtonText}>Add</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Budget display */}
+      <Text style={styles.editorLabel}>Change Budget (This Month)</Text>
+      {budgets.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyText}>No budget data yet.</Text>
+        </View>
+      ) : (
+        budgets.map((b: any, i: number) => (
+          <View key={i} style={styles.constraintRow}>
+            <Text style={styles.constraintText}>
+              {b.userId?.slice(0, 8)}: {b.used}/{b.budgetLimit} used ({b.remaining} remaining)
+            </Text>
+          </View>
+        ))
+      )}
+
+      {/* Emergency mode */}
+      <Text style={styles.editorLabel}>Emergency Mode</Text>
+      {emergency ? (
+        <View style={[styles.editorCard, { borderLeftWidth: 4, borderLeftColor: colors.error }]}>
+          <Text style={[styles.constraintText, { color: colors.error }]}>Emergency Active</Text>
+          <Text style={styles.constraintMeta}>
+            Returns to baseline: {emergency.returnToBaselineAt}
+          </Text>
+          <TouchableOpacity
+            style={[styles.cancelButton, { marginTop: 12, borderColor: colors.error }]}
+            onPress={async () => {
+              if (!family || !user) return;
+              Alert.alert('Cancel Emergency', 'Restore normal constraints immediately?', [
+                { text: 'No', style: 'cancel' },
+                {
+                  text: 'Yes, Cancel',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      await guardrailsApi.cancelEmergency(family.id, user.id);
+                      fetchGuardrails();
+                    } catch (err: any) {
+                      Alert.alert('Error', err.response?.data?.message || 'Failed to cancel.');
+                    }
+                  },
+                },
+              ]);
+            }}
+          >
+            <Text style={[styles.cancelButtonText, { color: colors.error }]}>Cancel Emergency</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={[styles.addButton, { borderColor: colors.error }]}
+          onPress={() => {
+            if (!family || !user) return;
+            const returnDate = new Date();
+            returnDate.setDate(returnDate.getDate() + 7);
+            Alert.alert(
+              'Activate Emergency Mode',
+              'This will relax constraints for 7 days. Are you sure?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Activate',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      await guardrailsApi.activateEmergency(family.id, {
+                        userId: user.id,
+                        returnToBaselineAt: returnDate.toISOString().split('T')[0],
+                      });
+                      fetchGuardrails();
+                    } catch (err: any) {
+                      Alert.alert('Error', err.response?.data?.message || 'Failed to activate.');
+                    }
+                  },
+                },
+              ],
+            );
+          }}
+        >
+          <Text style={[styles.addButtonText, { color: colors.error }]}>Activate Emergency Mode</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Sharing & Audit section */}
+      <Text style={styles.sectionTitle}>Sharing & Activity</Text>
+      <TouchableOpacity
+        style={styles.addButton}
+        onPress={() => {
+          if (!family || !user) return;
+          Alert.alert('Create Share Link', 'Share a read-only calendar link?', [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Create',
+              onPress: async () => {
+                try {
+                  const { data: link } = await sharingApi.createShareLink(family.id, {
+                    userId: user.id,
+                    scope: 'calendar_readonly',
+                    label: 'Shared calendar',
+                  });
+                  Alert.alert('Link Created', `Token: ${link.token?.slice(0, 12)}...`);
+                } catch (err: any) {
+                  Alert.alert('Error', err.response?.data?.message || 'Failed to create link.');
+                }
+              },
+            },
+          ]);
+        }}
+      >
+        <Text style={styles.addButtonText}>+ Share Calendar Link</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.addButton, { borderColor: colors.parentA }]}
+        onPress={() => router.push('/(main)/audit')}
+      >
+        <Text style={styles.addButtonText}>View Activity Log</Text>
+      </TouchableOpacity>
 
       {/* Account section */}
       <Text style={styles.sectionTitle}>Account</Text>

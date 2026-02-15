@@ -8,6 +8,7 @@ import {
   HandoffEvent,
   BaseScheduleVersion,
   Request,
+  AuditLog,
 } from '../entities';
 import {
   LedgerWindowType,
@@ -38,6 +39,8 @@ export class MetricsService {
     private readonly versionRepo: Repository<BaseScheduleVersion>,
     @InjectRepository(Request)
     private readonly requestRepo: Repository<Request>,
+    @InjectRepository(AuditLog)
+    private readonly auditRepo: Repository<AuditLog>,
     private readonly schedulesService: SchedulesService,
   ) {}
 
@@ -287,6 +290,72 @@ export class MetricsService {
         maxConsecutiveB: stability.maxConsecutiveB,
       } : null,
       pendingRequests,
+    };
+  }
+  // ─── Audit Log ──────────────────────────────────────────────
+
+  async getAuditLog(familyId: string, limit = 50, offset = 0): Promise<{ entries: AuditLog[]; total: number }> {
+    const [entries, total] = await this.auditRepo.findAndCount({
+      where: { familyId },
+      order: { createdAt: 'DESC' },
+      take: limit,
+      skip: offset,
+    });
+    return { entries, total };
+  }
+
+  async getMonthlySummary(familyId: string, month: string) {
+    const monthStart = month.length === 7 ? `${month}-01` : month;
+    const monthDate = new Date(monthStart);
+    const nextMonth = new Date(monthDate);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    const monthEnd = nextMonth.toISOString().split('T')[0];
+
+    const active = await this.schedulesService.getActiveSchedule(familyId);
+
+    let totalOvernights = 0;
+    let totalTransitions = 0;
+    if (active) {
+      const assignments = await this.assignmentRepo.find({
+        where: {
+          familyId,
+          scheduleVersionId: active.id,
+          date: Between(monthStart, monthEnd),
+        },
+        order: { date: 'ASC' },
+      });
+      totalOvernights = assignments.length;
+      let prev: string | null = null;
+      for (const a of assignments) {
+        if (prev !== null && a.assignedTo !== prev) totalTransitions++;
+        prev = a.assignedTo;
+      }
+    }
+
+    const requests = await this.requestRepo.find({
+      where: { familyId },
+    });
+    const monthRequests = requests.filter((r) => {
+      const created = new Date(r.createdAt).toISOString().split('T')[0];
+      return created >= monthStart && created < monthEnd;
+    });
+
+    const requestsMade = monthRequests.length;
+    const requestsAccepted = monthRequests.filter((r) => r.status === RequestStatus.ACCEPTED).length;
+    const requestsExpired = monthRequests.filter((r) => r.status === RequestStatus.EXPIRED).length;
+
+    const scheduleVersions = await this.versionRepo.count({
+      where: { familyId },
+    });
+
+    return {
+      month: monthStart.slice(0, 7),
+      totalOvernights,
+      totalTransitions,
+      requestsMade,
+      requestsAccepted,
+      requestsExpired,
+      scheduleVersions,
     };
   }
 }

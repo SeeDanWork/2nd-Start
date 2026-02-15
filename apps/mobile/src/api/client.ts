@@ -175,6 +175,70 @@ export const requestsApi = {
     apiClient.get(`/families/${familyId}/requests/budget`, { params: { userId } }),
 };
 
+// Guardrails API
+export const guardrailsApi = {
+  getConsentRules: (familyId: string) =>
+    apiClient.get(`/families/${familyId}/consent-rules`),
+
+  addConsentRule: (familyId: string, data: {
+    userId: string;
+    ruleType: string;
+    threshold: Record<string, unknown>;
+  }) =>
+    apiClient.post(`/families/${familyId}/consent-rules`, data),
+
+  updateConsentRule: (familyId: string, ruleId: string, data: Record<string, unknown>) =>
+    apiClient.patch(`/families/${familyId}/consent-rules/${ruleId}`, data),
+
+  removeConsentRule: (familyId: string, ruleId: string, userId: string) =>
+    apiClient.delete(`/families/${familyId}/consent-rules/${ruleId}`, { data: { userId } }),
+
+  getBudgets: (familyId: string) =>
+    apiClient.get(`/families/${familyId}/budgets`),
+
+  activateEmergency: (familyId: string, data: {
+    userId: string;
+    returnToBaselineAt: string;
+    relaxedConstraints?: Array<{ constraintId: string; originalValue: Record<string, unknown> }>;
+  }) =>
+    apiClient.post(`/families/${familyId}/emergency`, data),
+
+  getEmergency: (familyId: string) =>
+    apiClient.get(`/families/${familyId}/emergency`),
+
+  updateEmergency: (familyId: string, data: { returnToBaselineAt?: string }) =>
+    apiClient.patch(`/families/${familyId}/emergency`, data),
+
+  cancelEmergency: (familyId: string, userId: string) =>
+    apiClient.delete(`/families/${familyId}/emergency`, { data: { userId } }),
+};
+
+// Audit & Sharing API
+export const auditApi = {
+  getAuditLog: (familyId: string, limit = 50, offset = 0) =>
+    apiClient.get(`/families/${familyId}/audit`, { params: { limit, offset } }),
+
+  getMonthlySummary: (familyId: string, month: string) =>
+    apiClient.get(`/families/${familyId}/summary`, { params: { month } }),
+};
+
+export const sharingApi = {
+  createShareLink: (familyId: string, data: {
+    userId: string;
+    scope: string;
+    label?: string;
+    format?: string;
+    expiresAt?: string;
+  }) =>
+    apiClient.post(`/families/${familyId}/share-links`, data),
+
+  listShareLinks: (familyId: string) =>
+    apiClient.get(`/families/${familyId}/share-links`),
+
+  revokeShareLink: (familyId: string, linkId: string) =>
+    apiClient.delete(`/families/${familyId}/share-links/${linkId}`),
+};
+
 // Proposals API
 export const proposalsApi = {
   generate: (familyId: string, requestId: string) =>

@@ -10,7 +10,7 @@ import {
 import { useRouter } from 'expo-router';
 import { colors } from '../../../src/theme/colors';
 import { useAuthStore } from '../../../src/stores/auth';
-import { metricsApi } from '../../../src/api/client';
+import { metricsApi, guardrailsApi } from '../../../src/api/client';
 
 interface TodayData {
   tonight: { date: string; parent: string | null; isTransition: boolean };
@@ -35,6 +35,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const [data, setData] = useState<TodayData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [emergency, setEmergency] = useState<any>(null);
 
   useEffect(() => {
     loadToday();
@@ -46,8 +47,12 @@ export default function HomeScreen() {
       return;
     }
     try {
-      const res = await metricsApi.getToday(family.id);
-      setData(res.data);
+      const [todayRes, emergRes] = await Promise.all([
+        metricsApi.getToday(family.id),
+        guardrailsApi.getEmergency(family.id),
+      ]);
+      setData(todayRes.data);
+      setEmergency(emergRes.data || null);
     } catch {
       // No schedule yet
     } finally {
@@ -71,6 +76,15 @@ export default function HomeScreen() {
       <Text style={styles.greeting}>
         Hi, {user?.displayName || 'there'}
       </Text>
+
+      {/* Emergency banner */}
+      {emergency && (
+        <View style={styles.emergencyBanner}>
+          <Text style={styles.emergencyText}>
+            Emergency mode active — constraints relaxed until {emergency.returnToBaselineAt}
+          </Text>
+        </View>
+      )}
 
       {!family && (
         <View style={styles.card}>
@@ -374,5 +388,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: colors.parentA,
+  },
+  emergencyBanner: {
+    backgroundColor: colors.error + '15',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.error,
+  },
+  emergencyText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.error,
   },
 });
