@@ -10,50 +10,44 @@ import {
 import { useRouter } from 'expo-router';
 import { colors } from '../../../src/theme/colors';
 import { useAuthStore } from '../../../src/stores/auth';
-import { calendarApi } from '../../../src/api/client';
+import { metricsApi } from '../../../src/api/client';
 
-interface TonightData {
-  date: string;
-  parent: string | null;
-  isTransition: boolean;
-  nextTransitionDate: string | null;
+interface TodayData {
+  tonight: { date: string; parent: string | null; isTransition: boolean };
+  nextHandoff: { date: string; type: string; fromParent: string; toParent: string } | null;
+  fairness: {
+    parentAOvernights: number;
+    parentBOvernights: number;
+    delta: number;
+    withinBand: boolean;
+    windowWeeks: number;
+  } | null;
+  stability: {
+    transitionsThisWeek: number;
+    maxConsecutiveA: number;
+    maxConsecutiveB: number;
+  } | null;
+  pendingRequests: number;
 }
 
 export default function HomeScreen() {
   const { user, family } = useAuthStore();
   const router = useRouter();
-  const [tonight, setTonight] = useState<TonightData | null>(null);
+  const [data, setData] = useState<TodayData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadTonight();
+    loadToday();
   }, [family]);
 
-  const loadTonight = async () => {
+  const loadToday = async () => {
     if (!family) {
       setLoading(false);
       return;
     }
     try {
-      const today = new Date();
-      const start = today.toISOString().split('T')[0];
-      const endDate = new Date(today);
-      endDate.setDate(endDate.getDate() + 14);
-      const end = endDate.toISOString().split('T')[0];
-      const { data } = await calendarApi.getCalendar(family.id, start, end);
-
-      if (data.days.length > 0) {
-        const todayDay = data.days[0];
-        const nextTransition = data.days.find(
-          (d: any) => d.date !== start && d.assignment?.isTransition,
-        );
-        setTonight({
-          date: todayDay.date,
-          parent: todayDay.assignment?.assignedTo || null,
-          isTransition: todayDay.assignment?.isTransition || false,
-          nextTransitionDate: nextTransition?.date || null,
-        });
-      }
+      const res = await metricsApi.getToday(family.id);
+      setData(res.data);
     } catch {
       // No schedule yet
     } finally {
@@ -65,6 +59,12 @@ export default function HomeScreen() {
     p === 'parent_a' ? 'Parent A' : 'Parent B';
   const parentColor = (p: string) =>
     p === 'parent_a' ? colors.parentA : colors.parentB;
+
+  const fairnessBarWidth = (a: number, b: number) => {
+    const total = a + b;
+    if (total === 0) return 50;
+    return Math.round((a / total) * 100);
+  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -87,26 +87,27 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {family && !loading && tonight?.parent && (
-        <View style={[styles.tonightCard, { borderLeftColor: parentColor(tonight.parent) }]}>
+      {/* Tonight Card */}
+      {data?.tonight?.parent && (
+        <View style={[styles.tonightCard, { borderLeftColor: parentColor(data.tonight.parent) }]}>
           <Text style={styles.tonightLabel}>TONIGHT</Text>
-          <Text style={[styles.tonightParent, { color: parentColor(tonight.parent) }]}>
-            {parentLabel(tonight.parent)}
+          <Text style={[styles.tonightParent, { color: parentColor(data.tonight.parent) }]}>
+            {parentLabel(data.tonight.parent)}
           </Text>
-          {tonight.isTransition && (
+          {data.tonight.isTransition && (
             <View style={styles.transitionBadge}>
               <Text style={styles.transitionText}>Handoff today</Text>
             </View>
           )}
-          {tonight.nextTransitionDate && (
+          {data.nextHandoff && (
             <Text style={styles.nextTransition}>
-              Next handoff: {tonight.nextTransitionDate}
+              Next handoff: {data.nextHandoff.date}
             </Text>
           )}
         </View>
       )}
 
-      {family && !loading && !tonight?.parent && (
+      {family && !loading && !data?.tonight?.parent && (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>No Schedule Yet</Text>
           <Text style={styles.cardText}>
@@ -119,6 +120,73 @@ export default function HomeScreen() {
             <Text style={styles.actionButtonText}>Set Up Schedule</Text>
           </TouchableOpacity>
         </View>
+      )}
+
+      {/* Fairness Card */}
+      {data?.fairness && (
+        <View style={styles.card}>
+          <Text style={styles.sectionLabel}>FAIRNESS ({data.fairness.windowWeeks}-WEEK)</Text>
+          <View style={styles.fairnessBar}>
+            <View
+              style={[
+                styles.fairnessSegmentA,
+                { width: `${fairnessBarWidth(data.fairness.parentAOvernights, data.fairness.parentBOvernights)}%` },
+              ]}
+            />
+            <View style={styles.fairnessSegmentB} />
+          </View>
+          <View style={styles.fairnessLabels}>
+            <Text style={[styles.fairnessCount, { color: colors.parentA }]}>
+              A: {data.fairness.parentAOvernights}
+            </Text>
+            <Text style={[styles.fairnessCount, { color: colors.parentB }]}>
+              B: {data.fairness.parentBOvernights}
+            </Text>
+          </View>
+          <View style={[
+            styles.fairnessBadge,
+            { backgroundColor: data.fairness.withinBand ? colors.success + '20' : colors.warning + '20' },
+          ]}>
+            <Text style={[
+              styles.fairnessBadgeText,
+              { color: data.fairness.withinBand ? colors.success : colors.warning },
+            ]}>
+              {data.fairness.withinBand ? 'Within fairness band' : `Delta: ${data.fairness.delta} nights`}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Stability Card */}
+      {data?.stability && (
+        <View style={styles.card}>
+          <Text style={styles.sectionLabel}>STABILITY (THIS WEEK)</Text>
+          <View style={styles.stabilityRow}>
+            <View style={styles.stabilityItem}>
+              <Text style={styles.stabilityValue}>{data.stability.transitionsThisWeek}</Text>
+              <Text style={styles.stabilityLabel}>Transitions</Text>
+            </View>
+            <View style={styles.stabilityItem}>
+              <Text style={styles.stabilityValue}>{data.stability.maxConsecutiveA}</Text>
+              <Text style={styles.stabilityLabel}>Max A streak</Text>
+            </View>
+            <View style={styles.stabilityItem}>
+              <Text style={styles.stabilityValue}>{data.stability.maxConsecutiveB}</Text>
+              <Text style={styles.stabilityLabel}>Max B streak</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Pending Requests */}
+      {data && data.pendingRequests > 0 && (
+        <TouchableOpacity
+          style={[styles.card, styles.requestsCard]}
+          onPress={() => router.push('/(main)/(tabs)/requests')}
+        >
+          <Text style={styles.cardTitle}>{data.pendingRequests} Pending Request{data.pendingRequests > 1 ? 's' : ''}</Text>
+          <Text style={styles.cardText}>Tap to review</Text>
+        </TouchableOpacity>
       )}
 
       {/* Quick actions */}
@@ -210,6 +278,71 @@ const styles = StyleSheet.create({
   nextTransition: {
     fontSize: 13,
     color: colors.textSecondary,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    letterSpacing: 1,
+    marginBottom: 12,
+  },
+  fairnessBar: {
+    flexDirection: 'row',
+    height: 12,
+    borderRadius: 6,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  fairnessSegmentA: {
+    backgroundColor: colors.parentA,
+    borderTopLeftRadius: 6,
+    borderBottomLeftRadius: 6,
+  },
+  fairnessSegmentB: {
+    flex: 1,
+    backgroundColor: colors.parentB,
+    borderTopRightRadius: 6,
+    borderBottomRightRadius: 6,
+  },
+  fairnessLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  fairnessCount: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  fairnessBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  fairnessBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  stabilityRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  stabilityItem: {
+    alignItems: 'center',
+  },
+  stabilityValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  stabilityLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  requestsCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: colors.warning,
   },
   actionButton: {
     backgroundColor: colors.parentA,

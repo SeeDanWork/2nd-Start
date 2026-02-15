@@ -107,6 +107,20 @@ export const calendarApi = {
     apiClient.post(`/families/${familyId}/schedules/generate`, options || {}),
 };
 
+// Metrics API
+export const metricsApi = {
+  getToday: (familyId: string) =>
+    apiClient.get(`/families/${familyId}/today`),
+
+  getLedger: (familyId: string, windows?: string[]) =>
+    apiClient.get(`/families/${familyId}/ledger`, {
+      params: windows ? { windows: windows.join(',') } : {},
+    }),
+
+  getStability: (familyId: string, start: string, end: string) =>
+    apiClient.get(`/families/${familyId}/stability`, { params: { start, end } }),
+};
+
 // Constraints API
 export const constraintsApi = {
   getConstraints: (familyId: string) =>
@@ -129,4 +143,49 @@ export const constraintsApi = {
 
   validate: (familyId: string) =>
     apiClient.post(`/families/${familyId}/constraints/validate`),
+};
+
+// Requests API
+export const requestsApi = {
+  list: (familyId: string, status?: string) =>
+    apiClient.get(`/families/${familyId}/requests`, {
+      params: status ? { status } : {},
+    }),
+
+  get: (familyId: string, requestId: string) =>
+    apiClient.get(`/families/${familyId}/requests/${requestId}`),
+
+  create: (familyId: string, data: {
+    userId: string;
+    type: string;
+    dates: string[];
+    reasonTag?: string;
+    reasonNote?: string;
+    urgency?: string;
+  }) =>
+    apiClient.post(`/families/${familyId}/requests`, data),
+
+  cancel: (familyId: string, requestId: string, userId: string) =>
+    apiClient.post(`/families/${familyId}/requests/${requestId}/cancel`, { userId }),
+
+  impactPreview: (familyId: string, dates: string[]) =>
+    apiClient.post(`/families/${familyId}/requests/impact-preview`, { dates }),
+
+  getBudget: (familyId: string, userId: string) =>
+    apiClient.get(`/families/${familyId}/requests/budget`, { params: { userId } }),
+};
+
+// Proposals API
+export const proposalsApi = {
+  generate: (familyId: string, requestId: string) =>
+    apiClient.post(`/families/${familyId}/proposals/generate`, { requestId }),
+
+  get: (familyId: string, requestId: string) =>
+    apiClient.get(`/families/${familyId}/proposals/${requestId}`),
+
+  accept: (familyId: string, optionId: string, userId: string) =>
+    apiClient.post(`/families/${familyId}/proposals/${optionId}/accept`, { userId }),
+
+  decline: (familyId: string, requestId: string, userId: string) =>
+    apiClient.post(`/families/${familyId}/proposals/${requestId}/decline`, { userId }),
 };

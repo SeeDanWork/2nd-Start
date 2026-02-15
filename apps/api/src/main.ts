@@ -19,6 +19,10 @@ async function bootstrap() {
   app.useGlobalInterceptors(new TransformInterceptor());
   app.enableCors();
 
+  // Health check
+  const express = app.getHttpAdapter().getInstance();
+  express.get('/health', (_req: any, res: any) => res.json({ status: 'ok' }));
+
   const port = process.env.APP_PORT || 3000;
   await app.listen(port);
   console.log(`API running on port ${port}`);

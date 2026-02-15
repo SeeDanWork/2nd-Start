@@ -8,11 +8,11 @@ from app.solver.proposals import generate_proposals
 router = APIRouter()
 
 
-@router.post("/generate_base_schedule", response_model=ScheduleResponse)
+@router.post("/base-schedule", response_model=ScheduleResponse)
 async def create_base_schedule(request: ScheduleRequest):
     return generate_base_schedule(request)
 
 
-@router.post("/generate_proposals", response_model=ProposalResponse)
+@router.post("/proposals", response_model=ProposalResponse)
 async def create_proposals(request: ProposalRequest):
     return generate_proposals(request)

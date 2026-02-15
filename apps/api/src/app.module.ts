@@ -24,7 +24,7 @@ import { OnboardingModule } from './onboarding/onboarding.module';
       password: process.env.DATABASE_PASSWORD || 'adcp_dev_password',
       database: process.env.DATABASE_NAME || 'adcp',
       autoLoadEntities: true,
-      synchronize: false,
+      synchronize: process.env.NODE_ENV !== 'production',
     }),
     AuthModule,
     FamiliesModule,

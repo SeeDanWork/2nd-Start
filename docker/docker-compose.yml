@@ -33,6 +33,23 @@ services:
       timeout: 3s
       retries: 5
 
+  optimizer:
+    build:
+      context: ../apps/optimizer
+      dockerfile: Dockerfile
+    container_name: adcp-optimizer
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - UVICORN_HOST=0.0.0.0
+      - UVICORN_PORT=8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
 volumes:
   postgres_data:
   redis_data:
