@@ -1,0 +1,15 @@
+export const colors = {
+  parentA: '#4A90D9',
+  parentB: '#7B61C1',
+  parentALight: '#E8F0FA',
+  parentBLight: '#F0EBF8',
+  background: '#FFFFFF',
+  surface: '#F8F9FA',
+  text: '#1A1A2E',
+  textSecondary: '#6B7280',
+  border: '#E5E7EB',
+  success: '#22C55E',
+  warning: '#F59E0B',
+  error: '#EF4444',
+  neutral: '#9CA3AF',
+} as const;
