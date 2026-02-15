@@ -822,20 +822,23 @@
 
 ## Phase Summary
 
-| Phase | Steps | What you have after |
-|---|---|---|
-| **0 — Scaffold** | 0.1–0.6 | Monorepo, shared types, API skeleton, DB schema, optimizer stub, RN app shell |
-| **1 — Auth + Family** | 1.1–1.3 | Two parents can sign up, form a family, invite each other |
-| **2 — Calendar** | 2.1–2.3 | Calendar renders schedules, home screen shows tonight card |
-| **3 — Constraints + Optimizer** | 3.1–3.5 | Parents set rules, system generates fair stable schedules |
-| **4 — Metrics** | 4.1–4.2 | Fairness bars, stability scores, rolling ledger |
-| **5 — Requests + Proposals** | 5.1–5.4 | Exception handling via ranked proposal bundles |
-| **6 — Guardrails** | 6.1–6.4 | Auto-approve, change budgets, expiry, emergency mode |
-| **7 — Audit + Sharing** | 7.1–7.3 | Audit log, ICS feeds, share links, exports |
-| **8 — Notifications** | 8.1–8.2 | Email, push, real-time WebSocket updates |
-| **9 — Offline + Polish** | 9.1–9.3 | Offline support, onboarding templates, UI polish |
+| Phase | Steps | Status | What you have after |
+|---|---|---|---|
+| **0 — Scaffold** | 0.1–0.6 | DONE | Monorepo, shared types, API skeleton, DB schema, optimizer stub, RN app shell |
+| **1 — Auth + Family** | 1.1–1.3 | DONE | Two parents can sign up, form a family, invite each other |
+| **2 — Calendar** | 2.1–2.3 | DONE | Calendar renders schedules, home screen shows tonight card |
+| **3 — Constraints + Optimizer** | 3.1–3.5 | DONE | Parents set rules, system generates fair stable schedules |
+| **4 — Metrics** | 4.1–4.2 | TODO | Fairness bars, stability scores, rolling ledger |
+| **5 — Requests + Proposals** | 5.1–5.4 | TODO | Exception handling via ranked proposal bundles |
+| **6 — Guardrails** | 6.1–6.4 | TODO | Auto-approve, change budgets, expiry, emergency mode |
+| **7 — Audit + Sharing** | 7.1–7.3 | TODO | Audit log, ICS feeds, share links, exports |
+| **8 — Notifications** | 8.1–8.2 | TODO | Email, push, real-time WebSocket updates |
+| **9 — Offline + Polish** | 9.1–9.3 | TODO | Offline support, onboarding templates, UI polish |
 
 **Total: 28 steps across 10 phases.** Each step is one Claude Code session producing testable output.
+
+### Completion Log
+- **2026-02-15**: Phases 0-3 completed (commits `4147a39`, `5c0d7e7`). API typechecks clean. Full CP-SAT solver implemented. Mobile auth + calendar + constraints UI functional.
 
 ---
 
