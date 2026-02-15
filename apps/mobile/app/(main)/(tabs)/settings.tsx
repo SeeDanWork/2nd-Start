@@ -1,17 +1,484 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+  Switch,
+} from 'react-native';
 import { colors } from '../../../src/theme/colors';
+import { useAuthStore } from '../../../src/stores/auth';
+import { constraintsApi, calendarApi } from '../../../src/api/client';
+
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+interface ConstraintData {
+  id: string;
+  type: string;
+  hardness: string;
+  weight: number;
+  owner: string;
+  parameters: Record<string, any>;
+}
 
 export default function SettingsScreen() {
+  const { family, logout, user } = useAuthStore();
+  const [constraints, setConstraints] = useState<ConstraintData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+
+  // Locked night editor state
+  const [showLockEditor, setShowLockEditor] = useState(false);
+  const [lockParent, setLockParent] = useState<'parent_a' | 'parent_b'>('parent_a');
+  const [lockDays, setLockDays] = useState<number[]>([]);
+
+  const fetchConstraints = useCallback(async () => {
+    if (!family) return;
+    setLoading(true);
+    try {
+      const { data } = await constraintsApi.getConstraints(family.id);
+      setConstraints(data.constraints || []);
+    } catch {
+      // No constraint set yet
+    } finally {
+      setLoading(false);
+    }
+  }, [family]);
+
+  useEffect(() => {
+    fetchConstraints();
+  }, [fetchConstraints]);
+
+  const addLockedNight = async () => {
+    if (!family || lockDays.length === 0) return;
+    try {
+      await constraintsApi.addConstraint(family.id, {
+        type: 'locked_night',
+        hardness: 'hard',
+        weight: 100,
+        owner: lockParent,
+        parameters: {
+          parent: lockParent,
+          daysOfWeek: lockDays,
+        },
+      });
+      setShowLockEditor(false);
+      setLockDays([]);
+      fetchConstraints();
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message || 'Failed to add constraint.');
+    }
+  };
+
+  const addMaxConsecutive = async (parent: string, maxNights: number) => {
+    if (!family) return;
+    try {
+      await constraintsApi.addConstraint(family.id, {
+        type: 'max_consecutive',
+        hardness: 'hard',
+        weight: 100,
+        owner: parent,
+        parameters: { parent, maxNights },
+      });
+      fetchConstraints();
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message || 'Failed to add constraint.');
+    }
+  };
+
+  const removeConstraint = async (constraintId: string) => {
+    if (!family) return;
+    Alert.alert('Remove Constraint', 'Are you sure?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await constraintsApi.removeConstraint(family.id, constraintId);
+            fetchConstraints();
+          } catch (err: any) {
+            Alert.alert('Error', err.response?.data?.message || 'Failed to remove.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const generateSchedule = async () => {
+    if (!family) return;
+    setGenerating(true);
+    try {
+      // Validate first
+      const { data: validation } = await constraintsApi.validate(family.id);
+      if (!validation.valid) {
+        const msgs = validation.conflicts.map((c: any) => c.description).join('\n');
+        Alert.alert('Constraint Conflicts', msgs);
+        setGenerating(false);
+        return;
+      }
+
+      await calendarApi.generateSchedule(family.id);
+      Alert.alert('Schedule Generated', 'Your new schedule has been created. Check the calendar.');
+    } catch (err: any) {
+      const errData = err.response?.data;
+      if (errData?.conflicts) {
+        const suggestions = errData.conflicts.map((c: any) => c.description || c.suggestion).join('\n');
+        Alert.alert(
+          'Infeasible Schedule',
+          `${errData.message || 'Cannot create schedule'}\n\n${suggestions}`,
+        );
+      } else {
+        Alert.alert('Generation Failed', errData?.message || err.message || 'Try relaxing constraints.');
+      }
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const toggleLockDay = (day: number) => {
+    setLockDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day],
+    );
+  };
+
+  const describeConstraint = (c: ConstraintData): string => {
+    switch (c.type) {
+      case 'locked_night': {
+        const days = (c.parameters.daysOfWeek as number[])
+          .map((d) => DAY_LABELS[d])
+          .join(', ');
+        const parent = c.parameters.parent === 'parent_a' ? 'Parent A' : 'Parent B';
+        return `${parent} locked on ${days}`;
+      }
+      case 'max_consecutive': {
+        const parent = c.parameters.parent === 'parent_a' ? 'Parent A' : 'Parent B';
+        return `${parent} max ${c.parameters.maxNights} consecutive nights`;
+      }
+      case 'weekend_split':
+        return `Weekend split: ${c.parameters.targetPctParentA}% Parent A`;
+      case 'max_transitions_per_week':
+        return `Max ${c.parameters.maxTransitions} transitions/week`;
+      default:
+        return c.type;
+    }
+  };
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Settings</Text>
-      <Text style={styles.subtitle}>Schedule rules and preferences will appear here.</Text>
-    </View>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Text style={styles.sectionTitle}>Schedule Rules</Text>
+
+      {/* Current constraints */}
+      {loading ? (
+        <ActivityIndicator color={colors.parentA} style={{ marginVertical: 20 }} />
+      ) : constraints.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyText}>
+            No constraints set. Add rules below to generate a fair schedule.
+          </Text>
+        </View>
+      ) : (
+        constraints.map((c) => (
+          <View key={c.id} style={styles.constraintRow}>
+            <View style={styles.constraintInfo}>
+              <Text style={styles.constraintText}>{describeConstraint(c)}</Text>
+              <Text style={styles.constraintMeta}>
+                {c.hardness} | weight: {c.weight}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.removeButton}
+              onPress={() => removeConstraint(c.id)}
+            >
+              <Text style={styles.removeButtonText}>X</Text>
+            </TouchableOpacity>
+          </View>
+        ))
+      )}
+
+      {/* Add locked night */}
+      <Text style={styles.sectionTitle}>Add Constraints</Text>
+
+      {!showLockEditor ? (
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => setShowLockEditor(true)}
+        >
+          <Text style={styles.addButtonText}>+ Locked Nights</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.editorCard}>
+          <Text style={styles.editorLabel}>Parent</Text>
+          <View style={styles.toggleRow}>
+            <TouchableOpacity
+              style={[
+                styles.toggleButton,
+                lockParent === 'parent_a' && styles.toggleActive,
+              ]}
+              onPress={() => setLockParent('parent_a')}
+            >
+              <Text style={[
+                styles.toggleText,
+                lockParent === 'parent_a' && styles.toggleTextActive,
+              ]}>Parent A</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.toggleButton,
+                lockParent === 'parent_b' && styles.toggleActiveB,
+              ]}
+              onPress={() => setLockParent('parent_b')}
+            >
+              <Text style={[
+                styles.toggleText,
+                lockParent === 'parent_b' && styles.toggleTextActive,
+              ]}>Parent B</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.editorLabel}>Days of week</Text>
+          <View style={styles.daysRow}>
+            {DAY_LABELS.map((label, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={[
+                  styles.dayChip,
+                  lockDays.includes(idx) && styles.dayChipActive,
+                ]}
+                onPress={() => toggleLockDay(idx)}
+              >
+                <Text style={[
+                  styles.dayChipText,
+                  lockDays.includes(idx) && styles.dayChipTextActive,
+                ]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.editorActions}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => { setShowLockEditor(false); setLockDays([]); }}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.saveButton, lockDays.length === 0 && styles.buttonDisabled]}
+              onPress={addLockedNight}
+              disabled={lockDays.length === 0}
+            >
+              <Text style={styles.saveButtonText}>Add</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Quick add: max consecutive */}
+      <TouchableOpacity
+        style={styles.addButton}
+        onPress={() => {
+          Alert.alert('Max Consecutive Nights', 'Set for which parent?', [
+            {
+              text: 'Parent A (5 nights)',
+              onPress: () => addMaxConsecutive('parent_a', 5),
+            },
+            {
+              text: 'Parent B (5 nights)',
+              onPress: () => addMaxConsecutive('parent_b', 5),
+            },
+            { text: 'Cancel', style: 'cancel' },
+          ]);
+        }}
+      >
+        <Text style={styles.addButtonText}>+ Max Consecutive</Text>
+      </TouchableOpacity>
+
+      {/* Generate schedule */}
+      <Text style={styles.sectionTitle}>Generate Schedule</Text>
+      <TouchableOpacity
+        style={[styles.generateButton, generating && styles.buttonDisabled]}
+        onPress={generateSchedule}
+        disabled={generating}
+      >
+        {generating ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.generateButtonText}>Generate Schedule</Text>
+        )}
+      </TouchableOpacity>
+      <Text style={styles.generateHint}>
+        Uses your constraints to compute an optimal, fair schedule for the next 12 weeks.
+      </Text>
+
+      {/* Account section */}
+      <Text style={styles.sectionTitle}>Account</Text>
+      <View style={styles.accountCard}>
+        <Text style={styles.accountEmail}>{user?.email}</Text>
+        <Text style={styles.accountName}>{user?.displayName}</Text>
+        {family && (
+          <Text style={styles.accountFamily}>
+            Family: {family.name || family.id.slice(0, 8)}
+          </Text>
+        )}
+      </View>
+      <TouchableOpacity style={styles.logoutButton} onPress={logout}>
+        <Text style={styles.logoutText}>Sign Out</Text>
+      </TouchableOpacity>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.surface, padding: 24 },
-  title: { fontSize: 24, fontWeight: '700', color: colors.text },
-  subtitle: { fontSize: 14, color: colors.textSecondary, marginTop: 8, textAlign: 'center' },
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: 20, paddingBottom: 40 },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    marginTop: 24,
+    marginBottom: 12,
+  },
+  emptyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+  },
+  emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center' },
+  constraintRow: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
+    alignItems: 'center',
+  },
+  constraintInfo: { flex: 1 },
+  constraintText: { fontSize: 14, fontWeight: '600', color: colors.text },
+  constraintMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  removeButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.error + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removeButtonText: { fontSize: 12, fontWeight: '700', color: colors.error },
+  addButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  addButtonText: { fontSize: 14, fontWeight: '600', color: colors.parentA },
+  editorCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+  },
+  editorLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 8,
+    marginTop: 8,
+  },
+  toggleRow: { flexDirection: 'row', gap: 8 },
+  toggleButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  toggleActive: {
+    backgroundColor: colors.parentA,
+    borderColor: colors.parentA,
+  },
+  toggleActiveB: {
+    backgroundColor: colors.parentB,
+    borderColor: colors.parentB,
+  },
+  toggleText: { fontSize: 14, color: colors.text },
+  toggleTextActive: { color: '#FFFFFF', fontWeight: '600' },
+  daysRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  dayChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  dayChipActive: {
+    backgroundColor: colors.parentA,
+    borderColor: colors.parentA,
+  },
+  dayChipText: { fontSize: 13, color: colors.text },
+  dayChipTextActive: { color: '#FFFFFF', fontWeight: '600' },
+  editorActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 16,
+  },
+  cancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  cancelButtonText: { fontSize: 14, color: colors.textSecondary },
+  saveButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: colors.parentA,
+  },
+  saveButtonText: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
+  buttonDisabled: { opacity: 0.5 },
+  generateButton: {
+    backgroundColor: colors.success,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  generateButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  generateHint: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  accountCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+  },
+  accountEmail: { fontSize: 14, fontWeight: '600', color: colors.text },
+  accountName: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  accountFamily: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
+  logoutButton: {
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  logoutText: { fontSize: 14, fontWeight: '600', color: colors.error },
 });
