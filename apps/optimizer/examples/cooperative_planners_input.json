@@ -1,0 +1,40 @@
+{
+  "inputs": {
+    "number_of_children": 1,
+    "children_age_bands": ["5-10"],
+    "school_schedule": {
+      "school_days": [1, 2, 3, 4, 5],
+      "school_start_time": "08:00",
+      "school_end_time": "15:00"
+    },
+    "preferred_exchange_location": "school",
+    "parent_a": {
+      "parent_id": "parent_a_coop",
+      "availability": {
+        "locked_nights": [2]
+      },
+      "preferences": {
+        "target_share_pct": 50.0,
+        "max_handoffs_per_week": 3,
+        "max_consecutive_nights_away": 5
+      },
+      "constraints": {}
+    },
+    "parent_b": {
+      "parent_id": "parent_b_coop",
+      "availability": {
+        "locked_nights": []
+      },
+      "preferences": {
+        "target_share_pct": 50.0,
+        "max_handoffs_per_week": 3,
+        "max_consecutive_nights_away": 5
+      },
+      "constraints": {}
+    },
+    "shared": {
+      "start_date": "2026-03-02",
+      "horizon_days": 14
+    }
+  }
+}

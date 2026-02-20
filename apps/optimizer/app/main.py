@@ -1,13 +1,15 @@
 from fastapi import FastAPI
 from app.api.routes import router
+from app.api.onboarding_routes import router as onboarding_router
 
 app = FastAPI(
     title="ADCP Optimizer",
     description="Anti-Drama Co-Parenting Schedule Optimizer Service",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 app.include_router(router, prefix="/solve")
+app.include_router(onboarding_router, prefix="/onboarding")
 
 
 @app.get("/health")

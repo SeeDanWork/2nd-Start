@@ -1,4 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 import { ConstraintType, ConstraintHardness, ConstraintOwner } from '@adcp/shared';
 
 export interface OnboardingTemplate {
@@ -16,6 +18,12 @@ export interface OnboardingTemplate {
 
 @Injectable()
 export class OnboardingService {
+  private readonly logger = new Logger(OnboardingService.name);
+
+  constructor(private readonly httpService: HttpService) {}
+
+  // ── Templates (existing) ────────────────────────────────────────
+
   getTemplates(): OnboardingTemplate[] {
     return [
       {
@@ -149,5 +157,68 @@ export class OnboardingService {
 
   getTemplate(templateId: string): OnboardingTemplate | undefined {
     return this.getTemplates().find((t) => t.id === templateId);
+  }
+
+  // ── Brain (optimizer proxy) ─────────────────────────────────────
+
+  async validateInputs(inputs: Record<string, unknown>) {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post('/onboarding/validate', { inputs }),
+      );
+      return response.data;
+    } catch (err: any) {
+      this.logger.error(`Validation failed: ${err.message}`);
+      throw new BadRequestException(
+        err.response?.data?.detail || 'Validation failed',
+      );
+    }
+  }
+
+  async detectConflicts(inputs: Record<string, unknown>) {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post('/onboarding/conflicts', { inputs }),
+      );
+      return response.data;
+    } catch (err: any) {
+      this.logger.error(`Conflict detection failed: ${err.message}`);
+      throw new BadRequestException(
+        err.response?.data?.detail || 'Conflict detection failed',
+      );
+    }
+  }
+
+  async generateOptions(inputs: Record<string, unknown>, config?: Record<string, unknown>) {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post('/onboarding/options', { inputs, config }),
+      );
+      return response.data;
+    } catch (err: any) {
+      this.logger.error(`Option generation failed: ${err.message}`);
+      const detail = err.response?.data?.detail;
+      if (detail?.errors) {
+        throw new BadRequestException({
+          message: 'Invalid onboarding inputs',
+          errors: detail.errors,
+        });
+      }
+      throw new BadRequestException(detail || 'Schedule generation failed');
+    }
+  }
+
+  async explainOption(inputs: Record<string, unknown>, profile: string) {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post('/onboarding/explain', { inputs, profile }),
+      );
+      return response.data;
+    } catch (err: any) {
+      this.logger.error(`Explain failed: ${err.message}`);
+      throw new BadRequestException(
+        err.response?.data?.detail || 'Explanation failed',
+      );
+    }
   }
 }
