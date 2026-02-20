@@ -16,12 +16,12 @@ import { useAuthStore } from '../../src/stores/auth';
 
 type Step = 'email' | 'verify';
 
-export default function LoginScreen() {
+export default function SignUpScreen() {
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
   const [token, setToken] = useState('');
   const [loading, setLoading] = useState(false);
-  const { sendMagicLink, verifyMagicLink, restoreFamily } = useAuthStore();
+  const { sendMagicLink, verifyMagicLink } = useAuthStore();
   const router = useRouter();
 
   const handleSendLink = async () => {
@@ -51,13 +51,7 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await verifyMagicLink(token.trim());
-      // Returning user flow: try to find their family
-      const family = await restoreFamily();
-      if (family) {
-        router.replace('/(main)/(tabs)/');
-      } else {
-        router.replace('/(auth)/pending-invites');
-      }
+      router.replace('/(auth)/onboarding');
     } catch (err: any) {
       Alert.alert(
         'Verification Failed',
@@ -74,8 +68,10 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.inner}>
-        <Text style={styles.title}>Welcome Back</Text>
-        <Text style={styles.subtitle}>Sign in to your account.</Text>
+        <Text style={styles.title}>Create Your Account</Text>
+        <Text style={styles.subtitle}>
+          Enter your email to get started with co-parenting scheduling.
+        </Text>
 
         {step === 'email' ? (
           <View style={styles.form}>
@@ -174,6 +170,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
     marginBottom: 32,
+    lineHeight: 22,
+    maxWidth: 300,
   },
   form: {
     width: '100%',

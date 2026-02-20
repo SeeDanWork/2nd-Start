@@ -37,6 +37,12 @@ export class AuthController {
     return this.authService.getProfile(user.id);
   }
 
+  @Get('me/family')
+  @UseGuards(AuthGuard('jwt'))
+  getMyFamily(@CurrentUser() user: User) {
+    return this.authService.getUserFamily(user.id);
+  }
+
   @Patch('me')
   @UseGuards(AuthGuard('jwt'))
   updateProfile(

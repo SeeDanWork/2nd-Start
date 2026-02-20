@@ -83,6 +83,9 @@ export const authApi = {
 
   updateProfile: (data: { displayName?: string; timezone?: string }) =>
     apiClient.patch('/auth/me', data),
+
+  getMyFamily: () =>
+    apiClient.get<{ family: { id: string; name: string | null; status: string }; membership: any } | null>('/auth/me/family'),
 };
 
 // Families API

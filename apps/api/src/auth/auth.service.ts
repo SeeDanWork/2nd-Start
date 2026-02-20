@@ -7,10 +7,11 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 import { randomBytes } from 'crypto';
-import { User } from '../entities';
+import { User, Family, FamilyMembership } from '../entities';
 import {
   MAGIC_LINK_TTL_MINUTES,
   JWT_ACCESS_TOKEN_TTL,
+  InviteStatus,
 } from '@adcp/shared';
 import { EmailService } from '../email/email.service';
 
@@ -24,6 +25,8 @@ export class AuthService {
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(FamilyMembership)
+    private readonly memberRepo: Repository<FamilyMembership>,
     private readonly jwtService: JwtService,
     private readonly emailService: EmailService,
   ) {}
@@ -129,6 +132,17 @@ export class AuthService {
   ): Promise<User> {
     await this.userRepo.update(userId, data as any);
     return this.getProfile(userId);
+  }
+
+  async getUserFamily(
+    userId: string,
+  ): Promise<{ family: Family; membership: FamilyMembership } | null> {
+    const membership = await this.memberRepo.findOne({
+      where: { userId, inviteStatus: InviteStatus.ACCEPTED },
+      relations: ['family'],
+    });
+    if (!membership) return null;
+    return { family: membership.family, membership };
   }
 
   async deleteAccount(userId: string): Promise<{ message: string }> {
