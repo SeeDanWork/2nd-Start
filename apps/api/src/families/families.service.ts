@@ -198,6 +198,51 @@ export class FamiliesService {
     return { family, membership };
   }
 
+  async resendInvite(
+    familyId: string,
+    invitedByUserId: string,
+    membershipId: string,
+  ): Promise<{ inviteToken: string; message: string }> {
+    const family = await this.getFamily(familyId);
+
+    const membership = await this.memberRepo.findOne({
+      where: { id: membershipId, familyId, inviteStatus: InviteStatus.PENDING },
+    });
+    if (!membership) {
+      throw new NotFoundException('Pending invitation not found');
+    }
+
+    // Invalidate any existing token for this email
+    for (const [key, val] of inviteTokens.entries()) {
+      if (val.familyId === familyId && val.email === membership.inviteEmail) {
+        inviteTokens.delete(key);
+      }
+    }
+
+    const token = randomBytes(32).toString('hex');
+    inviteTokens.set(token, {
+      familyId,
+      email: membership.inviteEmail!,
+      role: membership.role,
+      label: membership.label,
+      expiresAt: Date.now() + INVITE_TOKEN_TTL_DAYS * 24 * 3600_000,
+    });
+
+    // Update invitedAt timestamp
+    membership.invitedAt = new Date();
+    await this.memberRepo.save(membership);
+
+    const inviter = await this.userRepo.findOne({ where: { id: invitedByUserId } });
+    await this.emailService.sendEmail(membership.inviteEmail!, 'family_invite', {
+      familyName: family.name || 'your family',
+      inviterName: inviter?.displayName || 'Your co-parent',
+      role: membership.label,
+      token,
+    });
+
+    return { inviteToken: token, message: 'Invitation re-sent.' };
+  }
+
   async getMembers(familyId: string): Promise<FamilyMembership[]> {
     return this.memberRepo.find({
       where: { familyId },

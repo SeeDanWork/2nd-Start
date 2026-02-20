@@ -1,5 +1,5 @@
 import axios from 'axios';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '../utils/storage';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -20,6 +20,21 @@ apiClient.interceptors.request.use(async (config) => {
   return config;
 });
 
+// Unwrap NestJS TransformInterceptor envelope { data, timestamp }
+apiClient.interceptors.response.use(
+  (response) => {
+    if (
+      response.data &&
+      typeof response.data === 'object' &&
+      'data' in response.data &&
+      'timestamp' in response.data
+    ) {
+      response.data = response.data.data;
+    }
+    return response;
+  },
+);
+
 // Handle 401 → refresh token
 apiClient.interceptors.response.use(
   (response) => response,
@@ -32,12 +47,13 @@ apiClient.interceptors.response.use(
         if (!refreshToken) {
           return Promise.reject(error);
         }
-        const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+        const resp = await axios.post(`${API_BASE_URL}/auth/refresh`, {
           refreshToken,
         });
-        await SecureStore.setItemAsync('accessToken', data.accessToken);
-        await SecureStore.setItemAsync('refreshToken', data.refreshToken);
-        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
+        const tokens = resp.data?.data ?? resp.data;
+        await SecureStore.setItemAsync('accessToken', tokens.accessToken);
+        await SecureStore.setItemAsync('refreshToken', tokens.refreshToken);
+        originalRequest.headers.Authorization = `Bearer ${tokens.accessToken}`;
         return apiClient(originalRequest);
       } catch {
         await SecureStore.deleteItemAsync('accessToken');
@@ -88,6 +104,9 @@ export const familiesApi = {
 
   getMembers: (familyId: string) =>
     apiClient.get(`/families/${familyId}/members`),
+
+  resendInvite: (familyId: string, membershipId: string) =>
+    apiClient.post(`/families/${familyId}/resend-invite`, { membershipId }),
 };
 
 // Calendar API

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
@@ -12,7 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { colors } from '../../../src/theme/colors';
 import { useAuthStore } from '../../../src/stores/auth';
-import { constraintsApi, calendarApi, guardrailsApi, sharingApi } from '../../../src/api/client';
+import { constraintsApi, calendarApi, guardrailsApi, sharingApi, familiesApi } from '../../../src/api/client';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -37,6 +38,14 @@ export default function SettingsScreen() {
   const [lockParent, setLockParent] = useState<'parent_a' | 'parent_b'>('parent_a');
   const [lockDays, setLockDays] = useState<number[]>([]);
 
+  // Family members state
+  const [members, setMembers] = useState<any[]>([]);
+  const [showInviteEditor, setShowInviteEditor] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('parent_b');
+  const [inviteLabel, setInviteLabel] = useState('Parent B');
+  const [inviting, setInviting] = useState(false);
+
   // Guardrails state
   const [consentRules, setConsentRules] = useState<any[]>([]);
   const [budgets, setBudgets] = useState<any[]>([]);
@@ -46,7 +55,10 @@ export default function SettingsScreen() {
   const [ruleThreshold, setRuleThreshold] = useState('2');
 
   const fetchConstraints = useCallback(async () => {
-    if (!family) return;
+    if (!family) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const { data } = await constraintsApi.getConstraints(family.id);
@@ -55,6 +67,16 @@ export default function SettingsScreen() {
       // No constraint set yet
     } finally {
       setLoading(false);
+    }
+  }, [family]);
+
+  const fetchMembers = useCallback(async () => {
+    if (!family) return;
+    try {
+      const { data } = await familiesApi.getMembers(family.id);
+      setMembers(Array.isArray(data) ? data : data.members || []);
+    } catch {
+      // Members not available
     }
   }, [family]);
 
@@ -77,7 +99,8 @@ export default function SettingsScreen() {
   useEffect(() => {
     fetchConstraints();
     fetchGuardrails();
-  }, [fetchConstraints, fetchGuardrails]);
+    fetchMembers();
+  }, [fetchConstraints, fetchGuardrails, fetchMembers]);
 
   const addLockedNight = async () => {
     if (!family || lockDays.length === 0) return;
@@ -569,6 +592,146 @@ export default function SettingsScreen() {
         <Text style={styles.addButtonText}>View Activity Log</Text>
       </TouchableOpacity>
 
+      {/* Family Members section */}
+      <Text style={styles.sectionTitle}>Family Members</Text>
+
+      {members.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyText}>No members found.</Text>
+        </View>
+      ) : (
+        members.map((m: any, i: number) => (
+          <View key={m.id || i} style={styles.constraintRow}>
+            <View style={styles.constraintInfo}>
+              <Text style={styles.constraintText}>
+                {m.user?.displayName || m.email || 'Unknown'}
+              </Text>
+              <Text style={styles.constraintMeta}>
+                {m.label || m.role}
+              </Text>
+            </View>
+            {m.inviteStatus === 'pending' && (
+              <TouchableOpacity
+                style={styles.resendButton}
+                onPress={async () => {
+                  if (!family) return;
+                  try {
+                    await familiesApi.resendInvite(family.id, m.id);
+                    Alert.alert('Invite Re-sent', `Invitation re-sent to ${m.inviteEmail || m.email}.`);
+                  } catch (err: any) {
+                    Alert.alert('Error', err.response?.data?.message || 'Failed to resend invite.');
+                  }
+                }}
+              >
+                <Text style={styles.resendButtonText}>Resend</Text>
+              </TouchableOpacity>
+            )}
+            <View style={[
+              styles.memberStatus,
+              m.inviteStatus === 'pending' && styles.memberStatusPending,
+            ]}>
+              <Text style={[styles.statusText, m.inviteStatus === 'pending' && { color: '#F59E0B' }]}>
+                {m.inviteStatus === 'pending' ? 'Pending' : 'Joined'}
+              </Text>
+            </View>
+          </View>
+        ))
+      )}
+
+      {!showInviteEditor ? (
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => setShowInviteEditor(true)}
+        >
+          <Text style={styles.addButtonText}>+ Invite Member</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.editorCard}>
+          <Text style={styles.editorLabel}>Email</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="email@example.com"
+            placeholderTextColor={colors.textSecondary}
+            value={inviteEmail}
+            onChangeText={setInviteEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+
+          <Text style={styles.editorLabel}>Role</Text>
+          <View style={styles.toggleRow}>
+            {([
+              { key: 'parent_b', display: 'Parent B' },
+              { key: 'caregiver', display: 'Caregiver' },
+              { key: 'viewer', display: 'Viewer' },
+            ] as const).map((r) => (
+              <TouchableOpacity
+                key={r.key}
+                style={[styles.toggleButton, inviteRole === r.key && styles.toggleActive]}
+                onPress={() => { setInviteRole(r.key); setInviteLabel(r.display); }}
+              >
+                <Text style={[styles.toggleText, inviteRole === r.key && styles.toggleTextActive]}>
+                  {r.display}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.editorLabel}>Label</Text>
+          <TextInput
+            style={styles.input}
+            value={inviteLabel}
+            onChangeText={setInviteLabel}
+            placeholderTextColor={colors.textSecondary}
+          />
+
+          <View style={styles.editorActions}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => {
+                setShowInviteEditor(false);
+                setInviteEmail('');
+                setInviteRole('parent_b');
+                setInviteLabel('Parent B');
+              }}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.saveButton, (!inviteEmail || inviting) && styles.buttonDisabled]}
+              disabled={!inviteEmail || inviting}
+              onPress={async () => {
+                if (!family) return;
+                setInviting(true);
+                try {
+                  await familiesApi.invite(family.id, {
+                    email: inviteEmail,
+                    role: inviteRole,
+                    label: inviteLabel,
+                  });
+                  Alert.alert('Invite Sent', `Invitation sent to ${inviteEmail}.`);
+                  setShowInviteEditor(false);
+                  setInviteEmail('');
+                  setInviteRole('parent_b');
+                  setInviteLabel('Parent B');
+                  fetchMembers();
+                } catch (err: any) {
+                  Alert.alert('Error', err.response?.data?.message || 'Failed to send invite.');
+                } finally {
+                  setInviting(false);
+                }
+              }}
+            >
+              {inviting ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.saveButtonText}>Send Invite</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* Account section */}
       <Text style={styles.sectionTitle}>Account</Text>
       <View style={styles.accountCard}>
@@ -737,4 +900,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoutText: { fontSize: 14, fontWeight: '600', color: colors.error },
+  resendButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.parentA,
+    marginRight: 8,
+  },
+  resendButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.parentA,
+  },
+  memberStatus: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: colors.success + '20',
+  },
+  memberStatusPending: {
+    backgroundColor: '#F59E0B20',
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.success,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: colors.text,
+    backgroundColor: colors.background,
+  },
 });

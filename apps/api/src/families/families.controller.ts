@@ -66,6 +66,17 @@ export class FamiliesController {
     return this.familiesService.acceptInvite(body.token, user.id);
   }
 
+  @Post(':familyId/resend-invite')
+  @UseGuards(AuthGuard('jwt'))
+  async resendInvite(
+    @CurrentUser() user: User,
+    @Param('familyId') familyId: string,
+    @Body() body: { membershipId: string },
+  ) {
+    await this.familiesService.verifyMembership(familyId, user.id);
+    return this.familiesService.resendInvite(familyId, user.id, body.membershipId);
+  }
+
   @Get(':familyId/members')
   @UseGuards(AuthGuard('jwt'))
   async getMembers(
