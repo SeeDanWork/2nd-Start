@@ -3,6 +3,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { View, Text, ActivityIndicator, StyleSheet, Animated } from 'react-native';
 import { useAuthStore } from '../src/stores/auth';
 import { useSocketStore } from '../src/stores/socket';
+import { useChatStore } from '../src/stores/chat';
 import { colors } from '../src/theme/colors';
 
 function NotificationBanner() {
@@ -39,6 +40,7 @@ function NotificationBanner() {
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, family } = useAuthStore();
+  const isOnboarding = useChatStore((s) => s.isOnboarding);
   const segments = useSegments();
   const router = useRouter();
   const { connect, joinFamily, disconnect } = useSocketStore();
@@ -52,10 +54,10 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       router.replace('/(auth)/welcome');
     } else if (isAuthenticated && !family && !inAuthGroup) {
       router.replace('/(auth)/pending-invites');
-    } else if (isAuthenticated && family && inAuthGroup) {
+    } else if (isAuthenticated && family && inAuthGroup && !isOnboarding) {
       router.replace('/(main)/(tabs)/');
     }
-  }, [isAuthenticated, isLoading, family, segments]);
+  }, [isAuthenticated, isLoading, family, segments, isOnboarding]);
 
   // Connect socket when authenticated
   useEffect(() => {

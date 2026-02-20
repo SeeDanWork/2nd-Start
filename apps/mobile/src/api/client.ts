@@ -133,6 +133,9 @@ export const calendarApi = {
     daycareExchangeDays?: number[];
   }) =>
     apiClient.post(`/families/${familyId}/schedules/generate`, options || {}),
+
+  createManualSchedule: (familyId: string, assignments: Array<{ date: string; parentId: string }>) =>
+    apiClient.post(`/families/${familyId}/schedules/manual`, { assignments }),
 };
 
 // Metrics API
@@ -239,6 +242,24 @@ export const guardrailsApi = {
 
   cancelEmergency: (familyId: string, userId: string) =>
     apiClient.delete(`/families/${familyId}/emergency`, { data: { userId } }),
+};
+
+// Onboarding API
+export const onboardingApi = {
+  getTemplates: () =>
+    apiClient.get('/onboarding/templates'),
+
+  validate: (inputs: Record<string, unknown>) =>
+    apiClient.post('/onboarding/validate', { inputs }),
+
+  detectConflicts: (inputs: Record<string, unknown>) =>
+    apiClient.post('/onboarding/conflicts', { inputs }),
+
+  generateOptions: (inputs: Record<string, unknown>, config?: Record<string, unknown>) =>
+    apiClient.post('/onboarding/options', { inputs, config }, { timeout: 35000 }),
+
+  explainOption: (inputs: Record<string, unknown>, profile: string) =>
+    apiClient.post('/onboarding/explain', { inputs, profile }),
 };
 
 // Audit & Sharing API
