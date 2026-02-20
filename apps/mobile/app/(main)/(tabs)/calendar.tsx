@@ -126,7 +126,7 @@ export default function CalendarScreen() {
             const isToday = cell.date === today;
             const isSelected = cell.date === selectedDate;
 
-            let bgColor = colors.surface;
+            let bgColor: string = colors.surface;
             if (parent === 'parent_a') bgColor = colors.parentALight;
             else if (parent === 'parent_b') bgColor = colors.parentBLight;
 

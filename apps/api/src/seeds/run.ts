@@ -3,9 +3,23 @@
  *
  * Usage: npx ts-node src/seeds/run.ts
  * Requires: Postgres running with schema synced (start the API once first).
+ *
+ * Uses fixed UUIDs so the seed is idempotent (safe to re-run).
  */
 import { DataSource } from 'typeorm';
-import { randomUUID } from 'crypto';
+
+// Fixed IDs for idempotent seeding
+const parentAId = '00000000-0000-4000-a000-000000000001';
+const parentBId = '00000000-0000-4000-a000-000000000002';
+const familyId = '00000000-0000-4000-a000-000000000010';
+const childId = '00000000-0000-4000-a000-000000000020';
+const constraintSetId = '00000000-0000-4000-a000-000000000030';
+const memberAId = '00000000-0000-4000-a000-000000000041';
+const memberBId = '00000000-0000-4000-a000-000000000042';
+const constraint1Id = '00000000-0000-4000-a000-000000000051';
+const constraint2Id = '00000000-0000-4000-a000-000000000052';
+const constraint3Id = '00000000-0000-4000-a000-000000000053';
+const constraint4Id = '00000000-0000-4000-a000-000000000054';
 
 const ds = new DataSource({
   type: 'postgres',
@@ -20,16 +34,20 @@ async function seed() {
   await ds.initialize();
   const qr = ds.createQueryRunner();
 
-  const parentAId = randomUUID();
-  const parentBId = randomUUID();
-  const familyId = randomUUID();
-  const constraintSetId = randomUUID();
+  // Clean previous seed data (reverse FK order, match by email to handle old random IDs)
+  await qr.query(`DELETE FROM constraints WHERE constraint_set_id IN (SELECT id FROM constraint_sets WHERE family_id = $1)`, [familyId]);
+  await qr.query(`DELETE FROM constraint_sets WHERE family_id = $1`, [familyId]);
+  await qr.query(`DELETE FROM children WHERE family_id = $1`, [familyId]);
+  await qr.query(`DELETE FROM family_memberships WHERE family_id = $1`, [familyId]);
+  await qr.query(`DELETE FROM families WHERE id = $1`, [familyId]);
+  // Also clean by email in case old random-UUID users exist
+  await qr.query(`DELETE FROM family_memberships WHERE user_id IN (SELECT id FROM users WHERE email IN ($1, $2))`, ['alice@example.com', 'bob@example.com']);
+  await qr.query(`DELETE FROM users WHERE email IN ($1, $2)`, ['alice@example.com', 'bob@example.com']);
 
   // Users
   await qr.query(
     `INSERT INTO users (id, email, display_name, timezone, onboarding_completed)
-     VALUES ($1, $2, $3, $4, true), ($5, $6, $7, $8, true)
-     ON CONFLICT DO NOTHING`,
+     VALUES ($1, $2, $3, $4, true), ($5, $6, $7, $8, true)`,
     [
       parentAId, 'alice@example.com', 'Alice', 'America/New_York',
       parentBId, 'bob@example.com', 'Bob', 'America/New_York',
@@ -39,35 +57,31 @@ async function seed() {
   // Family
   await qr.query(
     `INSERT INTO families (id, name, timezone, status, weekend_definition)
-     VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT DO NOTHING`,
+     VALUES ($1, $2, $3, $4, $5)`,
     [familyId, 'Smith-Jones Family', 'America/New_York', 'active', 'fri_sat'],
   );
 
   // Memberships
   await qr.query(
     `INSERT INTO family_memberships (id, family_id, user_id, role, label, invite_status, accepted_at)
-     VALUES ($1, $2, $3, $4, $5, $6, NOW()), ($7, $8, $9, $10, $11, $12, NOW())
-     ON CONFLICT DO NOTHING`,
+     VALUES ($1, $2, $3, $4, $5, $6, NOW()), ($7, $8, $9, $10, $11, $12, NOW())`,
     [
-      randomUUID(), familyId, parentAId, 'parent_a', 'Mom', 'accepted',
-      randomUUID(), familyId, parentBId, 'parent_b', 'Dad', 'accepted',
+      memberAId, familyId, parentAId, 'parent_a', 'Mom', 'accepted',
+      memberBId, familyId, parentBId, 'parent_b', 'Dad', 'accepted',
     ],
   );
 
   // Child
   await qr.query(
-    `INSERT INTO children (id, family_id, first_name, date_of_birth, school_start_date)
-     VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT DO NOTHING`,
-    [randomUUID(), familyId, 'Charlie', '2020-06-15', '2025-09-01'],
+    `INSERT INTO children (id, family_id, first_name, date_of_birth, school_name)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [childId, familyId, 'Charlie', '2020-06-15', 'Maple Elementary'],
   );
 
   // Constraint set
   await qr.query(
     `INSERT INTO constraint_sets (id, family_id, version, is_active, created_by)
-     VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT DO NOTHING`,
+     VALUES ($1, $2, $3, $4, $5)`,
     [constraintSetId, familyId, 1, true, parentAId],
   );
 
@@ -78,13 +92,12 @@ async function seed() {
        ($1, $2, 'locked_night', 'hard', 100, 'parent_a', $3),
        ($4, $5, 'locked_night', 'hard', 100, 'parent_b', $6),
        ($7, $8, 'max_consecutive', 'hard', 100, 'parent_a', $9),
-       ($10, $11, 'max_consecutive', 'hard', 100, 'parent_b', $12)
-     ON CONFLICT DO NOTHING`,
+       ($10, $11, 'max_consecutive', 'hard', 100, 'parent_b', $12)`,
     [
-      randomUUID(), constraintSetId, JSON.stringify({ parent: 'parent_a', daysOfWeek: [1, 2] }),
-      randomUUID(), constraintSetId, JSON.stringify({ parent: 'parent_b', daysOfWeek: [4, 5] }),
-      randomUUID(), constraintSetId, JSON.stringify({ parent: 'parent_a', maxNights: 5 }),
-      randomUUID(), constraintSetId, JSON.stringify({ parent: 'parent_b', maxNights: 5 }),
+      constraint1Id, constraintSetId, JSON.stringify({ parent: 'parent_a', daysOfWeek: [1, 2] }),
+      constraint2Id, constraintSetId, JSON.stringify({ parent: 'parent_b', daysOfWeek: [4, 5] }),
+      constraint3Id, constraintSetId, JSON.stringify({ parent: 'parent_a', maxNights: 5 }),
+      constraint4Id, constraintSetId, JSON.stringify({ parent: 'parent_b', maxNights: 5 }),
     ],
   );
 

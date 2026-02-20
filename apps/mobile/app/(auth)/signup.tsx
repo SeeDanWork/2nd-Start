@@ -100,7 +100,7 @@ export default function SignUpScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.linkButton}
-              onPress={() => router.back()}
+              onPress={() => router.replace('/(auth)/welcome')}
             >
               <Text style={styles.linkText}>Back</Text>
             </TouchableOpacity>

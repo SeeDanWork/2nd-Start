@@ -14,7 +14,7 @@ import {
 import { useRouter } from 'expo-router';
 import { colors } from '../../src/theme/colors';
 import { useAuthStore } from '../../src/stores/auth';
-import { apiClient } from '../../src/api/client';
+import { apiClient, constraintsApi, familiesApi } from '../../src/api/client';
 
 interface Template {
   id: string;
@@ -69,7 +69,7 @@ export default function OnboardingScreen() {
       if (selectedTemplate && family) {
         const template = templates.find((t) => t.id === selectedTemplate);
         if (template) {
-          const { constraintsApi } = await import('../../src/api/client');
+          // constraintsApi already imported at top
           for (const c of template.constraints) {
             try {
               await constraintsApi.addConstraint(family.id, c);
@@ -95,7 +95,7 @@ export default function OnboardingScreen() {
     }
     setLoading(true);
     try {
-      const { familiesApi } = await import('../../src/api/client');
+      // familiesApi already imported at top
       await familiesApi.invite(family!.id, {
         email: inviteEmail.trim().toLowerCase(),
         role: 'parent_b',

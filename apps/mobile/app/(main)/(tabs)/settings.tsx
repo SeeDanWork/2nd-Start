@@ -774,7 +774,9 @@ export default function SettingsScreen() {
                     setFamily({ id: accepted.id, name: accepted.name, status: accepted.status });
                     Alert.alert('Invite Accepted', `You have joined ${inv.familyName || 'the family'}!`);
                     fetchPendingInvites();
-                    fetchMembers();
+                    // Fetch members for the NEW family (closure has stale familyId)
+                    const { data: newMembers } = await familiesApi.getMembers(accepted.id);
+                    setMembers(Array.isArray(newMembers) ? newMembers : newMembers.members || []);
                   } catch (err: any) {
                     Alert.alert('Error', err.response?.data?.message || 'Failed to accept invite.');
                   } finally {
