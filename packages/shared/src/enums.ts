@@ -199,6 +199,7 @@ export enum NotificationType {
   PROPOSAL_ACCEPTED = 'proposal_accepted',
   PROPOSAL_EXPIRED = 'proposal_expired',
   EMERGENCY_ACTIVATED = 'emergency_activated',
+  EMERGENCY_RETURN = 'emergency_return',
   BUDGET_LOW = 'budget_low',
   FAIRNESS_DRIFT = 'fairness_drift',
 }

@@ -12,6 +12,7 @@ import {
   MAGIC_LINK_TTL_MINUTES,
   JWT_ACCESS_TOKEN_TTL,
 } from '@adcp/shared';
+import { EmailService } from '../email/email.service';
 
 // In-memory token store for dev. Replace with Redis in production.
 const magicLinkTokens = new Map<string, { email: string; expiresAt: number }>();
@@ -24,6 +25,7 @@ export class AuthService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly jwtService: JwtService,
+    private readonly emailService: EmailService,
   ) {}
 
   async sendMagicLink(email: string): Promise<{ message: string }> {
@@ -45,8 +47,7 @@ export class AuthService {
       expiresAt: now + MAGIC_LINK_TTL_MINUTES * 60_000,
     });
 
-    // TODO: Replace with real email provider (Resend/Postmark)
-    console.log(`[Magic Link] Email: ${email}, Token: ${token}`);
+    await this.emailService.sendEmail(email, 'magic_link', { token });
 
     return { message: 'Magic link sent. Check your email.' };
   }

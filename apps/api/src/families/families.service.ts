@@ -11,6 +11,7 @@ import { randomBytes } from 'crypto';
 import { Family, FamilyMembership, User, ConstraintSet } from '../entities';
 import { MemberRole, InviteStatus, FamilyStatus } from '@adcp/shared';
 import { INVITE_TOKEN_TTL_DAYS } from '@adcp/shared';
+import { EmailService } from '../email/email.service';
 
 // In-memory invite tokens for dev. Replace with Redis in production.
 const inviteTokens = new Map<
@@ -29,6 +30,7 @@ export class FamiliesService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(ConstraintSet)
     private readonly constraintSetRepo: Repository<ConstraintSet>,
+    private readonly emailService: EmailService,
   ) {}
 
   async create(
@@ -133,8 +135,13 @@ export class FamiliesService {
       }),
     );
 
-    // TODO: Send invite email
-    console.log(`[Invite] Family: ${family.name || familyId}, Email: ${data.email}, Token: ${token}`);
+    const inviter = await this.userRepo.findOne({ where: { id: invitedByUserId } });
+    await this.emailService.sendEmail(data.email.toLowerCase(), 'family_invite', {
+      familyName: family.name || 'your family',
+      inviterName: inviter?.displayName || 'Your co-parent',
+      role: data.label,
+      token,
+    });
 
     return { inviteToken: token, message: 'Invitation sent.' };
   }

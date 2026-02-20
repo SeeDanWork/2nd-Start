@@ -14,6 +14,7 @@ import { MetricsModule } from './metrics/metrics.module';
 import { SharingModule } from './sharing/sharing.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { NotificationModule } from './notifications/notification.module';
+import { EmailModule } from './email/email.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { NotificationModule } from './notifications/notification.module';
       autoLoadEntities: true,
       synchronize: process.env.NODE_ENV !== 'production',
     }),
+    EmailModule,
     AuthModule,
     FamiliesModule,
     ChildrenModule,
