@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { colors } from '../../../src/theme/colors';
 import { useAuthStore } from '../../../src/stores/auth';
 import { constraintsApi, calendarApi, guardrailsApi, sharingApi, familiesApi } from '../../../src/api/client';
+import * as SecureStore from '../../../src/utils/storage';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -28,7 +29,7 @@ interface ConstraintData {
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { family, logout, user } = useAuthStore();
+  const { family, logout, user, setFamily } = useAuthStore();
   const [constraints, setConstraints] = useState<ConstraintData[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -45,6 +46,10 @@ export default function SettingsScreen() {
   const [inviteRole, setInviteRole] = useState('parent_b');
   const [inviteLabel, setInviteLabel] = useState('Parent B');
   const [inviting, setInviting] = useState(false);
+
+  // Pending invites for this user
+  const [pendingInvites, setPendingInvites] = useState<any[]>([]);
+  const [accepting, setAccepting] = useState<string | null>(null);
 
   // Guardrails state
   const [consentRules, setConsentRules] = useState<any[]>([]);
@@ -80,6 +85,15 @@ export default function SettingsScreen() {
     }
   }, [family]);
 
+  const fetchPendingInvites = useCallback(async () => {
+    try {
+      const { data } = await familiesApi.getMyInvites();
+      setPendingInvites(Array.isArray(data) ? data : []);
+    } catch {
+      // Not available
+    }
+  }, []);
+
   const fetchGuardrails = useCallback(async () => {
     if (!family) return;
     try {
@@ -100,7 +114,8 @@ export default function SettingsScreen() {
     fetchConstraints();
     fetchGuardrails();
     fetchMembers();
-  }, [fetchConstraints, fetchGuardrails, fetchMembers]);
+    fetchPendingInvites();
+  }, [fetchConstraints, fetchGuardrails, fetchMembers, fetchPendingInvites]);
 
   const addLockedNight = async () => {
     if (!family || lockDays.length === 0) return;
@@ -732,6 +747,52 @@ export default function SettingsScreen() {
         </View>
       )}
 
+      {/* Pending Invites section */}
+      {pendingInvites.length > 0 && (
+        <>
+          <Text style={styles.sectionTitle}>Pending Invites</Text>
+          {pendingInvites.map((inv: any) => (
+            <View key={inv.membershipId} style={styles.inviteCard}>
+              <Text style={styles.inviteFamily}>
+                {inv.familyName || 'A family'}
+              </Text>
+              <Text style={styles.inviteFrom}>
+                Invited by {inv.inviterName || 'Unknown'}{inv.inviterEmail ? ` (${inv.inviterEmail})` : ''}
+              </Text>
+              <Text style={styles.constraintMeta}>
+                Role: {inv.label || inv.role}
+              </Text>
+              <TouchableOpacity
+                style={[styles.acceptButton, accepting === inv.membershipId && styles.buttonDisabled]}
+                disabled={accepting === inv.membershipId}
+                onPress={async () => {
+                  setAccepting(inv.membershipId);
+                  try {
+                    const { data } = await familiesApi.acceptInviteById(inv.membershipId);
+                    const accepted = data.family || data;
+                    await SecureStore.setItemAsync('familyId', accepted.id);
+                    setFamily({ id: accepted.id, name: accepted.name, status: accepted.status });
+                    Alert.alert('Invite Accepted', `You have joined ${inv.familyName || 'the family'}!`);
+                    fetchPendingInvites();
+                    fetchMembers();
+                  } catch (err: any) {
+                    Alert.alert('Error', err.response?.data?.message || 'Failed to accept invite.');
+                  } finally {
+                    setAccepting(null);
+                  }
+                }}
+              >
+                {accepting === inv.membershipId ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.acceptButtonText}>Accept Invite</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ))}
+        </>
+      )}
+
       {/* Account section */}
       <Text style={styles.sectionTitle}>Account</Text>
       <View style={styles.accountCard}>
@@ -926,6 +987,37 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: colors.success,
+  },
+  inviteCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.parentA,
+  },
+  inviteFamily: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  inviteFrom: {
+    fontSize: 14,
+    color: colors.text,
+    marginBottom: 2,
+  },
+  acceptButton: {
+    backgroundColor: colors.success,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  acceptButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   input: {
     borderWidth: 1,

@@ -107,6 +107,12 @@ export const familiesApi = {
 
   resendInvite: (familyId: string, membershipId: string) =>
     apiClient.post(`/families/${familyId}/resend-invite`, { membershipId }),
+
+  getMyInvites: () =>
+    apiClient.get('/families/my-invites'),
+
+  acceptInviteById: (membershipId: string) =>
+    apiClient.post('/families/accept-invite-by-id', { membershipId }),
 };
 
 // Calendar API

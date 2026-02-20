@@ -57,13 +57,28 @@ export class FamiliesController {
     return this.familiesService.invite(familyId, user.id, body);
   }
 
-  @Post(':familyId/accept-invite')
+  @Get('my-invites')
+  @UseGuards(AuthGuard('jwt'))
+  getMyInvites(@CurrentUser() user: User) {
+    return this.familiesService.getPendingInvitesForUser(user.email);
+  }
+
+  @Post('accept-invite')
   @UseGuards(AuthGuard('jwt'))
   acceptInvite(
     @CurrentUser() user: User,
     @Body() body: { token: string },
   ) {
     return this.familiesService.acceptInvite(body.token, user.id);
+  }
+
+  @Post('accept-invite-by-id')
+  @UseGuards(AuthGuard('jwt'))
+  acceptInviteById(
+    @CurrentUser() user: User,
+    @Body() body: { membershipId: string },
+  ) {
+    return this.familiesService.acceptInviteById(body.membershipId, user.id);
   }
 
   @Post(':familyId/resend-invite')

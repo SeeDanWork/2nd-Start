@@ -243,6 +243,74 @@ export class FamiliesService {
     return { inviteToken: token, message: 'Invitation re-sent.' };
   }
 
+  async getPendingInvitesForUser(userEmail: string): Promise<any[]> {
+    const pending = await this.memberRepo.find({
+      where: { inviteEmail: userEmail.toLowerCase(), inviteStatus: InviteStatus.PENDING },
+      relations: ['family'],
+    });
+
+    const result = [];
+    for (const m of pending) {
+      const inviter = await this.memberRepo.findOne({
+        where: { familyId: m.familyId, role: MemberRole.PARENT_A },
+        relations: ['user'],
+      });
+      result.push({
+        membershipId: m.id,
+        familyId: m.familyId,
+        familyName: m.family?.name || null,
+        role: m.role,
+        label: m.label,
+        invitedAt: m.invitedAt,
+        inviterName: inviter?.user?.displayName || null,
+        inviterEmail: inviter?.user?.email || null,
+      });
+    }
+    return result;
+  }
+
+  async acceptInviteById(
+    membershipId: string,
+    userId: string,
+  ): Promise<{ family: Family; membership: FamilyMembership }> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const membership = await this.memberRepo.findOne({
+      where: { id: membershipId, inviteStatus: InviteStatus.PENDING },
+    });
+    if (!membership) throw new NotFoundException('Pending invitation not found');
+
+    if (user.email.toLowerCase() !== membership.inviteEmail?.toLowerCase()) {
+      throw new ForbiddenException('This invitation was sent to a different email address');
+    }
+
+    // Invalidate any in-memory tokens for this invite
+    for (const [key, val] of inviteTokens.entries()) {
+      if (val.familyId === membership.familyId && val.email === membership.inviteEmail) {
+        inviteTokens.delete(key);
+      }
+    }
+
+    membership.userId = userId;
+    membership.inviteStatus = InviteStatus.ACCEPTED;
+    membership.acceptedAt = new Date();
+    await this.memberRepo.save(membership);
+
+    const family = await this.getFamily(membership.familyId);
+    const acceptedParents = family.memberships.filter(
+      (m) =>
+        (m.role === MemberRole.PARENT_A || m.role === MemberRole.PARENT_B) &&
+        m.inviteStatus === InviteStatus.ACCEPTED,
+    );
+    if (acceptedParents.length === 2 && family.status === FamilyStatus.ONBOARDING) {
+      await this.familyRepo.update(family.id, { status: FamilyStatus.ACTIVE });
+      family.status = FamilyStatus.ACTIVE;
+    }
+
+    return { family, membership };
+  }
+
   async getMembers(familyId: string): Promise<FamilyMembership[]> {
     return this.memberRepo.find({
       where: { familyId },

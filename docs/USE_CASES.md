@@ -53,9 +53,9 @@ Tracks user-facing scenarios across the app. Each use case records the flow, sta
 
 ### UC-2.3: Parent B accepts invite
 - **Actor:** Parent B (invited co-parent)
-- **Flow:** Receive invite email > Click link > Sign up/sign in > Accept invite > Family status changes to ACTIVE (if both parents accepted)
+- **Flow:** Sign in > Settings > "Pending Invites" section shows invite card with inviter name/email and family name > Tap "Accept Invite" > Family status changes to ACTIVE (if both parents accepted)
 - **Status:** DONE
-- **Notes:** Parent B has no template selection step. They inherit Parent A's constraints.
+- **Notes:** Accept is token-free — the API matches the user's email to the pending membership. Invite card shows who sent it.
 
 ### UC-2.4: Parent B reviews/negotiates initial constraints
 - **Actor:** Parent B
@@ -65,9 +65,20 @@ Tracks user-facing scenarios across the app. Each use case records the flow, sta
 
 ### UC-2.5: Caregiver/viewer invited to family
 - **Actor:** Parent A or B
-- **Flow:** Settings > Invite member > Enter email + role (caregiver/viewer) > Invite sent
-- **Status:** PARTIAL
-- **Notes:** API supports caregiver/viewer roles. No role-specific UI or permission scoping yet.
+- **Flow:** Settings > Family Members > "+ Invite Member" > Enter email, select role (parent_b/caregiver/viewer), set label > Send Invite
+- **Status:** DONE
+- **Notes:** Full invite editor in Settings with role picker and editable label. API supports all roles. No role-specific permission scoping yet.
+
+### UC-2.6: View family members
+- **Actor:** Parent A or B
+- **Flow:** Settings > "Family Members" section > See all members with name, role label, and status badge (green "Joined" or yellow "Pending")
+- **Status:** DONE
+
+### UC-2.7: Resend invite to pending member
+- **Actor:** Parent A or B
+- **Flow:** Settings > Family Members > See pending member > Tap "Resend" > New invite token generated, old invalidated, email re-sent
+- **Status:** DONE
+- **Notes:** Solves the problem of expired tokens after API restart (in-memory token storage).
 
 ---
 
@@ -327,7 +338,7 @@ Tracks user-facing scenarios across the app. Each use case records the flow, sta
 |-----|--------|-------|
 | No background jobs/cron | UC-7.4, UC-8.5 | Proposal expiry and emergency auto-return need scheduled triggers |
 | Notification triggers not wired | UC-11.1 | EmailService ready but no module calls NotificationService.send() |
-| In-memory token storage | UC-1.1, UC-2.3 | Magic link + invite tokens use Maps, not Redis |
+| In-memory token storage | UC-1.1 | Magic link + invite tokens use Maps, not Redis. Resend (UC-2.7) mitigates invite token loss on restart. |
 | No test suite | All | No unit or integration tests exist |
 | Onboarding templates API stub | UC-2.1 | Templates hardcoded on mobile, API returns empty |
 | No role-based permissions | UC-2.5 | Caregiver/viewer roles exist but no permission scoping |
