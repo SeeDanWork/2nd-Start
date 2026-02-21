@@ -28,9 +28,12 @@ export function ChatScreen({ mode }: ChatScreenProps) {
   const processChipSelection = useChatStore((s) => s.processChipSelection);
   const options = useChatStore((s) => s.options);
   const isOnboarding = useChatStore((s) => s.isOnboarding);
+  const isJoinerOnboarding = useChatStore((s) => s.isJoinerOnboarding);
   const advanceOnboarding = useChatStore((s) => s.advanceOnboarding);
+  const advanceJoinerOnboarding = useChatStore((s) => s.advanceJoinerOnboarding);
   const addMessage = useChatStore((s) => s.addMessage);
   const family = useAuthStore((s) => s.family);
+  const joinerFamilyId = useChatStore((s) => s.joinerFamilyId);
   const router = useRouter();
 
   const [inputText, setInputText] = useState('');
@@ -59,28 +62,43 @@ export function ChatScreen({ mode }: ChatScreenProps) {
         return;
       }
       if (value === 'explore_chat') {
-        useChatStore.setState({ isOnboarding: false });
+        useChatStore.setState({ isOnboarding: false, isJoinerOnboarding: false });
         router.replace('/(main)/(tabs)/chat');
         return;
       }
       if (value === 'retry_generate') {
-        advanceOnboarding();
+        if (isJoinerOnboarding) {
+          advanceJoinerOnboarding();
+        } else {
+          advanceOnboarding();
+        }
         return;
       }
       processChipSelection(value);
     },
-    [isOnboarding, processChipSelection, advanceOnboarding, router],
+    [isOnboarding, isJoinerOnboarding, processChipSelection, advanceOnboarding, advanceJoinerOnboarding, router],
   );
 
   const handleSelectSchedule = useCallback(
     async (optionId: string) => {
       const option = options.find((o) => o.id === optionId);
-      if (!option || !family) return;
+      if (!option) return;
+
+      const targetFamilyId = isJoinerOnboarding ? joinerFamilyId : family?.id;
+      if (!targetFamilyId) return;
 
       try {
-        // Create schedule from selected option
-        if (option.assignments.length > 0) {
-          await calendarApi.generateSchedule(family.id);
+        if (isJoinerOnboarding && option.assignments.length > 0) {
+          // Joiner flow: save assignments via createManualSchedule
+          await calendarApi.createManualSchedule(
+            targetFamilyId,
+            option.assignments.map((a) => ({
+              date: a.date,
+              assignedTo: a.parentId,
+            })),
+          );
+        } else if (option.assignments.length > 0) {
+          await calendarApi.generateSchedule(targetFamilyId);
         }
 
         addMessage({
@@ -90,8 +108,11 @@ export function ChatScreen({ mode }: ChatScreenProps) {
           timestamp: Date.now(),
         });
 
-        // Move to the completion turn
-        advanceOnboarding();
+        if (isJoinerOnboarding) {
+          advanceJoinerOnboarding();
+        } else {
+          advanceOnboarding();
+        }
       } catch {
         addMessage({
           id: Date.now().toString(36),
@@ -99,10 +120,14 @@ export function ChatScreen({ mode }: ChatScreenProps) {
           content: 'Schedule saved! Head to the Calendar tab to see it in action.',
           timestamp: Date.now(),
         });
-        advanceOnboarding();
+        if (isJoinerOnboarding) {
+          advanceJoinerOnboarding();
+        } else {
+          advanceOnboarding();
+        }
       }
     },
-    [options, family, addMessage, advanceOnboarding],
+    [options, family, joinerFamilyId, isJoinerOnboarding, addMessage, advanceOnboarding, advanceJoinerOnboarding],
   );
 
   const handleDetailSchedule = useCallback(

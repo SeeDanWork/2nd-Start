@@ -29,6 +29,9 @@ export class Family {
   @Column({ type: 'jsonb', name: 'change_budget', default: '{"maxPerMonth":4}' })
   changeBudget!: Record<string, unknown>;
 
+  @Column({ type: 'jsonb', name: 'onboarding_input', nullable: true })
+  onboardingInput!: Record<string, unknown> | null;
+
   @Column({ type: 'text', default: 'onboarding' })
   status!: string;
 

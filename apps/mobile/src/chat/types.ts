@@ -5,7 +5,7 @@ export interface ChipOption {
 }
 
 export interface ActionCard {
-  type: 'schedule_option' | 'confirmation' | 'stats' | 'checklist' | 'info' | 'day_selector' | 'text_input' | 'loading';
+  type: 'schedule_option' | 'schedule_preview' | 'confirmation' | 'stats' | 'checklist' | 'info' | 'day_selector' | 'text_input' | 'loading';
   data: Record<string, unknown>;
 }
 

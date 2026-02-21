@@ -51,7 +51,7 @@ export default function SignUpScreen() {
     setLoading(true);
     try {
       await verifyMagicLink(token.trim());
-      router.replace('/(auth)/onboarding');
+      router.replace('/(auth)/pending-invites');
     } catch (err: any) {
       Alert.alert(
         'Verification Failed',

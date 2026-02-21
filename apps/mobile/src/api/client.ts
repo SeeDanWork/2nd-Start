@@ -134,7 +134,7 @@ export const calendarApi = {
   }) =>
     apiClient.post(`/families/${familyId}/schedules/generate`, options || {}),
 
-  createManualSchedule: (familyId: string, assignments: Array<{ date: string; parentId: string }>) =>
+  createManualSchedule: (familyId: string, assignments: Array<{ date: string; assignedTo: string }>) =>
     apiClient.post(`/families/${familyId}/schedules/manual`, { assignments }),
 };
 
@@ -260,6 +260,12 @@ export const onboardingApi = {
 
   explainOption: (inputs: Record<string, unknown>, profile: string) =>
     apiClient.post('/onboarding/explain', { inputs, profile }),
+
+  saveInput: (familyId: string, input: Record<string, unknown>) =>
+    apiClient.post('/onboarding/save-input', { familyId, input }),
+
+  getSavedInput: (familyId: string) =>
+    apiClient.get<{ input: Record<string, unknown> | null }>(`/onboarding/saved-input/${familyId}`),
 };
 
 // Audit & Sharing API

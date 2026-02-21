@@ -5,15 +5,20 @@ import { colors } from '../../theme/colors';
 const DAY_HEADERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 interface MiniCalendarProps {
-  /** 14-element array: 'A' for parentA, 'B' for parentB */
+  /** Array of 'A', 'B', or '' (empty/padding). Length is a multiple of 7. */
   assignments: string[];
-  /** Days that are transition/handoff days (indices 0-13) */
+  /** Days that are transition/handoff days (global indices) */
   transitionDays?: number[];
 }
 
 export function MiniCalendar({ assignments, transitionDays = [] }: MiniCalendarProps) {
-  const week1 = assignments.slice(0, 7);
-  const week2 = assignments.slice(7, 14);
+  // Split into week rows (7 cells each)
+  const weeks: string[][] = [];
+  for (let i = 0; i < assignments.length; i += 7) {
+    weeks.push(assignments.slice(i, i + 7));
+  }
+  // Show at most 3 weeks
+  const visibleWeeks = weeks.slice(0, 3);
 
   return (
     <View style={styles.container}>
@@ -24,25 +29,45 @@ export function MiniCalendar({ assignments, transitionDays = [] }: MiniCalendarP
           </View>
         ))}
       </View>
-      {[week1, week2].map((week, weekIdx) => (
+      {visibleWeeks.map((week, weekIdx) => (
         <View key={weekIdx} style={styles.weekRow}>
           {week.map((parent, dayIdx) => {
             const globalIdx = weekIdx * 7 + dayIdx;
             const isTransition = transitionDays.includes(globalIdx);
+            const isEmpty = parent === '';
             return (
               <View
                 key={dayIdx}
                 style={[
                   styles.dayCell,
-                  parent === 'A' ? styles.parentA : styles.parentB,
+                  isEmpty
+                    ? styles.emptyCell
+                    : parent === 'A'
+                      ? styles.parentA
+                      : styles.parentB,
                 ]}
               >
-                {isTransition && <View style={styles.transitionDot} />}
+                {isTransition && !isEmpty && <View style={styles.transitionDot} />}
               </View>
             );
           })}
         </View>
       ))}
+
+      <View style={styles.legend}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendSwatch, styles.parentA]} />
+          <Text style={styles.legendText}>You</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendSwatch, styles.parentB]} />
+          <Text style={styles.legendText}>Co-parent</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={styles.legendDot} />
+          <Text style={styles.legendText}>Handoff</Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -85,10 +110,39 @@ const styles = StyleSheet.create({
   parentB: {
     backgroundColor: colors.parentBLight,
   },
+  emptyCell: {
+    backgroundColor: 'transparent',
+  },
   transitionDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: colors.warning,
+  },
+  legend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 8,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  legendSwatch: {
+    width: 12,
+    height: 12,
+    borderRadius: 3,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.warning,
+  },
+  legendText: {
+    fontSize: 11,
+    color: colors.textSecondary,
   },
 });

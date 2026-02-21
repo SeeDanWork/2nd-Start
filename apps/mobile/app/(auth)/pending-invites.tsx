@@ -11,6 +11,7 @@ import {
 import { useRouter } from 'expo-router';
 import { colors } from '../../src/theme/colors';
 import { useAuthStore } from '../../src/stores/auth';
+import { useChatStore } from '../../src/stores/chat';
 import { familiesApi } from '../../src/api/client';
 import * as SecureStore from '../../src/utils/storage';
 
@@ -57,8 +58,15 @@ export default function PendingInvitesScreen() {
         status: data.family.status,
       };
       await SecureStore.setItemAsync('familyId', family.id);
+
+      // Start joiner onboarding BEFORE setting family (sets isOnboarding=true
+      // so AuthGate doesn't redirect away)
+      await useChatStore.getState().startJoinerOnboarding(
+        family.id,
+        family.name || 'Your Family',
+      );
       setFamily(family);
-      router.replace('/(main)/(tabs)/');
+      router.replace('/(auth)/onboarding');
     } catch (err: any) {
       Alert.alert(
         'Error',

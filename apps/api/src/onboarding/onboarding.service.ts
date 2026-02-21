@@ -1,7 +1,10 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { firstValueFrom } from 'rxjs';
 import { ConstraintType, ConstraintHardness, ConstraintOwner } from '@adcp/shared';
+import { Family } from '../entities';
 
 export interface OnboardingTemplate {
   id: string;
@@ -20,7 +23,11 @@ export interface OnboardingTemplate {
 export class OnboardingService {
   private readonly logger = new Logger(OnboardingService.name);
 
-  constructor(private readonly httpService: HttpService) {}
+  constructor(
+    private readonly httpService: HttpService,
+    @InjectRepository(Family)
+    private readonly familyRepo: Repository<Family>,
+  ) {}
 
   // ── Templates (existing) ────────────────────────────────────────
 
@@ -220,5 +227,20 @@ export class OnboardingService {
         err.response?.data?.detail || 'Explanation failed',
       );
     }
+  }
+
+  // ── Persist optimizer input ───────────────────────────────────────
+
+  async saveInput(familyId: string, input: Record<string, unknown>) {
+    const family = await this.familyRepo.findOneBy({ id: familyId });
+    if (!family) throw new NotFoundException('Family not found');
+    await this.familyRepo.update(familyId, { onboardingInput: input } as any);
+    return { saved: true };
+  }
+
+  async getSavedInput(familyId: string) {
+    const family = await this.familyRepo.findOneBy({ id: familyId });
+    if (!family) throw new NotFoundException('Family not found');
+    return { input: family.onboardingInput };
   }
 }

@@ -1,8 +1,8 @@
 export const colors = {
   parentA: '#4A90D9',
   parentB: '#7B61C1',
-  parentALight: '#E8F0FA',
-  parentBLight: '#F0EBF8',
+  parentALight: '#B3D4F5',
+  parentBLight: '#D1C4E9',
   background: '#FFFFFF',
   surface: '#F8F9FA',
   text: '#1A1A2E',

@@ -3,9 +3,10 @@ import { ChatMessage, ChipOption, ActionCard, StructuredAction, ChatContext } fr
 import { resolveIntent } from '../chat/intents';
 import { executeAction } from '../chat/executors';
 import { ONBOARDING_TURNS } from '../chat/flows/onboarding';
+import { JOINER_TURNS } from '../chat/flows/joiner';
 import { LIFECYCLE_WELCOME_MESSAGE, LIFECYCLE_CHIPS } from '../chat/flows/lifecycle';
 import { useAuthStore } from './auth';
-import { onboardingApi, familiesApi } from '../api/client';
+import { onboardingApi, familiesApi, calendarApi } from '../api/client';
 
 function makeId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -72,6 +73,14 @@ interface ChatState {
   isGenerating: boolean;
   selectedDays: number[];
 
+  // Joiner onboarding state
+  isJoinerOnboarding: boolean;
+  joinerStep: number;
+  joinerFamilyId: string | null;
+  joinerFamilyName: string | null;
+  parentAInput: Record<string, unknown> | null;
+  existingSchedulePreview: string[];
+
   addMessage: (msg: ChatMessage) => void;
   processUserInput: (text: string) => Promise<void>;
   processChipSelection: (value: string) => Promise<void>;
@@ -81,6 +90,9 @@ interface ChatState {
   startLifecycle: () => void;
   setSelectedDays: (days: number[]) => void;
   setWizardField: <K extends keyof WizardState>(key: K, value: WizardState[K]) => void;
+  startJoinerOnboarding: (familyId: string, familyName: string) => Promise<void>;
+  advanceJoinerOnboarding: () => void;
+  handleJoinerGenerate: () => Promise<void>;
   reset: () => void;
 }
 
@@ -99,20 +111,77 @@ const DEFAULT_WIZARD: WizardState = {
   inviteEmail: '',
 };
 
+/** Map mobile chip values to Python AgeBand enum values */
+const AGE_BAND_MAP: Record<string, string> = {
+  under_5: '0-4',
+  '5_to_10': '5-10',
+  '11_to_17': '11-17',
+};
+
+/** Compute next Monday as YYYY-MM-DD */
+function nextMonday(): string {
+  const today = new Date();
+  const dow = today.getDay(); // 0=Sun
+  const daysToMon = dow === 0 ? 1 : 8 - dow;
+  const start = new Date(today);
+  start.setDate(today.getDate() + daysToMon);
+  return start.toISOString().split('T')[0];
+}
+
+/**
+ * Build the payload that matches the Python OnboardingInput Pydantic model.
+ * Snake_case keys, nested parent_a / shared / school_schedule objects.
+ */
 function buildOnboardingInput(wizard: WizardState, userId: string) {
+  const startDate = nextMonday();
+  const hasDaycare = wizard.ageBands.some((b) => b === 'under_5');
+
   return {
-    userId,
-    childrenCount: wizard.childrenCount,
-    ageBands: wizard.ageBands,
-    schoolDays: wizard.schoolDays,
-    daycareDays: wizard.daycareDays,
-    exchangeLocation: wizard.exchangeLocation,
-    lockedNights: wizard.lockedNights,
-    targetSharePct: wizard.targetSharePct,
-    maxHandoffsPerWeek: wizard.maxHandoffsPerWeek,
-    maxConsecutiveAway: wizard.maxConsecutiveAway,
-    weekendPreference: wizard.weekendPreference,
+    number_of_children: wizard.childrenCount,
+    children_age_bands: wizard.ageBands.map((b) => AGE_BAND_MAP[b] || b),
+    school_schedule: {
+      school_days: wizard.schoolDays,
+    },
+    ...(hasDaycare
+      ? { daycare_schedule: { daycare_days: wizard.daycareDays } }
+      : {}),
+    preferred_exchange_location: wizard.exchangeLocation,
+    parent_a: {
+      parent_id: userId,
+      availability: {
+        locked_nights: wizard.lockedNights,
+      },
+      preferences: {
+        target_share_pct: wizard.targetSharePct,
+        max_handoffs_per_week: wizard.maxHandoffsPerWeek,
+        max_consecutive_nights_away: wizard.maxConsecutiveAway,
+        weekend_preference: wizard.weekendPreference,
+      },
+    },
+    shared: {
+      start_date: startDate,
+      horizon_days: 14,
+    },
   };
+}
+
+/** Map optimizer response options to mobile ScheduleOption[] */
+function mapOptions(data: any): ScheduleOption[] {
+  return (data.options || []).map((opt: any, i: number) => ({
+    id: opt.id || `option-${i}`,
+    profileName: opt.name || opt.profile || `Option ${i + 1}`,
+    assignments: (opt.schedule || []).map((d: any) => ({
+      date: d.date,
+      parentId: d.assigned_to,
+    })),
+    stats: {
+      parentANights: opt.stats?.parent_a_overnights ?? 7,
+      parentBNights: opt.stats?.parent_b_overnights ?? 7,
+      handoffs: opt.stats?.transitions_count ?? 2,
+      score: opt.stats?.stability_score ?? 0,
+    },
+    explanation: opt.explanation?.bullets || [],
+  }));
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -123,6 +192,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   options: [],
   isGenerating: false,
   selectedDays: [1, 2, 3, 4, 5],
+
+  // Joiner defaults
+  isJoinerOnboarding: false,
+  joinerStep: 0,
+  joinerFamilyId: null,
+  joinerFamilyName: null,
+  parentAInput: null,
+  existingSchedulePreview: [],
 
   addMessage: (msg) =>
     set((s) => ({ messages: [...s.messages, msg] })),
@@ -137,6 +214,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       messages: [botMessage(turn.message, turn.card, turn.chips)],
       isOnboarding: true,
+      isJoinerOnboarding: false,
       onboardingStep: 0,
       wizard: { ...DEFAULT_WIZARD },
       options: [],
@@ -152,6 +230,153 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isOnboarding: false,
     });
   },
+
+  // ── Joiner onboarding ────────────────────────────────────────────
+
+  startJoinerOnboarding: async (familyId: string, familyName: string) => {
+    let parentAInput: Record<string, unknown> | null = null;
+    let preview: string[] = [];
+
+    // Load Parent A's saved optimizer input
+    try {
+      const { data } = await onboardingApi.getSavedInput(familyId);
+      parentAInput = data?.input ?? null;
+    } catch {
+      // No saved input — will fall back to single-parent mode
+    }
+
+    // Load existing schedule for preview
+    try {
+      const today = new Date();
+      const end = new Date(today);
+      end.setDate(today.getDate() + 21);
+      const { data } = await calendarApi.getCalendar(
+        familyId,
+        today.toISOString().split('T')[0],
+        end.toISOString().split('T')[0],
+      );
+      // Build MiniCalendar-compatible assignments array
+      if (Array.isArray(data)) {
+        const startDow = new Date(data[0]?.date || today).getDay();
+        // Pad leading days
+        const padding = Array(startDow).fill('');
+        const cells = data.map((d: any) =>
+          d.assignedTo === 'parent_a' ? 'A' : d.assignedTo === 'parent_b' ? 'B' : '',
+        );
+        preview = [...padding, ...cells];
+        // Pad trailing to fill last week
+        while (preview.length % 7 !== 0) preview.push('');
+      }
+    } catch {
+      // No schedule yet
+    }
+
+    const turn = JOINER_TURNS[0];
+    const welcomeMsg = familyName
+      ? `Welcome! You've been invited to join "${familyName}".`
+      : turn.message;
+
+    set({
+      messages: [botMessage(welcomeMsg, turn.card, turn.chips)],
+      isOnboarding: true,
+      isJoinerOnboarding: true,
+      joinerStep: 0,
+      joinerFamilyId: familyId,
+      joinerFamilyName: familyName,
+      parentAInput,
+      existingSchedulePreview: preview,
+      wizard: { ...DEFAULT_WIZARD },
+      options: [],
+      selectedDays: [],
+    });
+  },
+
+  advanceJoinerOnboarding: () => {
+    const { joinerStep } = get();
+    const nextStep = joinerStep + 1;
+    if (nextStep >= JOINER_TURNS.length) {
+      set({ isOnboarding: false, isJoinerOnboarding: false });
+      return;
+    }
+    const turn = JOINER_TURNS[nextStep];
+
+    // Inject existing schedule preview data into the schedule_preview card
+    let card = turn.card;
+    if (card?.type === 'schedule_preview') {
+      const preview = get().existingSchedulePreview;
+      card = { ...card, data: { ...card.data, assignments: preview } };
+    }
+
+    set((s) => ({
+      joinerStep: nextStep,
+      messages: [...s.messages, botMessage(turn.message, card, turn.chips)],
+      selectedDays: turn.card?.type === 'day_selector'
+        ? (turn.card.data.selected as number[])
+        : s.selectedDays,
+    }));
+
+    if (turn.autoAdvance) {
+      get().handleJoinerGenerate();
+    }
+  },
+
+  handleJoinerGenerate: async () => {
+    set({ isGenerating: true });
+
+    try {
+      const state = get();
+      const authState = useAuthStore.getState();
+      const userId = authState.user?.id || '';
+      let input: Record<string, unknown>;
+
+      if (state.parentAInput) {
+        // Merge Parent A's saved input with Parent B's preferences
+        input = {
+          ...state.parentAInput,
+          parent_b: {
+            parent_id: userId,
+            availability: {
+              locked_nights: state.wizard.lockedNights,
+            },
+            preferences: {
+              target_share_pct: state.wizard.targetSharePct,
+              max_consecutive_nights_away: state.wizard.maxConsecutiveAway,
+            },
+          },
+          shared: {
+            ...(state.parentAInput.shared as Record<string, unknown> || {}),
+            start_date: nextMonday(),
+          },
+        };
+      } else {
+        // Fallback: build single-parent input
+        input = buildOnboardingInput(state.wizard, userId);
+      }
+
+      const { data } = await onboardingApi.generateOptions(input);
+      const options = mapOptions(data);
+
+      set({ options, isGenerating: false });
+      get().advanceJoinerOnboarding();
+    } catch {
+      set({ isGenerating: false });
+      set((s) => ({
+        messages: [
+          ...s.messages,
+          botMessage(
+            "I had trouble generating schedule options. Let's try again or skip ahead.",
+            undefined,
+            [
+              { label: 'Try again', value: 'retry_generate' },
+              { label: 'Skip to calendar', value: 'nav_calendar' },
+            ],
+          ),
+        ],
+      }));
+    }
+  },
+
+  // ── Standard onboarding ──────────────────────────────────────────
 
   advanceOnboarding: () => {
     const { onboardingStep } = get();
@@ -183,22 +408,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const input = buildOnboardingInput(state.wizard, authState.user?.id || '');
 
       const { data } = await onboardingApi.generateOptions(input);
-      const options: ScheduleOption[] = (data.options || data || []).map(
-        (opt: any, i: number) => ({
-          id: opt.id || `option-${i}`,
-          profileName: opt.profileName || opt.profile_name || `Option ${i + 1}`,
-          assignments: opt.assignments || [],
-          stats: {
-            parentANights: opt.stats?.parentANights ?? opt.stats?.parent_a_nights ?? 7,
-            parentBNights: opt.stats?.parentBNights ?? opt.stats?.parent_b_nights ?? 7,
-            handoffs: opt.stats?.handoffs ?? opt.stats?.transitions ?? 2,
-            score: opt.stats?.score ?? opt.stats?.total_score ?? 0,
-          },
-          explanation: opt.explanation || opt.bullets || [],
-        }),
-      );
+      const options = mapOptions(data);
 
       set({ options, isGenerating: false });
+
+      // Fire-and-forget: save optimizer input to family for Parent B later
+      const familyId = authState.family?.id;
+      if (familyId) {
+        onboardingApi.saveInput(familyId, input).catch(() => {});
+      }
+
       get().advanceOnboarding();
     } catch {
       set({ isGenerating: false });
@@ -255,7 +474,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   processChipSelection: async (value: string) => {
     const state = get();
 
-    if (state.isOnboarding) {
+    if (state.isJoinerOnboarding) {
+      await handleJoinerChip(value, get, set);
+    } else if (state.isOnboarding) {
       await handleOnboardingChip(value, get, set);
     } else {
       await get().processUserInput(value);
@@ -271,8 +492,85 @@ export const useChatStore = create<ChatState>((set, get) => ({
       options: [],
       isGenerating: false,
       selectedDays: [1, 2, 3, 4, 5],
+      isJoinerOnboarding: false,
+      joinerStep: 0,
+      joinerFamilyId: null,
+      joinerFamilyName: null,
+      parentAInput: null,
+      existingSchedulePreview: [],
     }),
 }));
+
+// ── Joiner chip handler ─────────────────────────────────────────────
+
+async function handleJoinerChip(
+  value: string,
+  get: () => ChatState,
+  set: (fn: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void,
+) {
+  const state = get();
+  const step = state.joinerStep;
+  const turn = JOINER_TURNS[step];
+
+  const chipLabel =
+    turn.chips?.find((c) => c.value === value)?.label || value;
+  set((s) => ({ messages: [...s.messages, userMessage(chipLabel)] }));
+
+  switch (turn.actionType) {
+    case 'joiner_welcome':
+      get().advanceJoinerOnboarding();
+      break;
+
+    case 'joiner_review_schedule':
+      get().advanceJoinerOnboarding();
+      break;
+
+    case 'set_locked_nights_b':
+      if (value === 'none') {
+        set((s) => ({
+          wizard: { ...s.wizard, lockedNights: [] },
+        }));
+      } else {
+        set((s) => ({
+          wizard: { ...s.wizard, lockedNights: s.selectedDays },
+        }));
+      }
+      get().advanceJoinerOnboarding();
+      break;
+
+    case 'set_target_split_b':
+      set((s) => ({
+        wizard: { ...s.wizard, targetSharePct: parseInt(value, 10) || 50 },
+      }));
+      get().advanceJoinerOnboarding();
+      break;
+
+    case 'set_max_consecutive_b':
+      set((s) => ({
+        wizard: { ...s.wizard, maxConsecutiveAway: parseInt(value, 10) || 5 },
+      }));
+      get().advanceJoinerOnboarding();
+      break;
+
+    case 'generate_joiner_options':
+      // Auto-advance handles this
+      break;
+
+    case 'select_joiner_schedule':
+      // Handled by ChatScreen handleSelectSchedule
+      break;
+
+    case 'joiner_complete':
+      set({ isOnboarding: false, isJoinerOnboarding: false });
+      break;
+
+    default:
+      get().advanceJoinerOnboarding();
+      break;
+  }
+}
+
+// ── Original onboarding chip handler ────────────────────────────────
 
 async function handleOnboardingChip(
   value: string,

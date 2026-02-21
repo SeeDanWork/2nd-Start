@@ -65,37 +65,24 @@ export function ScheduleOptionCard({ option, onSelect, onDetail }: ScheduleOptio
 
 function buildPattern(option: ScheduleOption): string[] {
   if (option.assignments.length >= 14) {
-    return option.assignments.slice(0, 14).map((a: any) =>
-      typeof a === 'string' ? a : a.parentId?.includes('B') ? 'B' : 'A',
-    );
+    // Determine start day-of-week from the first assignment's date
+    const firstDate = new Date(option.assignments[0].date + 'T00:00:00');
+    const startDow = firstDate.getDay(); // 0=Sun..6=Sat
+
+    // Build a 14-cell grid aligned to Sunday starts
+    // Pad the front if the schedule doesn't start on Sunday
+    const grid: string[] = new Array(startDow).fill('');
+    for (const a of option.assignments) {
+      const parent = (a.parentId || '').toLowerCase().includes('b') ? 'B' : 'A';
+      grid.push(parent);
+    }
+    // Pad the end to fill the last week row
+    while (grid.length % 7 !== 0) {
+      grid.push('');
+    }
+    return grid.slice(0, 21); // up to 3 weeks if needed
   }
-  // Fallback: generate an alternating pattern based on profile name
-  const name = option.profileName.toLowerCase();
-  if (name.includes('week-on')) {
-    return [
-      'A', 'A', 'A', 'A', 'A', 'A', 'A',
-      'B', 'B', 'B', 'B', 'B', 'B', 'B',
-    ];
-  }
-  if (name.includes('2-2-3') || name.includes('223')) {
-    return [
-      'A', 'A', 'B', 'B', 'A', 'A', 'A',
-      'B', 'B', 'A', 'A', 'B', 'B', 'B',
-    ];
-  }
-  if (name.includes('3-4-4-3') || name.includes('3443')) {
-    return [
-      'A', 'A', 'A', 'B', 'B', 'B', 'B',
-      'A', 'A', 'A', 'A', 'B', 'B', 'B',
-    ];
-  }
-  if (name.includes('5-2')) {
-    return [
-      'A', 'A', 'A', 'A', 'A', 'B', 'B',
-      'A', 'A', 'A', 'A', 'A', 'B', 'B',
-    ];
-  }
-  // Default alternating
+  // Fallback: alternating pattern
   return [
     'A', 'A', 'B', 'B', 'A', 'A', 'B',
     'B', 'A', 'A', 'B', 'B', 'A', 'A',

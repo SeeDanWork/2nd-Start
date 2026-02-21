@@ -11,6 +11,7 @@ import { colors } from '../../theme/colors';
 import { ChatMessage } from '../../chat/types';
 import { ChipRow } from './ChipRow';
 import { DayChipRow } from './DayChipRow';
+import { MiniCalendar } from './MiniCalendar';
 import { ScheduleOptionCard } from './ScheduleOptionCard';
 import { OnboardingChecklist } from './OnboardingChecklist';
 import { useChatStore, ScheduleOption } from '../../stores/chat';
@@ -98,6 +99,18 @@ function CardRenderer({
 
     case 'loading':
       return <LoadingCard phases={card.data.phases as string[]} />;
+
+    case 'schedule_preview': {
+      const assignments = (card.data.assignments as string[]) || [];
+      if (assignments.length === 0) {
+        return (
+          <View style={cardStyles.info}>
+            <Text style={cardStyles.infoText}>No existing schedule to preview.</Text>
+          </View>
+        );
+      }
+      return <MiniCalendar assignments={assignments} />;
+    }
 
     case 'schedule_option':
       return (
