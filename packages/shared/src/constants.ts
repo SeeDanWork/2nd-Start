@@ -55,7 +55,7 @@ export const MAX_REASON_NOTE_LENGTH = 200;
 export const MAGIC_LINK_TTL_MINUTES = 15;
 export const INVITE_TOKEN_TTL_DAYS = 7;
 export const MAGIC_LINK_RATE_LIMIT_PER_HOUR = 5;
-export const JWT_ACCESS_TOKEN_TTL = '1h';
+export const JWT_ACCESS_TOKEN_TTL = '5h';
 export const JWT_REFRESH_TOKEN_TTL = '30d';
 
 // ─── Rate Limits ────────────────────────────────────────────
