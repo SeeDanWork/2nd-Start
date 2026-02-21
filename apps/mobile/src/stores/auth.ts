@@ -14,6 +14,13 @@ interface Family {
   status: string;
 }
 
+interface PendingInvite {
+  membershipId: string;
+  familyId: string;
+  familyName: string | null;
+  inviterName: string | null;
+}
+
 interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -21,9 +28,13 @@ interface AuthState {
   family: Family | null;
   accessToken: string | null;
   parentNames: { parent_a: string; parent_b: string };
+  pendingInvite: PendingInvite | null;
 
   setAuth: (user: User, accessToken: string) => void;
   setFamily: (family: Family) => void;
+  setPendingInvite: (invite: PendingInvite | null) => void;
+  checkForPendingInvites: () => Promise<void>;
+  acceptPendingInvite: () => Promise<void>;
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
   sendMagicLink: (email: string) => Promise<{ message: string }>;
@@ -42,6 +53,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   family: null,
   accessToken: null,
   parentNames: { ...DEFAULT_PARENT_NAMES },
+  pendingInvite: null,
 
   setAuth: (user, accessToken) =>
     set({ isAuthenticated: true, user, accessToken }),
@@ -49,6 +61,42 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setFamily: (family) => {
     set({ family });
     if (family) get().fetchParentNames(family.id);
+  },
+
+  setPendingInvite: (invite) => set({ pendingInvite: invite }),
+
+  checkForPendingInvites: async () => {
+    try {
+      const { data } = await familiesApi.getMyInvites();
+      const list = Array.isArray(data) ? data : [];
+      if (list.length > 0) {
+        const inv = list[0];
+        set({
+          pendingInvite: {
+            membershipId: inv.membershipId,
+            familyId: inv.familyId,
+            familyName: inv.familyName,
+            inviterName: inv.inviterName,
+          },
+        });
+      }
+    } catch {
+      // Silently ignore — not critical
+    }
+  },
+
+  acceptPendingInvite: async () => {
+    const invite = get().pendingInvite;
+    if (!invite) return;
+    const { data } = await familiesApi.acceptInviteById(invite.membershipId);
+    const family: Family = {
+      id: data.family.id,
+      name: data.family.name,
+      status: data.family.status,
+    };
+    await SecureStore.setItemAsync('familyId', family.id);
+    set({ family, pendingInvite: null });
+    get().fetchParentNames(family.id);
   },
 
   logout: async () => {
@@ -61,6 +109,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       family: null,
       accessToken: null,
       parentNames: { ...DEFAULT_PARENT_NAMES },
+      pendingInvite: null,
     });
   },
 

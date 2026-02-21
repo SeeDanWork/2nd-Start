@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -26,34 +26,73 @@ interface Invite {
   inviterEmail: string | null;
 }
 
+const POLL_INTERVAL_MS = 5_000;
+const MAX_POLL_DURATION_MS = 60_000;
+
 export default function PendingInvitesScreen() {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState(false);
   const [accepting, setAccepting] = useState<string | null>(null);
   const { setFamily } = useAuthStore();
   const router = useRouter();
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startTimeRef = useRef<number>(Date.now());
 
-  useEffect(() => {
-    loadInvites();
-  }, []);
-
-  const loadInvites = async () => {
+  const loadInvites = useCallback(async (opts?: { showSpinner?: boolean }) => {
+    if (opts?.showSpinner) setChecking(true);
     try {
       const { data } = await familiesApi.getMyInvites();
       const list = Array.isArray(data) ? data : [];
-      if (list.length === 0) {
-        // No pending invites — skip straight to onboarding
-        router.replace('/(auth)/onboarding');
-        return;
-      }
       setInvites(list);
+      setError(false);
+      // Stop polling once invites are found
+      if (list.length > 0) stopPolling();
     } catch {
-      // Failed to load invites — go to onboarding
-      router.replace('/(auth)/onboarding');
-      return;
+      setError(true);
     } finally {
       setLoading(false);
+      setChecking(false);
     }
+  }, []);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  // Initial load + polling
+  useEffect(() => {
+    startTimeRef.current = Date.now();
+    loadInvites();
+
+    pollRef.current = setInterval(() => {
+      // Stop after max duration
+      if (Date.now() - startTimeRef.current > MAX_POLL_DURATION_MS) {
+        stopPolling();
+        return;
+      }
+      loadInvites();
+    }, POLL_INTERVAL_MS);
+
+    return () => stopPolling();
+  }, [loadInvites, stopPolling]);
+
+  const handleCheckAgain = () => {
+    // Reset polling timer and manually check
+    startTimeRef.current = Date.now();
+    stopPolling();
+    loadInvites({ showSpinner: true });
+    pollRef.current = setInterval(() => {
+      if (Date.now() - startTimeRef.current > MAX_POLL_DURATION_MS) {
+        stopPolling();
+        return;
+      }
+      loadInvites();
+    }, POLL_INTERVAL_MS);
   };
 
   const handleAccept = async (invite: Invite) => {
@@ -138,13 +177,26 @@ export default function PendingInvitesScreen() {
       ) : (
         <>
           <Text style={styles.subtitle}>
-            No pending invites found. Ask your co-parent to send you an invite, or create your own family.
+            {error
+              ? 'Could not check for invites. Tap below to try again.'
+              : 'No pending invites found. If your co-parent already sent an invite, it may take a moment to arrive.'}
           </Text>
+          <TouchableOpacity
+            style={[styles.checkAgainButton, checking && styles.buttonDisabled]}
+            onPress={handleCheckAgain}
+            disabled={checking}
+          >
+            {checking ? (
+              <ActivityIndicator color={colors.parentA} />
+            ) : (
+              <Text style={styles.checkAgainButtonText}>Check Again</Text>
+            )}
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.createButton}
             onPress={() => router.replace('/(auth)/onboarding')}
           >
-            <Text style={styles.createButtonText}>Create a Family</Text>
+            <Text style={styles.createButtonText}>Create a Family Instead</Text>
           </TouchableOpacity>
         </>
       )}
@@ -220,6 +272,21 @@ const styles = StyleSheet.create({
   acceptButtonText: {
     color: '#FFFFFF',
     fontSize: 15,
+    fontWeight: '600',
+  },
+  checkAgainButton: {
+    borderWidth: 2,
+    borderColor: colors.parentA,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    marginBottom: 12,
+    minWidth: 200,
+  },
+  checkAgainButtonText: {
+    color: colors.parentA,
+    fontSize: 16,
     fontWeight: '600',
   },
   createButton: {

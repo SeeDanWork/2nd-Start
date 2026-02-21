@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { View, Text, ActivityIndicator, StyleSheet, Animated } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet, Alert } from 'react-native';
 import { useAuthStore } from '../src/stores/auth';
 import { useSocketStore } from '../src/stores/socket';
 import { useChatStore } from '../src/stores/chat';
@@ -39,11 +39,12 @@ function NotificationBanner() {
 }
 
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, family } = useAuthStore();
+  const { isAuthenticated, isLoading, family, pendingInvite, checkForPendingInvites, acceptPendingInvite, setPendingInvite } = useAuthStore();
   const isOnboarding = useChatStore((s) => s.isOnboarding);
   const segments = useSegments();
   const router = useRouter();
   const { connect, joinFamily, disconnect } = useSocketStore();
+  const inviteCheckDone = useRef(false);
 
   useEffect(() => {
     if (isLoading) return;
@@ -58,6 +59,44 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       router.replace('/(main)/(tabs)/');
     }
   }, [isAuthenticated, isLoading, family, segments, isOnboarding]);
+
+  // One-time check: if user already has a family, see if they also have a pending invite
+  useEffect(() => {
+    if (isAuthenticated && family && !isLoading && !inviteCheckDone.current) {
+      inviteCheckDone.current = true;
+      checkForPendingInvites();
+    }
+  }, [isAuthenticated, family, isLoading]);
+
+  // Show alert when a pending invite is detected for a user who already has a family
+  useEffect(() => {
+    if (!pendingInvite || !family) return;
+
+    const inviterLabel = pendingInvite.inviterName || 'your co-parent';
+    const familyLabel = pendingInvite.familyName || 'their family';
+
+    Alert.alert(
+      'Pending Invitation',
+      `${inviterLabel} invited you to join "${familyLabel}". Would you like to switch to their family?`,
+      [
+        {
+          text: 'Stay in Current Family',
+          style: 'cancel',
+          onPress: () => setPendingInvite(null),
+        },
+        {
+          text: 'Switch Family',
+          onPress: async () => {
+            try {
+              await acceptPendingInvite();
+            } catch {
+              Alert.alert('Error', 'Failed to switch families. Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  }, [pendingInvite, family]);
 
   // Connect socket when authenticated
   useEffect(() => {
