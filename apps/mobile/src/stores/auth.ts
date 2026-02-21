@@ -34,7 +34,7 @@ interface AuthState {
   setFamily: (family: Family) => void;
   setPendingInvite: (invite: PendingInvite | null) => void;
   checkForPendingInvites: () => Promise<void>;
-  acceptPendingInvite: () => Promise<void>;
+  acceptPendingInvite: () => Promise<Family | null>;
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
   sendMagicLink: (email: string) => Promise<{ message: string }>;
@@ -87,7 +87,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   acceptPendingInvite: async () => {
     const invite = get().pendingInvite;
-    if (!invite) return;
+    if (!invite) return null;
     const { data } = await familiesApi.acceptInviteById(invite.membershipId);
     const family: Family = {
       id: data.family.id,
@@ -95,8 +95,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       status: data.family.status,
     };
     await SecureStore.setItemAsync('familyId', family.id);
-    set({ family, pendingInvite: null });
-    get().fetchParentNames(family.id);
+    set({ pendingInvite: null });
+    // NOTE: Does NOT set family state — caller must start joiner onboarding
+    // BEFORE calling setFamily(), so AuthGate doesn't redirect prematurely.
+    return family;
   },
 
   logout: async () => {

@@ -48,10 +48,14 @@ function NotificationBanner() {
 }
 
 function InviteBanner() {
-  const { pendingInvite, acceptPendingInvite, setPendingInvite } = useAuthStore();
+  const { pendingInvite, acceptPendingInvite, setPendingInvite, setFamily } =
+    useAuthStore();
+  const isOnboarding = useChatStore((s) => s.isOnboarding);
+  const router = useRouter();
   const [accepting, setAccepting] = useState(false);
 
-  if (!pendingInvite) return null;
+  // Don't interrupt onboarding — toast appears after it finishes
+  if (!pendingInvite || isOnboarding) return null;
 
   const inviterLabel = pendingInvite.inviterName || 'Your co-parent';
   const familyLabel = pendingInvite.familyName || 'their family';
@@ -59,7 +63,16 @@ function InviteBanner() {
   const handleAccept = async () => {
     setAccepting(true);
     try {
-      await acceptPendingInvite();
+      const family = await acceptPendingInvite();
+      if (family) {
+        // Start joiner onboarding BEFORE setting family so AuthGate
+        // sees isOnboarding=true and doesn't redirect to main tabs
+        await useChatStore
+          .getState()
+          .startJoinerOnboarding(family.id, family.name || 'Your Family');
+        setFamily(family);
+        router.replace('/(auth)/onboarding');
+      }
     } catch {
       setAccepting(false);
     }
@@ -144,7 +157,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     }, INVITE_POLL_INTERVAL_MS);
 
     return () => stopPolling();
-  }, [isAuthenticated, isLoading]);
+  }, [isAuthenticated, isLoading, isOnboarding]);
 
   // Connect socket when authenticated
   useEffect(() => {
