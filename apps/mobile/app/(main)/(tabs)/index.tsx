@@ -10,6 +10,7 @@ import {
 import { useRouter } from 'expo-router';
 import { colors } from '../../../src/theme/colors';
 import { useAuthStore } from '../../../src/stores/auth';
+import { useParentLabel, useParentNames } from '../../../src/hooks/useParentName';
 import { metricsApi, guardrailsApi } from '../../../src/api/client';
 
 interface TodayData {
@@ -33,6 +34,8 @@ interface TodayData {
 export default function HomeScreen() {
   const { user, family } = useAuthStore();
   const router = useRouter();
+  const parentLabel = useParentLabel();
+  const parentNames = useParentNames();
   const [data, setData] = useState<TodayData | null>(null);
   const [loading, setLoading] = useState(true);
   const [emergency, setEmergency] = useState<any>(null);
@@ -60,8 +63,6 @@ export default function HomeScreen() {
     }
   };
 
-  const parentLabel = (p: string) =>
-    p === 'parent_a' ? 'Parent A' : 'Parent B';
   const parentColor = (p: string) =>
     p === 'parent_a' ? colors.parentA : colors.parentB;
 
@@ -151,10 +152,10 @@ export default function HomeScreen() {
           </View>
           <View style={styles.fairnessLabels}>
             <Text style={[styles.fairnessCount, { color: colors.parentA }]}>
-              A: {data.fairness.parentAOvernights}
+              {parentNames.parent_a}: {data.fairness.parentAOvernights}
             </Text>
             <Text style={[styles.fairnessCount, { color: colors.parentB }]}>
-              B: {data.fairness.parentBOvernights}
+              {parentNames.parent_b}: {data.fairness.parentBOvernights}
             </Text>
           </View>
           <View style={[
@@ -182,11 +183,11 @@ export default function HomeScreen() {
             </View>
             <View style={styles.stabilityItem}>
               <Text style={styles.stabilityValue}>{data.stability.maxConsecutiveA}</Text>
-              <Text style={styles.stabilityLabel}>Max A streak</Text>
+              <Text style={styles.stabilityLabel}>{parentNames.parent_a} streak</Text>
             </View>
             <View style={styles.stabilityItem}>
               <Text style={styles.stabilityValue}>{data.stability.maxConsecutiveB}</Text>
-              <Text style={styles.stabilityLabel}>Max B streak</Text>
+              <Text style={styles.stabilityLabel}>{parentNames.parent_b} streak</Text>
             </View>
           </View>
         </View>

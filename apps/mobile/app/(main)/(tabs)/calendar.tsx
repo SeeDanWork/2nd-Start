@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { colors } from '../../../src/theme/colors';
 import { useAuthStore } from '../../../src/stores/auth';
+import { useParentLabel, useParentNames } from '../../../src/hooks/useParentName';
 import { calendarApi } from '../../../src/api/client';
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -47,6 +48,8 @@ function formatMonth(year: number, month: number): string {
 
 export default function CalendarScreen() {
   const { family } = useAuthStore();
+  const parentLabel = useParentLabel();
+  const parentNames = useParentNames();
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [month, setMonth] = useState(() => new Date().getMonth());
   const [calendarData, setCalendarData] = useState<Map<string, CalendarDay>>(new Map());
@@ -159,11 +162,11 @@ export default function CalendarScreen() {
       <View style={styles.legend}>
         <View style={styles.legendItem}>
           <View style={[styles.legendSwatch, { backgroundColor: colors.parentALight }]} />
-          <Text style={styles.legendText}>Parent A</Text>
+          <Text style={styles.legendText}>{parentNames.parent_a}</Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendSwatch, { backgroundColor: colors.parentBLight }]} />
-          <Text style={styles.legendText}>Parent B</Text>
+          <Text style={styles.legendText}>{parentNames.parent_b}</Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendSwatch, { backgroundColor: colors.warning }]} />
@@ -182,7 +185,7 @@ export default function CalendarScreen() {
                 { backgroundColor: selectedDay.assignment.assignedTo === 'parent_a' ? colors.parentA : colors.parentB },
               ]} />
               <Text style={styles.detailText}>
-                Overnight: {selectedDay.assignment.assignedTo === 'parent_a' ? 'Parent A' : 'Parent B'}
+                Overnight: {parentLabel(selectedDay.assignment.assignedTo)}
               </Text>
             </View>
           )}
@@ -195,7 +198,7 @@ export default function CalendarScreen() {
           {selectedDay.handoffs.map((h, idx) => (
             <View key={idx} style={styles.detailRow}>
               <Text style={styles.detailText}>
-                {h.type}: {h.fromParent} → {h.toParent}
+                {h.type}: {parentLabel(h.fromParent)} → {parentLabel(h.toParent)}
               </Text>
             </View>
           ))}

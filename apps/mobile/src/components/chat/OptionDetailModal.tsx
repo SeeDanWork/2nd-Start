@@ -9,6 +9,7 @@ import {
   Pressable,
 } from 'react-native';
 import { colors } from '../../theme/colors';
+import { useParentNames } from '../../hooks/useParentName';
 import { MiniCalendar } from './MiniCalendar';
 import { ScheduleOption } from '../../stores/chat';
 
@@ -25,6 +26,8 @@ export function OptionDetailModal({
   onClose,
   onSelect,
 }: OptionDetailModalProps) {
+  const parentNames = useParentNames();
+
   if (!option) return null;
 
   // Build pattern from assignments (same logic as ScheduleOptionCard)
@@ -61,11 +64,11 @@ export function OptionDetailModal({
 
             <View style={styles.statsTable}>
               <View style={styles.statsRow}>
-                <Text style={styles.statsLabel}>Parent A nights</Text>
+                <Text style={styles.statsLabel}>{parentNames.parent_a} nights</Text>
                 <Text style={styles.statsValue}>{option.stats.parentANights}</Text>
               </View>
               <View style={styles.statsRow}>
-                <Text style={styles.statsLabel}>Parent B nights</Text>
+                <Text style={styles.statsLabel}>{parentNames.parent_b} nights</Text>
                 <Text style={styles.statsValue}>{option.stats.parentBNights}</Text>
               </View>
               <View style={styles.statsRow}>

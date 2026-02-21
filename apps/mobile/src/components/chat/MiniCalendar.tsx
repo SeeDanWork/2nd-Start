@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { colors } from '../../theme/colors';
+import { useParentNames } from '../../hooks/useParentName';
 
 const DAY_HEADERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -12,6 +13,8 @@ interface MiniCalendarProps {
 }
 
 export function MiniCalendar({ assignments, transitionDays = [] }: MiniCalendarProps) {
+  const parentNames = useParentNames();
+
   // Split into week rows (7 cells each)
   const weeks: string[][] = [];
   for (let i = 0; i < assignments.length; i += 7) {
@@ -57,11 +60,11 @@ export function MiniCalendar({ assignments, transitionDays = [] }: MiniCalendarP
       <View style={styles.legend}>
         <View style={styles.legendItem}>
           <View style={[styles.legendSwatch, styles.parentA]} />
-          <Text style={styles.legendText}>You</Text>
+          <Text style={styles.legendText}>{parentNames.parent_a}</Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendSwatch, styles.parentB]} />
-          <Text style={styles.legendText}>Co-parent</Text>
+          <Text style={styles.legendText}>{parentNames.parent_b}</Text>
         </View>
         <View style={styles.legendItem}>
           <View style={styles.legendDot} />

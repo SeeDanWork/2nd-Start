@@ -40,9 +40,17 @@ export default function PendingInvitesScreen() {
   const loadInvites = async () => {
     try {
       const { data } = await familiesApi.getMyInvites();
-      setInvites(data);
+      const list = Array.isArray(data) ? data : [];
+      if (list.length === 0) {
+        // No pending invites — skip straight to onboarding
+        router.replace('/(auth)/onboarding');
+        return;
+      }
+      setInvites(list);
     } catch {
-      // Failed to load invites
+      // Failed to load invites — go to onboarding
+      router.replace('/(auth)/onboarding');
+      return;
     } finally {
       setLoading(false);
     }

@@ -20,6 +20,7 @@ interface AuthState {
   user: User | null;
   family: Family | null;
   accessToken: string | null;
+  parentNames: { parent_a: string; parent_b: string };
 
   setAuth: (user: User, accessToken: string) => void;
   setFamily: (family: Family) => void;
@@ -29,7 +30,10 @@ interface AuthState {
   verifyMagicLink: (token: string) => Promise<{ isNewUser: boolean }>;
   restoreFamily: () => Promise<Family | null>;
   createFamily: (name: string, timezone: string) => Promise<Family>;
+  fetchParentNames: (familyId: string) => Promise<void>;
 }
+
+const DEFAULT_PARENT_NAMES = { parent_a: 'Parent A', parent_b: 'Parent B' };
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
@@ -37,11 +41,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   family: null,
   accessToken: null,
+  parentNames: { ...DEFAULT_PARENT_NAMES },
 
   setAuth: (user, accessToken) =>
     set({ isAuthenticated: true, user, accessToken }),
 
-  setFamily: (family) => set({ family }),
+  setFamily: (family) => {
+    set({ family });
+    if (family) get().fetchParentNames(family.id);
+  },
 
   logout: async () => {
     await SecureStore.deleteItemAsync('accessToken');
@@ -52,6 +60,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user: null,
       family: null,
       accessToken: null,
+      parentNames: { ...DEFAULT_PARENT_NAMES },
     });
   },
 
@@ -72,6 +81,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         try {
           const { data: family } = await familiesApi.getFamily(familyId);
           set({ family });
+          get().fetchParentNames(familyId);
         } catch {
           // Family not found, clear stored ID and try API lookup
           await SecureStore.deleteItemAsync('familyId');
@@ -117,6 +127,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         };
         await SecureStore.setItemAsync('familyId', family.id);
         set({ family });
+        get().fetchParentNames(family.id);
         return family;
       }
     } catch {
@@ -133,7 +144,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       status: data.status,
     };
     await SecureStore.setItemAsync('familyId', family.id);
-    set({ family });
+    const currentUser = get().user;
+    set({
+      family,
+      parentNames: {
+        parent_a: currentUser?.displayName || 'Parent A',
+        parent_b: 'Parent B',
+      },
+    });
     return family;
+  },
+
+  fetchParentNames: async (familyId: string) => {
+    try {
+      const { data } = await familiesApi.getMembers(familyId);
+      const members = Array.isArray(data) ? data : data.members || [];
+      const names = { ...DEFAULT_PARENT_NAMES };
+      for (const m of members) {
+        const role = m.role as string;
+        if (role === 'parent_a' || role === 'parent_b') {
+          const displayName = m.user?.displayName;
+          if (displayName) names[role] = displayName;
+        }
+      }
+      set({ parentNames: names });
+    } catch {
+      // Keep defaults on error
+    }
   },
 }));

@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { colors } from '../../../src/theme/colors';
 import { useAuthStore } from '../../../src/stores/auth';
+import { useParentLabel } from '../../../src/hooks/useParentName';
 import { requestsApi, proposalsApi } from '../../../src/api/client';
 
 const REQUEST_TYPES = [
@@ -52,6 +53,7 @@ interface ProposalOption {
 
 export default function RequestsScreen() {
   const { user, family } = useAuthStore();
+  const parentLabel = useParentLabel();
   const [requests, setRequests] = useState<RequestItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -424,7 +426,7 @@ export default function RequestsScreen() {
                     <View style={styles.diffList}>
                       {opt.calendarDiff.slice(0, 3).map((d, i) => (
                         <Text key={i} style={styles.diffItem}>
-                          {d.date}: {d.old_parent === 'parent_a' ? 'A' : 'B'} → {d.new_parent === 'parent_a' ? 'A' : 'B'}
+                          {d.date}: {parentLabel(d.old_parent)} → {parentLabel(d.new_parent)}
                         </Text>
                       ))}
                       {opt.calendarDiff.length > 3 && (

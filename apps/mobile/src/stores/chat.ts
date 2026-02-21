@@ -256,12 +256,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
         end.toISOString().split('T')[0],
       );
       // Build MiniCalendar-compatible assignments array
-      if (Array.isArray(data)) {
-        const startDow = new Date(data[0]?.date || today).getDay();
+      const days = Array.isArray(data) ? data : data.days || [];
+      if (days.length > 0) {
+        const startDow = new Date(days[0]?.date || today).getDay();
         // Pad leading days
         const padding = Array(startDow).fill('');
-        const cells = data.map((d: any) =>
-          d.assignedTo === 'parent_a' ? 'A' : d.assignedTo === 'parent_b' ? 'B' : '',
+        const cells = days.map((d: any) =>
+          d.assignment?.assignedTo === 'parent_a' ? 'A'
+            : d.assignment?.assignedTo === 'parent_b' ? 'B'
+            : '',
         );
         preview = [...padding, ...cells];
         // Pad trailing to fill last week

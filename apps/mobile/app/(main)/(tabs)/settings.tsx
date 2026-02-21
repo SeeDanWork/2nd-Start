@@ -13,6 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { colors } from '../../../src/theme/colors';
 import { useAuthStore } from '../../../src/stores/auth';
+import { useParentLabel, useParentNames } from '../../../src/hooks/useParentName';
 import { constraintsApi, calendarApi, guardrailsApi, sharingApi, familiesApi } from '../../../src/api/client';
 import * as SecureStore from '../../../src/utils/storage';
 
@@ -30,6 +31,8 @@ interface ConstraintData {
 export default function SettingsScreen() {
   const router = useRouter();
   const { family, logout, user, setFamily } = useAuthStore();
+  const parentLabel = useParentLabel();
+  const parentNames = useParentNames();
   const [constraints, setConstraints] = useState<ConstraintData[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -216,15 +219,12 @@ export default function SettingsScreen() {
         const days = (c.parameters.daysOfWeek as number[])
           .map((d) => DAY_LABELS[d])
           .join(', ');
-        const parent = c.parameters.parent === 'parent_a' ? 'Parent A' : 'Parent B';
-        return `${parent} locked on ${days}`;
+        return `${parentLabel(c.parameters.parent)} locked on ${days}`;
       }
-      case 'max_consecutive': {
-        const parent = c.parameters.parent === 'parent_a' ? 'Parent A' : 'Parent B';
-        return `${parent} max ${c.parameters.maxNights} consecutive nights`;
-      }
+      case 'max_consecutive':
+        return `${parentLabel(c.parameters.parent)} max ${c.parameters.maxNights} consecutive nights`;
       case 'weekend_split':
-        return `Weekend split: ${c.parameters.targetPctParentA}% Parent A`;
+        return `Weekend split: ${c.parameters.targetPctParentA}% ${parentNames.parent_a}`;
       case 'max_transitions_per_week':
         return `Max ${c.parameters.maxTransitions} transitions/week`;
       default:
@@ -288,7 +288,7 @@ export default function SettingsScreen() {
               <Text style={[
                 styles.toggleText,
                 lockParent === 'parent_a' && styles.toggleTextActive,
-              ]}>Parent A</Text>
+              ]}>{parentNames.parent_a}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[
@@ -300,7 +300,7 @@ export default function SettingsScreen() {
               <Text style={[
                 styles.toggleText,
                 lockParent === 'parent_b' && styles.toggleTextActive,
-              ]}>Parent B</Text>
+              ]}>{parentNames.parent_b}</Text>
             </TouchableOpacity>
           </View>
 
@@ -347,11 +347,11 @@ export default function SettingsScreen() {
         onPress={() => {
           Alert.alert('Max Consecutive Nights', 'Set for which parent?', [
             {
-              text: 'Parent A (5 nights)',
+              text: `${parentNames.parent_a} (5 nights)`,
               onPress: () => addMaxConsecutive('parent_a', 5),
             },
             {
-              text: 'Parent B (5 nights)',
+              text: `${parentNames.parent_b} (5 nights)`,
               onPress: () => addMaxConsecutive('parent_b', 5),
             },
             { text: 'Cancel', style: 'cancel' },
