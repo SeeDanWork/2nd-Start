@@ -1,0 +1,82 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 20,
+    "key": "time-bounded-decision",
+    "title": "Time-bounded decision",
+    "category": "Exception Requests",
+    "implemented": true
+  },
+  "params": {
+    "requestDate": "2026-03-10",
+    "deadlineHours": 24
+  },
+  "messages": [
+    {
+      "messageId": "msg-020-001",
+      "scenarioNumber": 20,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-b-001"
+        ]
+      },
+      "urgency": "normal",
+      "expiresAt": "2026-03-09T10:00:00.000Z",
+      "text": "A schedule change request needs your response within 24 hours. If no response is received, the original schedule will remain in effect.",
+      "sections": [
+        {
+          "title": "Request",
+          "bullets": [
+            "Alex requests a swap on 2026-03-10",
+            "Deadline: 24 hours from now",
+            "No response = original schedule stands (no change)"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "approve",
+          "label": "Approve",
+          "style": "primary",
+          "payload": {}
+        },
+        {
+          "actionId": "decline",
+          "label": "Decline",
+          "style": "danger",
+          "payload": {}
+        }
+      ]
+    }
+  ],
+  "stateTransitions": [
+    "approve",
+    "decline"
+  ],
+  "timeoutMessages": [
+    {
+      "messageId": "msg-020-001",
+      "scenarioNumber": 20,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001",
+          "parent-b-001"
+        ]
+      },
+      "urgency": "low",
+      "text": "The response deadline has passed. The original schedule remains unchanged.",
+      "actions": [
+        {
+          "actionId": "acknowledge-timeout",
+          "label": "OK",
+          "style": "secondary",
+          "payload": {}
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

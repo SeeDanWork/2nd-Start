@@ -1,0 +1,98 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 17,
+    "key": "counterproposal-selection",
+    "title": "Counterproposal selection",
+    "category": "Exception Requests",
+    "implemented": true
+  },
+  "params": {
+    "originalDate": "2026-03-10"
+  },
+  "messages": [
+    {
+      "messageId": "msg-017-001",
+      "scenarioNumber": 17,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001"
+        ]
+      },
+      "urgency": "normal",
+      "text": "Jordan couldn't accommodate the original date but suggested alternatives. Choose one or decline all.",
+      "sections": [
+        {
+          "title": "Alternative 1",
+          "bullets": [
+            "Swap March 8 instead",
+            "Dates: 2026-03-08"
+          ]
+        },
+        {
+          "title": "Alternative 2",
+          "bullets": [
+            "Swap March 12 instead",
+            "Dates: 2026-03-12"
+          ]
+        },
+        {
+          "title": "Alternative 3",
+          "bullets": [
+            "Split: evening only on March 10",
+            "Dates: 2026-03-10"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "select-counter-1",
+          "label": "Swap March 8 instead",
+          "style": "primary",
+          "payload": {
+            "counterId": "counter-1",
+            "dates": [
+              "2026-03-08"
+            ]
+          }
+        },
+        {
+          "actionId": "select-counter-2",
+          "label": "Swap March 12 instead",
+          "style": "secondary",
+          "payload": {
+            "counterId": "counter-2",
+            "dates": [
+              "2026-03-12"
+            ]
+          }
+        },
+        {
+          "actionId": "select-counter-3",
+          "label": "Split: evening only on March 10",
+          "style": "secondary",
+          "payload": {
+            "counterId": "counter-3",
+            "dates": [
+              "2026-03-10"
+            ]
+          }
+        },
+        {
+          "actionId": "decline-all",
+          "label": "Decline All",
+          "style": "danger",
+          "payload": {}
+        }
+      ]
+    }
+  ],
+  "stateTransitions": [
+    "select-counter-1",
+    "decline-all"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

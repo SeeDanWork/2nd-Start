@@ -1,0 +1,92 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 45,
+    "key": "trial-ending-upgrade-prompt",
+    "title": "Trial-ending upgrade prompt",
+    "category": "Billing & Account",
+    "implemented": true
+  },
+  "params": {
+    "daysLeft": 3,
+    "trialEndDate": "2026-03-04"
+  },
+  "messages": [
+    {
+      "messageId": "msg-045-001",
+      "scenarioNumber": 45,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001"
+        ]
+      },
+      "urgency": "normal",
+      "text": "Your free trial ends in 3 days (2026-03-04). Choose a plan to continue using all features.",
+      "sections": [
+        {
+          "title": "Free plan",
+          "bullets": [
+            "Basic schedule view",
+            "Up to 2 swap requests per month",
+            "No fairness tracking"
+          ]
+        },
+        {
+          "title": "Premium plan — $9.99/month",
+          "bullets": [
+            "Unlimited swap requests",
+            "Fairness tracking and rebalancing",
+            "Holiday and vacation planning",
+            "Priority support"
+          ]
+        },
+        {
+          "title": "Family plan — $14.99/month",
+          "bullets": [
+            "Everything in Premium",
+            "Multiple children support",
+            "Activity coordination",
+            "Shared expense tracking"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "upgrade-premium",
+          "label": "Go Premium",
+          "style": "primary",
+          "payload": {
+            "plan": "premium",
+            "price": 9.99
+          }
+        },
+        {
+          "actionId": "upgrade-family",
+          "label": "Go Family",
+          "style": "primary",
+          "payload": {
+            "plan": "family",
+            "price": 14.99
+          }
+        },
+        {
+          "actionId": "stay-free",
+          "label": "Continue Free",
+          "style": "secondary",
+          "payload": {
+            "plan": "free"
+          }
+        }
+      ]
+    }
+  ],
+  "stateTransitions": [
+    "upgrade-premium",
+    "upgrade-family",
+    "stay-free"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

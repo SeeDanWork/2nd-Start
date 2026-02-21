@@ -1,0 +1,77 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 12,
+    "key": "handoff-status-update",
+    "title": "Handoff status updates",
+    "category": "Routine Schedule Operations",
+    "implemented": true
+  },
+  "params": {
+    "handoffDate": "2026-03-04",
+    "droppingOffParent": "parent-a-001"
+  },
+  "messages": [
+    {
+      "messageId": "msg-012-001",
+      "scenarioNumber": 12,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001"
+        ]
+      },
+      "urgency": "normal",
+      "text": "Today is exchange day. Update your status so Jordan knows what to expect.",
+      "actions": [
+        {
+          "actionId": "on-my-way",
+          "label": "On My Way",
+          "style": "primary",
+          "payload": {
+            "status": "on_my_way"
+          }
+        },
+        {
+          "actionId": "running-late",
+          "label": "Running Late",
+          "style": "secondary",
+          "payload": {
+            "status": "running_late"
+          }
+        },
+        {
+          "actionId": "arrived",
+          "label": "Arrived",
+          "style": "primary",
+          "payload": {
+            "status": "arrived"
+          }
+        },
+        {
+          "actionId": "pickup-complete",
+          "label": "Pickup Complete",
+          "style": "primary",
+          "payload": {
+            "status": "pickup_complete"
+          }
+        }
+      ],
+      "metadata": {
+        "relatesToDateRange": {
+          "start": "2026-03-04",
+          "end": "2026-03-04"
+        }
+      }
+    }
+  ],
+  "stateTransitions": [
+    "on-my-way",
+    "running-late",
+    "arrived",
+    "pickup-complete"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

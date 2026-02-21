@@ -1,0 +1,80 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 38,
+    "key": "rebalance-proposal-after-swaps",
+    "title": "Rebalance proposal after many swaps",
+    "category": "Fairness & Stability",
+    "implemented": true
+  },
+  "params": {
+    "driftNights": 4,
+    "heavyParent": "parent-a-001"
+  },
+  "messages": [
+    {
+      "messageId": "msg-038-001",
+      "scenarioNumber": 38,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001",
+          "parent-b-001"
+        ]
+      },
+      "urgency": "normal",
+      "text": "Schedule drift detected: Alex has 4 more nights than Jordan over the past 8 weeks. We suggest a multi-day rebalance.",
+      "sections": [
+        {
+          "title": "Drift summary",
+          "bullets": [
+            "Alex: 32 nights",
+            "Jordan: 28 nights",
+            "Imbalance: 4 nights"
+          ]
+        },
+        {
+          "title": "Proposed correction",
+          "bullets": [
+            "Shift 2 nights to Jordan over the next 2 weeks",
+            "This will bring the balance within 1 night",
+            "Both parents must agree to proceed"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "accept-rebalance",
+          "label": "Accept Rebalance",
+          "style": "primary",
+          "payload": {
+            "shiftNights": 2
+          }
+        },
+        {
+          "actionId": "decline-rebalance",
+          "label": "Decline",
+          "style": "danger",
+          "payload": {}
+        },
+        {
+          "actionId": "customize",
+          "label": "Customize Plan",
+          "style": "secondary",
+          "payload": {}
+        }
+      ],
+      "metadata": {
+        "requiresBothParents": true
+      }
+    }
+  ],
+  "stateTransitions": [
+    "accept-rebalance",
+    "decline-rebalance",
+    "customize"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

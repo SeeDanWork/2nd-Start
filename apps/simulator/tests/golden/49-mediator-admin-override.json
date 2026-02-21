@@ -1,0 +1,70 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 49,
+    "key": "mediator-admin-override",
+    "title": "Mediator/admin override",
+    "category": "Admin & Preferences",
+    "implemented": true
+  },
+  "params": {
+    "overrideDate": "2026-03-15",
+    "newAssignedTo": "parent-b-001",
+    "reason": "Court-ordered adjustment"
+  },
+  "messages": [
+    {
+      "messageId": "msg-049-001",
+      "scenarioNumber": 49,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001",
+          "parent-b-001"
+        ]
+      },
+      "urgency": "high",
+      "text": "A mediator has made a schedule adjustment for 2026-03-15. This change is effective immediately.",
+      "sections": [
+        {
+          "title": "Change details",
+          "bullets": [
+            "Date: 2026-03-15",
+            "Previously: Alex",
+            "Now: Jordan",
+            "Reason: Court-ordered adjustment"
+          ]
+        },
+        {
+          "title": "Note",
+          "bullets": [
+            "This change was made by an authorized mediator",
+            "Both parents are notified for transparency",
+            "Contact your mediator with questions"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "acknowledge",
+          "label": "Acknowledged",
+          "style": "primary",
+          "payload": {}
+        },
+        {
+          "actionId": "request-review",
+          "label": "Request Review",
+          "style": "secondary",
+          "payload": {}
+        }
+      ]
+    }
+  ],
+  "stateTransitions": [
+    "acknowledge",
+    "request-review"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

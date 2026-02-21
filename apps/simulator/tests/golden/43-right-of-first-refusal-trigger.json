@@ -1,0 +1,16 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 43,
+    "key": "right-of-first-refusal-trigger",
+    "title": "Right-of-first-refusal trigger",
+    "category": "Compliance & Agreement",
+    "implemented": false
+  },
+  "params": {},
+  "messages": [],
+  "stateTransitions": [],
+  "timeoutMessages": null,
+  "errors": []
+}

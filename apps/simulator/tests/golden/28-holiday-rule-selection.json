@@ -1,0 +1,80 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 28,
+    "key": "holiday-rule-selection",
+    "title": "Holiday rule selection",
+    "category": "Holidays & Breaks",
+    "implemented": true
+  },
+  "params": {
+    "holidayName": "Thanksgiving",
+    "holidayDate": "2026-11-26"
+  },
+  "messages": [
+    {
+      "messageId": "msg-028-001",
+      "scenarioNumber": 28,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001",
+          "parent-b-001"
+        ]
+      },
+      "urgency": "normal",
+      "text": "Thanksgiving is on 2026-11-26. Choose how to handle this holiday in your schedule.",
+      "sections": [
+        {
+          "title": "Options",
+          "bullets": [
+            "Rotate yearly: one parent gets it this year, the other next year",
+            "Split the day: morning with one parent, evening with the other",
+            "Attach to weekend parent: whoever has the adjacent weekend keeps the holiday"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "rotate",
+          "label": "Rotate Yearly",
+          "style": "primary",
+          "payload": {
+            "rule": "rotate"
+          }
+        },
+        {
+          "actionId": "split",
+          "label": "Split the Day",
+          "style": "secondary",
+          "payload": {
+            "rule": "split"
+          }
+        },
+        {
+          "actionId": "attach-weekend",
+          "label": "Weekend Parent Keeps It",
+          "style": "secondary",
+          "payload": {
+            "rule": "attach-weekend"
+          }
+        }
+      ],
+      "metadata": {
+        "requiresBothParents": true,
+        "relatesToDateRange": {
+          "start": "2026-11-26",
+          "end": "2026-11-26"
+        }
+      }
+    }
+  ],
+  "stateTransitions": [
+    "rotate",
+    "split",
+    "attach-weekend"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

@@ -1,0 +1,16 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 35,
+    "key": "activity-cancellation-propagation",
+    "title": "Activity cancellation propagation",
+    "category": "Activities & Child Schedule",
+    "implemented": false
+  },
+  "params": {},
+  "messages": [],
+  "stateTransitions": [],
+  "timeoutMessages": null,
+  "errors": []
+}

@@ -1,0 +1,88 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 1,
+    "key": "invite-other-parent",
+    "title": "Invite other parent",
+    "category": "Onboarding & Setup",
+    "implemented": true
+  },
+  "params": {
+    "inviteeName": "Jordan",
+    "contactChannel": "in-app"
+  },
+  "messages": [
+    {
+      "messageId": "msg-001-001",
+      "scenarioNumber": 1,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-b-001"
+        ]
+      },
+      "urgency": "normal",
+      "text": "Alex has invited you to co-parent on this app. Accept to start building your shared schedule.",
+      "sections": [
+        {
+          "title": "What happens next",
+          "bullets": [
+            "Set up your child's profile together",
+            "Define your scheduling preferences",
+            "Choose a fair schedule from generated options"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "accept",
+          "label": "Accept Invitation",
+          "style": "primary",
+          "payload": {
+            "channel": "in-app"
+          }
+        },
+        {
+          "actionId": "decline",
+          "label": "Decline",
+          "style": "danger",
+          "payload": {}
+        }
+      ]
+    }
+  ],
+  "stateTransitions": [
+    "accept",
+    "decline"
+  ],
+  "timeoutMessages": [
+    {
+      "messageId": "msg-001-001",
+      "scenarioNumber": 1,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001"
+        ]
+      },
+      "urgency": "low",
+      "text": "Your invitation is still pending. Would you like to send a reminder?",
+      "actions": [
+        {
+          "actionId": "resend",
+          "label": "Send Reminder",
+          "style": "primary",
+          "payload": {}
+        },
+        {
+          "actionId": "cancel-invite",
+          "label": "Cancel Invitation",
+          "style": "secondary",
+          "payload": {}
+        }
+      ]
+    }
+  ],
+  "errors": []
+}
