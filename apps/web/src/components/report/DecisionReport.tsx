@@ -3,6 +3,8 @@ import { createAuthedClient } from '../../api/client';
 import { useHarnessStore } from '../../stores/harness';
 import { useLedgerData } from '../../hooks/useLedgerData';
 import { useStabilityData } from '../../hooks/useStabilityData';
+import { useOnboardingInput } from '../../hooks/useOnboardingInput';
+import { OnboardingFactors } from './OnboardingFactors';
 import { WeightProfile } from './WeightProfile';
 import { FairnessGauge } from './FairnessGauge';
 import { StabilityMetrics } from './StabilityMetrics';
@@ -27,6 +29,11 @@ export function DecisionReport({ familyId, token }: Props) {
     loading: stabilityLoading,
     error: stabilityError,
   } = useStabilityData(familyId, token);
+  const {
+    input: onboardingInput,
+    loading: onboardingLoading,
+    error: onboardingError,
+  } = useOnboardingInput(familyId, token);
 
   const [meta, setMeta] = useState<ScheduleMeta>({
     profile: null,
@@ -57,6 +64,9 @@ export function DecisionReport({ familyId, token }: Props) {
 
   return (
     <div style={styles.container}>
+      {/* Onboarding factors that drove the schedule */}
+      <OnboardingFactors input={onboardingInput} loading={onboardingLoading} error={onboardingError} />
+
       {/* Solver profile & weight bars */}
       <WeightProfile profile={meta.profile} weights={meta.weights} />
 
