@@ -4,9 +4,10 @@ import { ChildrenController } from './children.controller';
 import { ChildrenService } from './children.service';
 import { Child } from '../entities';
 import { FamiliesModule } from '../families/families.module';
+import { FamilyContextModule } from '../family-context/family-context.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Child]), FamiliesModule],
+  imports: [TypeOrmModule.forFeature([Child]), FamiliesModule, FamilyContextModule],
   controllers: [ChildrenController],
   providers: [ChildrenService],
   exports: [ChildrenService],

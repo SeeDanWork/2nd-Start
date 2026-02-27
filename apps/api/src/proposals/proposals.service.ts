@@ -27,12 +27,12 @@ import {
   ScheduleSource,
   DEFAULT_PROPOSAL_EXPIRY_HOURS,
   DEFAULT_MAX_TRANSITIONS_PER_WEEK,
-  DEFAULT_SOLVER_WEIGHTS,
   SOLVER_TIMEOUT_SECONDS,
   SOLVER_MAX_SOLUTIONS,
   DEFAULT_PROPOSAL_HORIZON_WEEKS,
 } from '@adcp/shared';
 import { SchedulesService } from '../schedules/schedules.service';
+import { FamilyContextService } from '../family-context/family-context.service';
 
 @Injectable()
 export class ProposalsService {
@@ -59,6 +59,7 @@ export class ProposalsService {
     private readonly preConsentRepo: Repository<PreConsentRule>,
     private readonly httpService: HttpService,
     private readonly schedulesService: SchedulesService,
+    private readonly familyContextService: FamilyContextService,
   ) {}
 
   async generateProposals(
@@ -90,6 +91,10 @@ export class ProposalsService {
       order: { date: 'ASC' },
     });
 
+    // Get age-aware family context
+    const familyCtx = await this.familyContextService.getContext(familyId);
+    const adjustedWeights = this.familyContextService.getAdjustedWeights(familyCtx);
+
     // Build proposal solver payload
     const today = new Date();
     const horizonStart = today.toISOString().split('T')[0];
@@ -99,6 +104,7 @@ export class ProposalsService {
     const lockedNights: Array<{ parent: string; days_of_week: number[] }> = [];
     const maxConsecutive: Array<{ parent: string; max_nights: number }> = [];
     let maxTransitionsPerWeek = DEFAULT_MAX_TRANSITIONS_PER_WEEK;
+    let hasMaxConsecutiveConstraint = false;
 
     if (constraintSet) {
       for (const c of constraintSet.constraints) {
@@ -108,6 +114,7 @@ export class ProposalsService {
             lockedNights.push({ parent: params.parent, days_of_week: params.daysOfWeek });
             break;
           case ConstraintType.MAX_CONSECUTIVE:
+            hasMaxConsecutiveConstraint = true;
             maxConsecutive.push({ parent: params.parent, max_nights: params.maxNights });
             break;
           case ConstraintType.MAX_TRANSITIONS_PER_WEEK:
@@ -115,6 +122,14 @@ export class ProposalsService {
             break;
         }
       }
+    }
+
+    // Inject age-aware maxConsecutive default if no explicit constraint exists
+    if (!hasMaxConsecutiveConstraint) {
+      maxConsecutive.push(
+        { parent: 'parent_a', max_nights: familyCtx.maxConsecutive },
+        { parent: 'parent_b', max_nights: familyCtx.maxConsecutive },
+      );
     }
 
     // Determine request constraint for solver
@@ -137,11 +152,11 @@ export class ProposalsService {
       max_consecutive: maxConsecutive,
       max_transitions_per_week: maxTransitionsPerWeek,
       weights: {
-        fairness_deviation: DEFAULT_SOLVER_WEIGHTS.fairnessDeviation,
-        total_transitions: DEFAULT_SOLVER_WEIGHTS.totalTransitions,
-        non_daycare_handoffs: DEFAULT_SOLVER_WEIGHTS.nonDaycareHandoffs,
-        weekend_fragmentation: DEFAULT_SOLVER_WEIGHTS.weekendFragmentation,
-        school_night_disruption: DEFAULT_SOLVER_WEIGHTS.schoolNightDisruption,
+        fairness_deviation: adjustedWeights.fairnessDeviation,
+        total_transitions: adjustedWeights.totalTransitions,
+        non_daycare_handoffs: adjustedWeights.nonDaycareHandoffs,
+        weekend_fragmentation: adjustedWeights.weekendFragmentation,
+        school_night_disruption: adjustedWeights.schoolNightDisruption,
       },
       timeout_seconds: SOLVER_TIMEOUT_SECONDS,
       max_solutions: SOLVER_MAX_SOLUTIONS,

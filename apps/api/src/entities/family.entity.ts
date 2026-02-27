@@ -32,6 +32,9 @@ export class Family {
   @Column({ type: 'jsonb', name: 'onboarding_input', nullable: true })
   onboardingInput!: Record<string, unknown> | null;
 
+  @Column({ type: 'jsonb', name: 'family_context', nullable: true })
+  familyContext!: Record<string, unknown> | null;
+
   @Column({ type: 'text', default: 'onboarding' })
   status!: string;
 

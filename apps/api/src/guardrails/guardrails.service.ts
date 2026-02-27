@@ -19,6 +19,7 @@ import {
   AuditEntityType,
   DEFAULT_CHANGE_BUDGET_PER_MONTH,
 } from '@adcp/shared';
+import { FamilyContextService } from '../family-context/family-context.service';
 
 @Injectable()
 export class GuardrailsService {
@@ -33,6 +34,7 @@ export class GuardrailsService {
     private readonly emergencyRepo: Repository<EmergencyMode>,
     @InjectRepository(AuditLog)
     private readonly auditRepo: Repository<AuditLog>,
+    private readonly familyContextService: FamilyContextService,
   ) {}
 
   // ─── Consent Rules CRUD ────────────────────────────────────
@@ -113,15 +115,23 @@ export class GuardrailsService {
     );
   }
 
-  evaluateAutoApproval(
+  async evaluateAutoApproval(
     option: {
       penaltyScore?: number;
       fairnessImpact?: Record<string, any>;
       stabilityImpact?: Record<string, any>;
     },
     rules: PreConsentRule[],
-  ): boolean {
+    familyId?: string,
+  ): Promise<boolean> {
     if (rules.length === 0) return false;
+
+    // Get age-appropriate maxConsecutive fallback
+    let ageMaxConsecutive = 5; // hardcoded fallback if no familyId
+    if (familyId) {
+      const ctx = await this.familyContextService.getContext(familyId);
+      ageMaxConsecutive = ctx.maxConsecutive;
+    }
 
     for (const rule of rules) {
       const threshold = rule.threshold as Record<string, any>;
@@ -148,7 +158,7 @@ export class GuardrailsService {
           if (
             option.stabilityImpact &&
             (option.stabilityImpact.max_consecutive ?? option.stabilityImpact.maxConsecutive ?? 0) >
-              (threshold.maxStreak ?? 5)
+              (threshold.maxStreak ?? ageMaxConsecutive)
           ) {
             return false;
           }

@@ -15,6 +15,7 @@ import { SharingModule } from './sharing/sharing.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { NotificationModule } from './notifications/notification.module';
 import { EmailModule } from './email/email.module';
+import { FamilyContextModule } from './family-context/family-context.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { EmailModule } from './email/email.module';
       synchronize: process.env.NODE_ENV !== 'production',
     }),
     EmailModule,
+    FamilyContextModule,
     AuthModule,
     FamiliesModule,
     ChildrenModule,

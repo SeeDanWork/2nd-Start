@@ -13,6 +13,7 @@ import {
   Constraint,
 } from '../entities';
 import { FamiliesModule } from '../families/families.module';
+import { FamilyContextModule } from '../family-context/family-context.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { FamiliesModule } from '../families/families.module';
       baseURL: process.env.OPTIMIZER_URL || 'http://localhost:8000',
     }),
     FamiliesModule,
+    FamilyContextModule,
   ],
   controllers: [SchedulesController],
   providers: [SchedulesService],
