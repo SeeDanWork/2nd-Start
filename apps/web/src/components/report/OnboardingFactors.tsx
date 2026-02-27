@@ -17,6 +17,7 @@ function formatDays(days: number[] | undefined): string {
 function formatAgeBands(bands: string[] | undefined): string {
   if (!bands || bands.length === 0) return 'N/A';
   const labels: Record<string, string> = {
+    // V1 age bands
     UNDER_2: 'Under 2',
     '2_TO_5': '2–5',
     '6_TO_9': '6–9',
@@ -26,6 +27,16 @@ function formatAgeBands(bands: string[] | undefined): string {
     under_5: 'Under 5',
     '5_to_12': '5–12',
     teen: '13–17',
+    // V2 age bands
+    '0-6m': '0–6 months',
+    '6-12m': '6–12 months',
+    '1-2y': '1–2 years',
+    '2-3y': '2–3 years',
+    '3-5y': '3–5 years',
+    '5-7y': '5–7 years',
+    '8-10y': '8–10 years',
+    '11-13y': '11–13 years',
+    '14-17y': '14–17 years',
   };
   return bands.map((b) => labels[b] ?? b).join(', ');
 }

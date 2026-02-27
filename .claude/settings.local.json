@@ -41,7 +41,24 @@
       "Bash(PGPASSWORD=postgres psql:*)",
       "Bash(npx expo start)",
       "Bash(node scripts/test-invite-race.mjs:*)",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "Bash(cd:*)",
+      "Bash(winget install:*)",
+      "Bash(export:*)",
+      "Bash(export PATH=\"$PATH:/c/Program Files/GitHub CLI\" && gh auth status 2>&1)",
+      "WebSearch",
+      "Bash(claude mcp:*)",
+      "Bash(npx vite:*)",
+      "Bash(npx expo:*)",
+      "Bash(powershell:*)",
+      "Bash(start:*)",
+      "Bash(\"C:/Program Files/Google/Chrome/Application/chrome.exe\":*)",
+      "Bash(npx:*)",
+      "Bash(npm ls:*)",
+      "Bash(ls:*)",
+      "Bash(gh pr:*)",
+      "Bash(git remote:*)",
+      "Bash(git:*)"
     ]
   }
 }

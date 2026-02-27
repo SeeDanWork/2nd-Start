@@ -6,8 +6,10 @@
 
 // ─── Types ─────────────────────────────────────────────────────────
 
+/** @deprecated Use AgeBandV2 from age_baselines.ts instead */
 export type AgeBand = '0-2' | '3-4' | '5-10' | '11-17';
 
+/** @deprecated Use BaselineRecommendationInputV2 from scoring.ts instead */
 export interface BaselineInput {
   childrenAgeBands: AgeBand[];
   schoolOrDaycareAnchor: 'daycare' | 'school' | 'none';
@@ -26,6 +28,7 @@ export interface BaselineInput {
   };
 }
 
+/** @deprecated Use TemplateScoreV2 from scoring.ts instead */
 export interface TemplateRecommendation {
   templateId: string;
   name: string;
@@ -36,6 +39,7 @@ export interface TemplateRecommendation {
   confidence: 'low' | 'medium' | 'high';
 }
 
+/** @deprecated Use BaselineRecommendationOutputV2 from scoring.ts instead */
 export interface BaselineRecommendation {
   maxConsecutiveNightsDefault: number;
   maxDaysAwayDefault: number;
@@ -364,6 +368,7 @@ function buildRationale(input: BaselineInput, maxCon: number): string[] {
 
 // ─── Public API ────────────────────────────────────────────────────
 
+/** @deprecated Use recommendBaselineV2 from scoring.ts instead */
 export function recommendBaselines(
   input: BaselineInput,
 ): BaselineRecommendation {
