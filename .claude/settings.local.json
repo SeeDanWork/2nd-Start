@@ -33,7 +33,15 @@
       "Bash(git push:*)",
       "Bash(npx turbo typecheck:*)",
       "Bash(docker exec:*)",
-      "Bash(npx kill-port:*)"
+      "Bash(npx kill-port:*)",
+      "Bash(git checkout:*)",
+      "Bash(git remote add:*)",
+      "Bash(find:*)",
+      "Bash(npx tsx:*)",
+      "Bash(PGPASSWORD=postgres psql:*)",
+      "Bash(npx expo start)",
+      "Bash(node scripts/test-invite-race.mjs:*)",
+      "Bash(node -e:*)"
     ]
   }
 }
