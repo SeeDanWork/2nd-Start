@@ -1,0 +1,83 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 5,
+    "key": "resolve-conflicting-constraints",
+    "title": "Resolve conflicting constraints",
+    "category": "Onboarding & Setup",
+    "implemented": true
+  },
+  "params": {
+    "conflictDay": 2
+  },
+  "messages": [
+    {
+      "messageId": "msg-005-001",
+      "scenarioNumber": 5,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001",
+          "parent-b-001"
+        ]
+      },
+      "urgency": "normal",
+      "text": "Both parents have locked Tuesday night. Only one parent can be assigned per night. Choose how to resolve this.",
+      "sections": [
+        {
+          "title": "Conflict details",
+          "bullets": [
+            "Alex locked Tuesday",
+            "Jordan locked Tuesday",
+            "The schedule cannot satisfy both constraints simultaneously."
+          ]
+        },
+        {
+          "title": "Options",
+          "bullets": [
+            "Keep Alex's lock, remove Jordan's",
+            "Keep Jordan's lock, remove Alex's",
+            "Alternate this night every other week"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "keep-a",
+          "label": "Keep Alex's Lock",
+          "style": "primary",
+          "payload": {
+            "keep": "parent-a-001"
+          }
+        },
+        {
+          "actionId": "keep-b",
+          "label": "Keep Jordan's Lock",
+          "style": "primary",
+          "payload": {
+            "keep": "parent-b-001"
+          }
+        },
+        {
+          "actionId": "alternate",
+          "label": "Alternate Weekly",
+          "style": "secondary",
+          "payload": {
+            "alternate": true
+          }
+        }
+      ],
+      "metadata": {
+        "requiresBothParents": true
+      }
+    }
+  ],
+  "stateTransitions": [
+    "keep-a",
+    "keep-b",
+    "alternate"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

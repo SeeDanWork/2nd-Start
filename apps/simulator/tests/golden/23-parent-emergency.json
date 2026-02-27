@@ -1,0 +1,61 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 23,
+    "key": "parent-emergency",
+    "title": "Parent emergency",
+    "category": "Emergencies & Disruptions",
+    "implemented": true
+  },
+  "params": {
+    "affectedParent": "parent-a-001",
+    "emergencyType": "medical"
+  },
+  "messages": [
+    {
+      "messageId": "msg-023-001",
+      "scenarioNumber": 23,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-b-001"
+        ]
+      },
+      "urgency": "high",
+      "text": "Alex has reported a medical situation and needs immediate coverage for Riley. Normal constraints are temporarily relaxed.",
+      "sections": [
+        {
+          "title": "What this means",
+          "bullets": [
+            "Riley needs immediate care coverage",
+            "Schedule constraints are relaxed for up to 7 days",
+            "The schedule will return to normal when the situation resolves"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "can-cover",
+          "label": "I Can Cover",
+          "style": "primary",
+          "payload": {
+            "coverageParent": "parent-b-001"
+          }
+        },
+        {
+          "actionId": "suggest-caregiver",
+          "label": "Suggest Alternate Caregiver",
+          "style": "secondary",
+          "payload": {}
+        }
+      ]
+    }
+  ],
+  "stateTransitions": [
+    "can-cover",
+    "suggest-caregiver"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

@@ -1,0 +1,82 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 30,
+    "key": "vacation-block-request",
+    "title": "Vacation block request",
+    "category": "Holidays & Breaks",
+    "implemented": true
+  },
+  "params": {
+    "startDate": "2026-06-15",
+    "endDate": "2026-06-22",
+    "requestedBy": "parent-a-001",
+    "destination": "Beach trip"
+  },
+  "messages": [
+    {
+      "messageId": "msg-030-001",
+      "scenarioNumber": 30,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-b-001"
+        ]
+      },
+      "urgency": "normal",
+      "text": "Alex is requesting a vacation block with Riley.",
+      "sections": [
+        {
+          "title": "Vacation details",
+          "bullets": [
+            "Beach trip",
+            "Dates: 2026-06-15 to 2026-06-22 (7 nights)",
+            "Alex will have Riley for the full period"
+          ]
+        },
+        {
+          "title": "Impact",
+          "bullets": [
+            "7 nights shift to Alex",
+            "Fairness will rebalance over the following weeks"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "approve",
+          "label": "Approve Vacation",
+          "style": "primary",
+          "payload": {
+            "proposalId": "vacation-001"
+          }
+        },
+        {
+          "actionId": "decline",
+          "label": "Decline",
+          "style": "danger",
+          "payload": {}
+        },
+        {
+          "actionId": "suggest-changes",
+          "label": "Suggest Different Dates",
+          "style": "secondary",
+          "payload": {}
+        }
+      ],
+      "metadata": {
+        "relatesToDateRange": {
+          "start": "2026-06-15",
+          "end": "2026-06-22"
+        }
+      }
+    }
+  ],
+  "stateTransitions": [
+    "approve",
+    "decline"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

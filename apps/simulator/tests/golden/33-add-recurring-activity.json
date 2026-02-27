@@ -1,0 +1,86 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 33,
+    "key": "add-recurring-activity",
+    "title": "Add recurring activity",
+    "category": "Activities & Child Schedule",
+    "implemented": true
+  },
+  "params": {
+    "activityName": "Soccer Practice",
+    "dayOfWeek": 2,
+    "time": "16:00",
+    "addedBy": "parent-a-001"
+  },
+  "messages": [
+    {
+      "messageId": "msg-033-001",
+      "scenarioNumber": 33,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001",
+          "parent-b-001"
+        ]
+      },
+      "urgency": "normal",
+      "text": "Alex added Soccer Practice for Riley every Tuesday at 16:00. Who handles transport?",
+      "sections": [
+        {
+          "title": "Activity details",
+          "bullets": [
+            "Soccer Practice",
+            "Every Tuesday at 16:00",
+            "For Riley"
+          ]
+        },
+        {
+          "title": "Transport options",
+          "bullets": [
+            "Whichever parent has the child that day drives",
+            "Alex always drives",
+            "Jordan always drives"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "scheduled-parent",
+          "label": "Scheduled Parent Drives",
+          "style": "primary",
+          "payload": {
+            "transport": "scheduled-parent"
+          }
+        },
+        {
+          "actionId": "adder-drives",
+          "label": "Alex Always Drives",
+          "style": "secondary",
+          "payload": {
+            "transport": "parent-a-001"
+          }
+        },
+        {
+          "actionId": "other-drives",
+          "label": "Jordan Always Drives",
+          "style": "secondary",
+          "payload": {
+            "transport": "parent-b-001"
+          }
+        }
+      ],
+      "metadata": {
+        "requiresBothParents": true
+      }
+    }
+  ],
+  "stateTransitions": [
+    "scheduled-parent",
+    "adder-drives",
+    "other-drives"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

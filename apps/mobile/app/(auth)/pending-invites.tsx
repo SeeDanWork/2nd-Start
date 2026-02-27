@@ -42,13 +42,14 @@ export default function PendingInvitesScreen() {
       const { data } = await familiesApi.getMyInvites();
       const list = Array.isArray(data) ? data : [];
       if (list.length === 0) {
-        // No pending invites — skip straight to onboarding
+        // No pending invites — proceed to onboarding.
+        // If an invite arrives later, the InviteBanner in _layout.tsx will detect it.
         router.replace('/(auth)/onboarding');
         return;
       }
       setInvites(list);
     } catch {
-      // Failed to load invites — go to onboarding
+      // Failed to load invites — proceed to onboarding rather than block
       router.replace('/(auth)/onboarding');
       return;
     } finally {

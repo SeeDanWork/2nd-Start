@@ -88,8 +88,7 @@ export function ChatScreen({ mode }: ChatScreenProps) {
       if (!targetFamilyId) return;
 
       try {
-        if (isJoinerOnboarding && option.assignments.length > 0) {
-          // Joiner flow: save assignments via createManualSchedule
+        if (option.assignments.length > 0) {
           await calendarApi.createManualSchedule(
             targetFamilyId,
             option.assignments.map((a) => ({
@@ -97,8 +96,14 @@ export function ChatScreen({ mode }: ChatScreenProps) {
               assignedTo: a.parentId,
             })),
           );
-        } else if (option.assignments.length > 0) {
-          await calendarApi.generateSchedule(targetFamilyId);
+        }
+
+        // Notify web harness so data panels refresh
+        if (Platform.OS === 'web' && typeof window !== 'undefined' && window.parent !== window) {
+          window.parent.postMessage(
+            { type: 'schedule_updated', payload: { familyId: targetFamilyId }, source: 'adcp-mobile' },
+            '*',
+          );
         }
 
         addMessage({

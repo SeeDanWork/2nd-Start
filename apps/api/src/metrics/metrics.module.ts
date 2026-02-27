@@ -13,6 +13,7 @@ import {
 } from '../entities';
 import { FamiliesModule } from '../families/families.module';
 import { SchedulesModule } from '../schedules/schedules.module';
+import { FamilyContextModule } from '../family-context/family-context.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { SchedulesModule } from '../schedules/schedules.module';
     ]),
     FamiliesModule,
     SchedulesModule,
+    FamilyContextModule,
   ],
   controllers: [MetricsController],
   providers: [MetricsService],

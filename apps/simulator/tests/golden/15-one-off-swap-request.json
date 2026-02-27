@@ -1,0 +1,90 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 15,
+    "key": "one-off-swap-request",
+    "title": "One-off swap request",
+    "category": "Exception Requests",
+    "implemented": true
+  },
+  "params": {
+    "requestDate": "2026-03-10",
+    "requestedBy": "parent-a-001",
+    "reason": "work_travel"
+  },
+  "messages": [
+    {
+      "messageId": "msg-015-001",
+      "scenarioNumber": 15,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-b-001"
+        ]
+      },
+      "urgency": "normal",
+      "text": "Alex is requesting a schedule change for 2026-03-10.",
+      "sections": [
+        {
+          "title": "Request details",
+          "bullets": [
+            "Date: 2026-03-10",
+            "Currently assigned to: Alex",
+            "Reason: work travel"
+          ]
+        },
+        {
+          "title": "Impact",
+          "bullets": [
+            "This is a one-night swap",
+            "Fairness balance stays within band",
+            "Adds 1 extra handoff this week"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "approve",
+          "label": "Approve Swap",
+          "style": "primary",
+          "payload": {
+            "proposalId": "proposal-001"
+          }
+        },
+        {
+          "actionId": "decline",
+          "label": "Decline",
+          "style": "danger",
+          "payload": {
+            "proposalId": "proposal-001"
+          }
+        },
+        {
+          "actionId": "suggest-alternative",
+          "label": "Suggest Alternative",
+          "style": "secondary",
+          "payload": {}
+        }
+      ],
+      "metadata": {
+        "relatesToDateRange": {
+          "start": "2026-03-10",
+          "end": "2026-03-10"
+        },
+        "scheduleDeltaPreview": {
+          "date": "2026-03-10",
+          "from": "parent-a-001",
+          "to": "parent-a-001"
+        }
+      }
+    }
+  ],
+  "stateTransitions": [
+    "approve",
+    "decline",
+    "suggest-alternative"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

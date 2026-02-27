@@ -1,0 +1,16 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 39,
+    "key": "end-of-month-fairness-report",
+    "title": "End-of-month fairness report",
+    "category": "Fairness & Stability",
+    "implemented": false
+  },
+  "params": {},
+  "messages": [],
+  "stateTransitions": [],
+  "timeoutMessages": null,
+  "errors": []
+}

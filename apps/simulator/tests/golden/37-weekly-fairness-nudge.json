@@ -1,0 +1,70 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 37,
+    "key": "weekly-fairness-nudge",
+    "title": "Weekly fairness nudge",
+    "category": "Fairness & Stability",
+    "implemented": true
+  },
+  "params": {
+    "parentANights": 9,
+    "parentBNights": 5,
+    "weekNumber": 3
+  },
+  "messages": [
+    {
+      "messageId": "msg-037-001",
+      "scenarioNumber": 37,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001",
+          "parent-b-001"
+        ]
+      },
+      "urgency": "low",
+      "text": "Week 3 fairness check: Alex has had 9 nights vs Jordan's 5 nights (4-night difference).",
+      "sections": [
+        {
+          "title": "Current balance",
+          "bullets": [
+            "Alex: 9 nights",
+            "Jordan: 5 nights",
+            "Difference: 4 nights"
+          ]
+        },
+        {
+          "title": "Suggestion",
+          "bullets": [
+            "A voluntary swap of 1 night would reduce the gap",
+            "No action needed if both parents are satisfied"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "offer-swap",
+          "label": "Offer a Swap Night",
+          "style": "primary",
+          "payload": {
+            "from": "parent-a-001"
+          }
+        },
+        {
+          "actionId": "looks-good",
+          "label": "Looks Good to Me",
+          "style": "secondary",
+          "payload": {}
+        }
+      ]
+    }
+  ],
+  "stateTransitions": [
+    "offer-swap",
+    "looks-good"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

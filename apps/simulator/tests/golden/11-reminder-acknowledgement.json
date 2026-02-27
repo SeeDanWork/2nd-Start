@@ -1,0 +1,67 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 11,
+    "key": "reminder-acknowledgement",
+    "title": "Reminder acknowledgements",
+    "category": "Routine Schedule Operations",
+    "implemented": true
+  },
+  "params": {
+    "handoffDate": "2026-03-04",
+    "currentParent": "parent-a-001",
+    "receivingParent": "parent-b-001"
+  },
+  "messages": [
+    {
+      "messageId": "msg-011-001",
+      "scenarioNumber": 11,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001",
+          "parent-b-001"
+        ]
+      },
+      "urgency": "low",
+      "text": "Handoff reminder: Riley transitions from Alex to Jordan tomorrow at school.",
+      "sections": [
+        {
+          "title": "Details",
+          "bullets": [
+            "Date: 2026-03-04",
+            "Exchange at: school",
+            "Current: Alex | Next: Jordan"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "acknowledge",
+          "label": "Got It",
+          "style": "primary",
+          "payload": {}
+        },
+        {
+          "actionId": "flag-issue",
+          "label": "Flag an Issue",
+          "style": "secondary",
+          "payload": {}
+        }
+      ],
+      "metadata": {
+        "relatesToDateRange": {
+          "start": "2026-03-04",
+          "end": "2026-03-04"
+        }
+      }
+    }
+  ],
+  "stateTransitions": [
+    "acknowledge",
+    "flag-issue"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

@@ -1,0 +1,16 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 24,
+    "key": "delayed-pickup-escalation",
+    "title": "Delayed pickup escalation",
+    "category": "Emergencies & Disruptions",
+    "implemented": false
+  },
+  "params": {},
+  "messages": [],
+  "stateTransitions": [],
+  "timeoutMessages": null,
+  "errors": []
+}

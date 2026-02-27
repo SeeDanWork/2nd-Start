@@ -8,6 +8,7 @@ import {
   EmergencyMode,
   AuditLog,
 } from '../entities';
+import { FamilyContextModule } from '../family-context/family-context.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import {
       EmergencyMode,
       AuditLog,
     ]),
+    FamilyContextModule,
   ],
   controllers: [GuardrailsController],
   providers: [GuardrailsService],

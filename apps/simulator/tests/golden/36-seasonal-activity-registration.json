@@ -1,0 +1,16 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 36,
+    "key": "seasonal-activity-registration",
+    "title": "Seasonal activity registration",
+    "category": "Activities & Child Schedule",
+    "implemented": false
+  },
+  "params": {},
+  "messages": [],
+  "stateTransitions": [],
+  "timeoutMessages": null,
+  "errors": []
+}

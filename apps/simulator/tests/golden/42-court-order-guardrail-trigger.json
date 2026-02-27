@@ -1,0 +1,69 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 42,
+    "key": "court-order-guardrail-trigger",
+    "title": "Court-order guardrail trigger",
+    "category": "Compliance & Agreement",
+    "implemented": true
+  },
+  "params": {
+    "violatingParent": "parent-a-001",
+    "courtMinNights": 10,
+    "currentNights": 10
+  },
+  "messages": [
+    {
+      "messageId": "msg-042-001",
+      "scenarioNumber": 42,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001",
+          "parent-b-001"
+        ]
+      },
+      "urgency": "high",
+      "text": "This change cannot proceed. It would reduce Alex's nights below the court-ordered minimum of 10 per month.",
+      "sections": [
+        {
+          "title": "Guardrail details",
+          "bullets": [
+            "Court-ordered minimum: 10 nights/month for Alex",
+            "Current count: 10 nights",
+            "Removing even 1 night would violate the order"
+          ]
+        },
+        {
+          "title": "What you can do",
+          "bullets": [
+            "Choose a different date that doesn’t affect the minimum",
+            "Request a court modification if circumstances have changed",
+            "Contact your mediator for guidance"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "choose-different-date",
+          "label": "Choose Different Date",
+          "style": "primary",
+          "payload": {}
+        },
+        {
+          "actionId": "acknowledge",
+          "label": "Understood",
+          "style": "secondary",
+          "payload": {}
+        }
+      ]
+    }
+  ],
+  "stateTransitions": [
+    "choose-different-date",
+    "acknowledge"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

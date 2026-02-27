@@ -1,0 +1,91 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 13,
+    "key": "missed-check-in",
+    "title": "Missed check-in",
+    "category": "Routine Schedule Operations",
+    "implemented": true
+  },
+  "params": {
+    "handoffDate": "2026-03-04",
+    "expectedParent": "parent-b-001"
+  },
+  "messages": [
+    {
+      "messageId": "msg-013-001",
+      "scenarioNumber": 13,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001",
+          "parent-b-001"
+        ]
+      },
+      "urgency": "high",
+      "text": "We haven't received a check-in for today's exchange. Please confirm who has Riley.",
+      "sections": [
+        {
+          "title": "Expected plan",
+          "bullets": [
+            "Date: 2026-03-04",
+            "Riley was expected to be with Jordan"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "with-expected",
+          "label": "Riley is with Jordan",
+          "style": "primary",
+          "payload": {
+            "withParent": "parent-b-001"
+          }
+        },
+        {
+          "actionId": "with-other",
+          "label": "Riley is with Alex",
+          "style": "secondary",
+          "payload": {
+            "withParent": "parent-a-001"
+          }
+        }
+      ],
+      "metadata": {
+        "relatesToDateRange": {
+          "start": "2026-03-04",
+          "end": "2026-03-04"
+        }
+      }
+    }
+  ],
+  "stateTransitions": [
+    "with-expected",
+    "with-other"
+  ],
+  "timeoutMessages": [
+    {
+      "messageId": "msg-013-001",
+      "scenarioNumber": 13,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001",
+          "parent-b-001"
+        ]
+      },
+      "urgency": "high",
+      "text": "No response received. The schedule will remain as planned. Please update if the situation differs.",
+      "actions": [
+        {
+          "actionId": "acknowledge-timeout",
+          "label": "OK",
+          "style": "secondary",
+          "payload": {}
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

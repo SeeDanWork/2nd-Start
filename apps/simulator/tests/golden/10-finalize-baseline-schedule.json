@@ -1,0 +1,65 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 10,
+    "key": "finalize-baseline-schedule",
+    "title": "Finalize baseline schedule",
+    "category": "Onboarding & Setup",
+    "implemented": true
+  },
+  "params": {},
+  "messages": [
+    {
+      "messageId": "msg-010-001",
+      "scenarioNumber": 10,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001",
+          "parent-b-001"
+        ]
+      },
+      "urgency": "normal",
+      "text": "Review the final schedule below. Both parents must confirm to activate it.",
+      "sections": [
+        {
+          "title": "Schedule summary",
+          "bullets": [
+            "Alex: 36 nights over 12 weeks",
+            "Jordan: 48 nights over 12 weeks",
+            "23 total handoffs",
+            "Starts: 2026-03-01"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "confirm",
+          "label": "Confirm Schedule",
+          "style": "primary",
+          "payload": {}
+        },
+        {
+          "actionId": "request-changes",
+          "label": "Request Changes",
+          "style": "secondary",
+          "payload": {}
+        }
+      ],
+      "metadata": {
+        "requiresBothParents": true,
+        "relatesToDateRange": {
+          "start": "2026-03-01",
+          "end": "2026-05-23"
+        }
+      }
+    }
+  ],
+  "stateTransitions": [
+    "confirm",
+    "request-changes"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

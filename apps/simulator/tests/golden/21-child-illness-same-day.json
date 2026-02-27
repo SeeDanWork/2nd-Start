@@ -1,0 +1,77 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 21,
+    "key": "child-illness-same-day",
+    "title": "Child illness same-day change",
+    "category": "Emergencies & Disruptions",
+    "implemented": true
+  },
+  "params": {
+    "reportedBy": "parent-a-001",
+    "childName": "Riley"
+  },
+  "messages": [
+    {
+      "messageId": "msg-021-001",
+      "scenarioNumber": 21,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001",
+          "parent-b-001"
+        ]
+      },
+      "urgency": "high",
+      "text": "Alex reports that Riley isn't feeling well and can't attend school today. Daytime care is needed.",
+      "sections": [
+        {
+          "title": "Options",
+          "bullets": [
+            "Alex covers the full day (no schedule change)",
+            "Jordan picks up for daytime care",
+            "Split the day between both parents"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "reporter-covers",
+          "label": "Alex Covers",
+          "style": "primary",
+          "payload": {
+            "coveredBy": "parent-a-001"
+          }
+        },
+        {
+          "actionId": "other-covers",
+          "label": "Jordan Covers",
+          "style": "primary",
+          "payload": {
+            "coveredBy": "parent-b-001"
+          }
+        },
+        {
+          "actionId": "split-day",
+          "label": "Split the Day",
+          "style": "secondary",
+          "payload": {}
+        }
+      ],
+      "metadata": {
+        "relatesToDateRange": {
+          "start": "2026-03-01",
+          "end": "2026-03-01"
+        }
+      }
+    }
+  ],
+  "stateTransitions": [
+    "reporter-covers",
+    "other-covers",
+    "split-day"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}

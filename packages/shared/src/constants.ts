@@ -30,6 +30,39 @@ export const DEFAULT_SOLVER_WEIGHTS = {
   schoolNightDisruption: 60,
 } as const;
 
+// ─── Age-Adjusted Solver Weight Multipliers ─────────────────
+
+export const AGE_WEIGHT_MULTIPLIERS: Record<string, Record<string, number>> = {
+  infant: {
+    fairnessDeviation: 0.7,
+    totalTransitions: 2.0,
+    nonDaycareHandoffs: 1.0,
+    weekendFragmentation: 1.0,
+    schoolNightDisruption: 0.5,
+  },
+  young_child: {
+    fairnessDeviation: 0.8,
+    totalTransitions: 1.5,
+    nonDaycareHandoffs: 1.0,
+    weekendFragmentation: 1.0,
+    schoolNightDisruption: 0.8,
+  },
+  school_age: {
+    fairnessDeviation: 1.0,
+    totalTransitions: 1.0,
+    nonDaycareHandoffs: 1.0,
+    weekendFragmentation: 1.0,
+    schoolNightDisruption: 1.0,
+  },
+  teen: {
+    fairnessDeviation: 1.5,
+    totalTransitions: 0.7,
+    nonDaycareHandoffs: 1.0,
+    weekendFragmentation: 1.0,
+    schoolNightDisruption: 1.0,
+  },
+};
+
 // ─── Proposals ──────────────────────────────────────────────
 
 export const DEFAULT_PROPOSAL_EXPIRY_HOURS = 48;

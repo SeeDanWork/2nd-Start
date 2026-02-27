@@ -17,6 +17,7 @@ import {
   PreConsentRule,
 } from '../entities';
 import { SchedulesModule } from '../schedules/schedules.module';
+import { FamilyContextModule } from '../family-context/family-context.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { SchedulesModule } from '../schedules/schedules.module';
       timeout: 60000,
     }),
     SchedulesModule,
+    FamilyContextModule,
   ],
   controllers: [ProposalsController],
   providers: [ProposalsService],

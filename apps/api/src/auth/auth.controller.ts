@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
@@ -15,6 +16,14 @@ import { User } from '../entities';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Post('dev-login')
+  devLogin(@Body() body: { email: string }) {
+    if (process.env.NODE_ENV !== 'development') {
+      throw new ForbiddenException('Dev login is only available in development');
+    }
+    return this.authService.devLogin(body.email);
+  }
 
   @Post('magic-link')
   sendMagicLink(@Body() body: { email: string }) {

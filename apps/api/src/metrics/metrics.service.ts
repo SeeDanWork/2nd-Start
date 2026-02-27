@@ -16,6 +16,7 @@ import {
   RequestStatus,
 } from '@adcp/shared';
 import { SchedulesService } from '../schedules/schedules.service';
+import { FamilyContextService } from '../family-context/family-context.service';
 
 const WINDOW_WEEKS: Record<string, number> = {
   [LedgerWindowType.TWO_WEEK]: 2,
@@ -42,6 +43,7 @@ export class MetricsService {
     @InjectRepository(AuditLog)
     private readonly auditRepo: Repository<AuditLog>,
     private readonly schedulesService: SchedulesService,
+    private readonly familyContextService: FamilyContextService,
   ) {}
 
   async computeLedger(
@@ -270,9 +272,12 @@ export class MetricsService {
       weekEnd.toISOString().split('T')[0],
     );
 
-    const pendingRequests = await this.requestRepo.count({
-      where: { familyId, status: In([RequestStatus.PENDING, RequestStatus.PROPOSALS_GENERATED]) },
-    });
+    const [pendingRequests, familyCtx] = await Promise.all([
+      this.requestRepo.count({
+        where: { familyId, status: In([RequestStatus.PENDING, RequestStatus.PROPOSALS_GENERATED]) },
+      }),
+      this.familyContextService.getContext(familyId),
+    ]);
 
     return {
       tonight: { date: todayStr, parent: tonightAssignment, isTransition: tonightIsTransition },
@@ -288,7 +293,16 @@ export class MetricsService {
         transitionsThisWeek: stability.transitionsPerWeek,
         maxConsecutiveA: stability.maxConsecutiveA,
         maxConsecutiveB: stability.maxConsecutiveB,
+        ageAppropriateMaxConsecutive: familyCtx.maxConsecutive,
+        exceedsAgeLimit:
+          stability.maxConsecutiveA > familyCtx.maxConsecutive ||
+          stability.maxConsecutiveB > familyCtx.maxConsecutive,
       } : null,
+      familyContext: {
+        youngestBand: familyCtx.youngestBand,
+        maxConsecutive: familyCtx.maxConsecutive,
+        solverWeightProfile: familyCtx.solverWeightProfile,
+      },
       pendingRequests,
     };
   }

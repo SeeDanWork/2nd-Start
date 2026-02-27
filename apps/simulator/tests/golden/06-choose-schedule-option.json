@@ -1,0 +1,104 @@
+{
+  "_generated": "2026-02-21T00:00:00.000Z",
+  "_generator": "generate-golden.ts",
+  "scenario": {
+    "number": 6,
+    "key": "choose-schedule-option",
+    "title": "Choose schedule option",
+    "category": "Onboarding & Setup",
+    "implemented": true
+  },
+  "params": {
+    "numOptions": 3
+  },
+  "messages": [
+    {
+      "messageId": "msg-006-001",
+      "scenarioNumber": 6,
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "to": {
+        "parentIds": [
+          "parent-a-001",
+          "parent-b-001"
+        ]
+      },
+      "urgency": "normal",
+      "text": "We generated 3 schedule options based on your constraints. Review and choose the one that works best for your family.",
+      "sections": [
+        {
+          "title": "Option 1: Balanced 3/4",
+          "bullets": [
+            "Alex: 6 nights / Jordan: 8 nights per 2 weeks",
+            "2 handoffs per week",
+            "Stability score: 92/100"
+          ]
+        },
+        {
+          "title": "Option 2: Week On/Off",
+          "bullets": [
+            "Alex: 7 nights / Jordan: 7 nights per 2 weeks",
+            "1 handoffs per week",
+            "Stability score: 85/100"
+          ]
+        },
+        {
+          "title": "Option 3: Short Rotation 2/2/3",
+          "bullets": [
+            "Alex: 8 nights / Jordan: 6 nights per 2 weeks",
+            "3 handoffs per week",
+            "Stability score: 88/100"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "select-option-1",
+          "label": "Choose Balanced 3/4",
+          "style": "primary",
+          "payload": {
+            "optionId": "option-1",
+            "pattern": [
+              3,
+              4
+            ]
+          }
+        },
+        {
+          "actionId": "select-option-2",
+          "label": "Choose Week On/Off",
+          "style": "secondary",
+          "payload": {
+            "optionId": "option-2",
+            "pattern": [
+              7,
+              7
+            ]
+          }
+        },
+        {
+          "actionId": "select-option-3",
+          "label": "Choose Short Rotation 2/2/3",
+          "style": "secondary",
+          "payload": {
+            "optionId": "option-3",
+            "pattern": [
+              2,
+              2,
+              3
+            ]
+          }
+        }
+      ],
+      "metadata": {
+        "requiresBothParents": true
+      }
+    }
+  ],
+  "stateTransitions": [
+    "select-option-1",
+    "select-option-2",
+    "select-option-3"
+  ],
+  "timeoutMessages": null,
+  "errors": []
+}
