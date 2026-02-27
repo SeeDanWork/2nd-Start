@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { Platform } from 'react-native';
 import { ChatMessage, ChipOption, ActionCard, StructuredAction, ChatContext } from '../chat/types';
 import { resolveIntent } from '../chat/intents';
 import { executeAction } from '../chat/executors';
@@ -6,7 +7,7 @@ import { ONBOARDING_TURNS } from '../chat/flows/onboarding';
 import { JOINER_TURNS } from '../chat/flows/joiner';
 import { LIFECYCLE_WELCOME_MESSAGE, LIFECYCLE_CHIPS } from '../chat/flows/lifecycle';
 import { useAuthStore } from './auth';
-import { onboardingApi, familiesApi, calendarApi } from '../api/client';
+import { onboardingApi, familiesApi, calendarApi, apiClient } from '../api/client';
 
 function makeId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -682,18 +683,74 @@ async function handleOnboardingChip(
         get().advanceOnboarding();
         break;
       }
+
+      // Dev shortcut: typing "other" resolves to the other test user,
+      // sends the invite, and auto-accepts it in one step.
+      const isOtherShortcut =
+        Platform.OS === 'web' &&
+        wizard.inviteEmail.trim().toLowerCase() === 'other';
+
+      let targetEmail = wizard.inviteEmail.trim().toLowerCase();
+
+      if (isOtherShortcut) {
+        // Resolve "other" to the other test user's email
+        const currentEmail = useAuthStore.getState().user?.email || '';
+        const fatherEmail = (typeof window !== 'undefined' &&
+          new URLSearchParams(window.location.search).get('storagePrefix') === 'father_')
+          ? currentEmail
+          : '';
+        // If we're father, other = mother. If we're mother, other = father.
+        const envFather = 'father@test.local';
+        const envMother = 'mother@test.local';
+        targetEmail = currentEmail === envFather ? envMother : envFather;
+      }
+
       try {
         await familiesApi.invite(family.id, {
-          email: wizard.inviteEmail.trim().toLowerCase(),
+          email: targetEmail,
           role: 'parent_b',
           label: 'Parent B',
         });
-        set((s) => ({
-          messages: [
-            ...s.messages,
-            botMessage(`Invite sent to ${wizard.inviteEmail}!`),
-          ],
-        }));
+
+        if (isOtherShortcut) {
+          // Auto-accept: dev-login as the other user, find their invite, accept it
+          try {
+            const loginRes = await apiClient.post('/auth/dev-login', { email: targetEmail });
+            const otherToken = loginRes.data.accessToken;
+            // Find pending invite for the other user
+            const invitesRes = await apiClient.get('/families/my-invites', {
+              headers: { Authorization: `Bearer ${otherToken}` },
+            });
+            const invites = Array.isArray(invitesRes.data) ? invitesRes.data : [];
+            const matching = invites.find((inv: any) => inv.familyId === family.id);
+            if (matching) {
+              await apiClient.post('/families/accept-invite-by-id',
+                { membershipId: matching.membershipId },
+                { headers: { Authorization: `Bearer ${otherToken}` } },
+              );
+            }
+            set((s) => ({
+              messages: [
+                ...s.messages,
+                botMessage(`Invited ${targetEmail} and auto-accepted! Both accounts are now linked.`),
+              ],
+            }));
+          } catch {
+            set((s) => ({
+              messages: [
+                ...s.messages,
+                botMessage(`Invite sent to ${targetEmail}, but auto-accept failed. Accept manually in the other panel.`),
+              ],
+            }));
+          }
+        } else {
+          set((s) => ({
+            messages: [
+              ...s.messages,
+              botMessage(`Invite sent to ${targetEmail}!`),
+            ],
+          }));
+        }
       } catch {
         set((s) => ({
           messages: [
