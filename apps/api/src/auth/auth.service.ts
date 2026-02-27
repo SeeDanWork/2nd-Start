@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -148,6 +149,34 @@ export class AuthService {
   async deleteAccount(userId: string): Promise<{ message: string }> {
     await this.userRepo.update(userId, { deletedAt: new Date() });
     return { message: 'Account scheduled for deletion in 30 days.' };
+  }
+
+  async devLogin(email: string): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    user: User;
+  }> {
+    if (process.env.NODE_ENV !== 'development') {
+      throw new ForbiddenException('Dev login is only available in development');
+    }
+
+    let user = await this.userRepo.findOne({
+      where: { email: email.toLowerCase(), deletedAt: IsNull() },
+    });
+
+    if (!user) {
+      user = this.userRepo.create({
+        email: email.toLowerCase(),
+        displayName: email.split('@')[0],
+        timezone: 'America/New_York',
+      });
+      user = await this.userRepo.save(user);
+    }
+
+    const accessToken = this.generateAccessToken(user);
+    const refreshToken = this.generateRefreshToken(user);
+
+    return { accessToken, refreshToken, user };
   }
 
   private generateAccessToken(user: User): string {

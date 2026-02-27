@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { Platform } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import {
   View,
@@ -10,7 +11,9 @@ import {
 import { useAuthStore } from '../src/stores/auth';
 import { useSocketStore } from '../src/stores/socket';
 import { useChatStore } from '../src/stores/chat';
+import { useWebHarnessSync } from '../src/hooks/useWebHarnessSync';
 import { colors } from '../src/theme/colors';
+import * as SecureStore from '../src/utils/storage';
 
 const INVITE_POLL_INTERVAL_MS = 10_000;
 const INVITE_POLL_MAX_MS = 120_000;
@@ -184,9 +187,36 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 export default function RootLayout() {
   const restoreSession = useAuthStore((s) => s.restoreSession);
 
+  // On web, inject dev tokens from URL query params (used by web harness)
   useEffect(() => {
-    restoreSession();
+    if (Platform.OS !== 'web' || typeof window === 'undefined') {
+      restoreSession();
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const devToken = params.get('devToken');
+    const devRefresh = params.get('devRefresh');
+
+    if (devToken && devRefresh) {
+      (async () => {
+        await SecureStore.setItemAsync('accessToken', devToken);
+        await SecureStore.setItemAsync('refreshToken', devRefresh);
+        // Clean URL to avoid re-injection on refresh (keep storagePrefix)
+        const prefix = params.get('storagePrefix') || '';
+        const cleanUrl = prefix
+          ? `${window.location.pathname}?storagePrefix=${prefix}`
+          : window.location.pathname;
+        window.history.replaceState({}, '', cleanUrl);
+        restoreSession();
+      })();
+    } else {
+      restoreSession();
+    }
   }, []);
+
+  // Post key state changes to parent frame (web harness)
+  useWebHarnessSync();
 
   return (
     <AuthGate>
