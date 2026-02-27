@@ -23,11 +23,30 @@ export function useLedgerData(familyId: string, token: string) {
 
     client
       .get(`/families/${familyId}/ledger`, {
-        params: { windows: '2,4,8,12' },
+        params: { windows: 'TWO_WEEK,FOUR_WEEK,EIGHT_WEEK,TWELVE_WEEK' },
       })
       .then((res) => {
-        const data = Array.isArray(res.data) ? res.data : res.data?.windows || [];
-        setWindows(data);
+        const raw: any[] = Array.isArray(res.data) ? res.data : res.data?.windows || [];
+        // Map LedgerSnapshot entity fields to our interface
+        const windowWeeksMap: Record<string, number> = {
+          TWO_WEEK: 2, FOUR_WEEK: 4, EIGHT_WEEK: 8, TWELVE_WEEK: 12,
+        };
+        const mapped: LedgerWindow[] = raw.map((snap: any) => {
+          const total = (snap.parentAOvernights ?? 0) + (snap.parentBOvernights ?? 0);
+          return {
+            windowWeeks: windowWeeksMap[snap.windowType] ?? 0,
+            parentA: {
+              overnights: snap.parentAOvernights ?? 0,
+              pct: total > 0 ? ((snap.parentAOvernights ?? 0) / total) * 100 : 50,
+            },
+            parentB: {
+              overnights: snap.parentBOvernights ?? 0,
+              pct: total > 0 ? ((snap.parentBOvernights ?? 0) / total) * 100 : 50,
+            },
+            totalNights: total,
+          };
+        });
+        setWindows(mapped);
         setError(null);
       })
       .catch((err) => {

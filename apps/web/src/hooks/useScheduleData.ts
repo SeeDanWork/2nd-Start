@@ -26,8 +26,16 @@ export function useScheduleData(familyId: string, token: string) {
     client
       .get(`/families/${familyId}/calendar`, { params: { start, end } })
       .then((res) => {
-        const data = Array.isArray(res.data) ? res.data : res.data?.assignments || [];
-        setDays(data);
+        // API returns { days: [{ date, assignment, handoffs, ... }], scheduleVersion }
+        const raw: any[] = res.data?.days ?? (Array.isArray(res.data) ? res.data : []);
+        const mapped: ScheduleDay[] = raw
+          .filter((d: any) => d.assignment)
+          .map((d: any) => ({
+            date: d.date,
+            assignedTo: d.assignment.assignedTo,
+            source: d.assignment.source,
+          }));
+        setDays(mapped);
         setError(null);
       })
       .catch((err) => {

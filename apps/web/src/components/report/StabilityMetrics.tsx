@@ -13,12 +13,12 @@ export function StabilityMetrics({ metrics, loading, error }: Props) {
   if (!metrics) return <p style={styles.status}>No stability data</p>;
 
   const items = [
-    { label: 'Transitions (8w)', value: metrics.transitions },
-    { label: 'Avg Consecutive', value: metrics.avgConsecutiveNights.toFixed(1) },
-    { label: 'Max Consecutive', value: metrics.maxConsecutiveNights },
+    { label: 'Transitions/wk', value: (metrics.transitions ?? 0).toFixed(1) },
+    { label: 'Avg Consecutive', value: (metrics.avgConsecutiveNights ?? 0).toFixed(1) },
+    { label: 'Max Consecutive', value: metrics.maxConsecutiveNights ?? 0 },
     {
       label: 'School Night Consistency',
-      value: `${Math.round(metrics.schoolNightConsistency * 100)}%`,
+      value: `${Math.round((metrics.schoolNightConsistency ?? 0) * 100)}%`,
     },
   ];
 

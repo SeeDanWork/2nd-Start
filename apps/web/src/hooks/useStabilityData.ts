@@ -28,7 +28,20 @@ export function useStabilityData(familyId: string, token: string) {
     client
       .get(`/families/${familyId}/stability`, { params: { start, end } })
       .then((res) => {
-        setMetrics(res.data);
+        const d = res.data;
+        if (!d) {
+          setMetrics(null);
+        } else {
+          // Map StabilitySnapshot entity fields to our interface
+          const maxA = d.maxConsecutiveA ?? 0;
+          const maxB = d.maxConsecutiveB ?? 0;
+          setMetrics({
+            transitions: d.transitionsPerWeek ?? 0,
+            avgConsecutiveNights: (maxA + maxB) / 2,
+            maxConsecutiveNights: Math.max(maxA, maxB),
+            schoolNightConsistency: (d.schoolNightConsistencyPct ?? 0) / 100,
+          });
+        }
         setError(null);
       })
       .catch((err) => {
