@@ -124,10 +124,16 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
     const inAuthGroup = segments[0] === '(auth)';
 
+    // On web with storagePrefix (harness iframe), skip pending-invites
+    const isDevHarness =
+      Platform.OS === 'web' &&
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).has('storagePrefix');
+
     if (!isAuthenticated && !inAuthGroup) {
       router.replace('/(auth)/welcome');
     } else if (isAuthenticated && !family && !inAuthGroup) {
-      router.replace('/(auth)/pending-invites');
+      router.replace(isDevHarness ? '/(auth)/onboarding' : '/(auth)/pending-invites');
     } else if (isAuthenticated && family && inAuthGroup && !isOnboarding) {
       router.replace('/(main)/(tabs)/');
     }
