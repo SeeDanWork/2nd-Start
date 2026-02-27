@@ -96,6 +96,44 @@ PROFILES: dict[str, SolverWeights] = {
 }
 
 
+# ── Arrangement Multipliers ─────────────────────────────────────────────
+
+ARRANGEMENT_MULTIPLIERS: dict[str, dict[str, float]] = {
+    "shared": {
+        "fairness_deviation": 1.0, "total_transitions": 1.0,
+        "non_school_handoffs": 1.0, "weekend_fragmentation": 1.0,
+        "school_night_disruption": 1.0, "weekend_parity": 1.0,
+        "max_consecutive_penalty": 1.0,
+    },
+    "primary_visits": {
+        "fairness_deviation": 0.5, "total_transitions": 1.5,
+        "non_school_handoffs": 1.0, "weekend_fragmentation": 0.7,
+        "school_night_disruption": 1.2, "weekend_parity": 0.5,
+        "max_consecutive_penalty": 1.0,
+    },
+    "undecided": {
+        "fairness_deviation": 1.0, "total_transitions": 1.0,
+        "non_school_handoffs": 1.0, "weekend_fragmentation": 1.0,
+        "school_night_disruption": 1.0, "weekend_parity": 1.0,
+        "max_consecutive_penalty": 1.0,
+    },
+}
+
+
+def apply_arrangement_multipliers(weights: SolverWeights, arrangement: str) -> SolverWeights:
+    """Scale profile weights by living-arrangement multipliers."""
+    m = ARRANGEMENT_MULTIPLIERS.get(arrangement, ARRANGEMENT_MULTIPLIERS["shared"])
+    return SolverWeights(
+        fairness_deviation=weights.fairness_deviation * m["fairness_deviation"],
+        total_transitions=weights.total_transitions * m["total_transitions"],
+        non_school_handoffs=weights.non_school_handoffs * m["non_school_handoffs"],
+        weekend_fragmentation=weights.weekend_fragmentation * m["weekend_fragmentation"],
+        school_night_disruption=weights.school_night_disruption * m["school_night_disruption"],
+        weekend_parity=weights.weekend_parity * m["weekend_parity"],
+        max_consecutive_penalty=weights.max_consecutive_penalty * m["max_consecutive_penalty"],
+    )
+
+
 PROFILE_DISPLAY_NAMES: dict[str, str] = {
     OptionProfile.STABILITY: "Stability-First",
     OptionProfile.FAIRNESS: "Fairness-First",

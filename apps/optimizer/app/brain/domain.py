@@ -27,6 +27,12 @@ class ExchangeLocation(str, Enum):
     OTHER = "other"
 
 
+class LivingArrangement(str, Enum):
+    SHARED = "shared"
+    PRIMARY_VISITS = "primary_visits"
+    UNDECIDED = "undecided"
+
+
 class WeekendPreference(str, Enum):
     ALTERNATE = "alternate"
     FIXED = "fixed"
@@ -151,6 +157,11 @@ class OnboardingInput(BaseModel):
     daycare_schedule: Optional[DaycareSchedule] = Field(default=None)
     preferred_exchange_location: ExchangeLocation = Field(
         default=ExchangeLocation.SCHOOL,
+    )
+
+    living_arrangement: LivingArrangement = Field(
+        default=LivingArrangement.SHARED,
+        description="How children's time is divided between homes.",
     )
 
     parent_a: ParentProfile

@@ -204,6 +204,14 @@ export enum NotificationType {
   FAIRNESS_DRIFT = 'fairness_drift',
 }
 
+// ─── Living Arrangement ────────────────────────────────────
+
+export enum LivingArrangement {
+  SHARED = 'shared',
+  PRIMARY_VISITS = 'primary_visits',
+  UNDECIDED = 'undecided',
+}
+
 // ─── Guardrails ─────────────────────────────────────────────
 
 export enum ConsentRuleType {

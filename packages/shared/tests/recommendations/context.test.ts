@@ -145,6 +145,51 @@ describe('computeFamilyContextDefaults', () => {
     expect(ctx.preferredTemplateIds).toContain('7on7off');
   });
 
+  // ─── Living arrangement ───────────────────────────────────
+
+  it('defaults to shared livingArrangement when not specified', () => {
+    const ctx = computeFamilyContextDefaults([
+      { childId: 'c', dateOfBirth: monthsAgo(6 * 12) },
+    ]);
+    expect(ctx.livingArrangement).toBe('shared');
+  });
+
+  it('returns shared for empty children with no arrangement', () => {
+    const ctx = computeFamilyContextDefaults([]);
+    expect(ctx.livingArrangement).toBe('shared');
+  });
+
+  it('primary_visits prepends primary templates to preferredTemplateIds', () => {
+    const ctx = computeFamilyContextDefaults(
+      [{ childId: 'c', dateOfBirth: monthsAgo(8 * 12) }],
+      undefined,
+      'primary_visits',
+    );
+    expect(ctx.livingArrangement).toBe('primary_visits');
+    // Primary templates should be at the front
+    expect(ctx.preferredTemplateIds[0]).toBe('primary_weekends');
+    expect(ctx.preferredTemplateIds[1]).toBe('primary_plus_midweek');
+    // Original templates still present
+    expect(ctx.preferredTemplateIds).toContain('7on7off');
+  });
+
+  it('primary_visits prepends primary templates even with no children', () => {
+    const ctx = computeFamilyContextDefaults([], undefined, 'primary_visits');
+    expect(ctx.livingArrangement).toBe('primary_visits');
+    expect(ctx.preferredTemplateIds[0]).toBe('primary_weekends');
+    expect(ctx.preferredTemplateIds[1]).toBe('primary_plus_midweek');
+  });
+
+  it('undecided behaves like shared — no primary template prepend', () => {
+    const ctx = computeFamilyContextDefaults(
+      [{ childId: 'c', dateOfBirth: monthsAgo(8 * 12) }],
+      undefined,
+      'undecided',
+    );
+    expect(ctx.livingArrangement).toBe('undecided');
+    expect(ctx.preferredTemplateIds[0]).not.toBe('primary_weekends');
+  });
+
   // ─── Per-child defaults with goals applied ─────────────────
 
   it('per-child values reflect goal adjustments individually', () => {

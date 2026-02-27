@@ -18,7 +18,7 @@ export const SOLVER_TIMEOUT_SECONDS = 30;
 export const SOLVER_MAX_SOLUTIONS = 10;
 export const SOLVER_MIN_HAMMING_DISTANCE = 2;
 export const DEFAULT_PROPOSAL_HORIZON_WEEKS = 8;
-export const DEFAULT_SCHEDULE_HORIZON_WEEKS = 12;
+export const DEFAULT_SCHEDULE_HORIZON_WEEKS = 18;
 
 // ─── Solver Weights (soft constraint penalties) ─────────────
 
@@ -61,6 +61,14 @@ export const AGE_WEIGHT_MULTIPLIERS: Record<string, Record<string, number>> = {
     weekendFragmentation: 1.0,
     schoolNightDisruption: 1.0,
   },
+};
+
+// ─── Living Arrangement Weight Multipliers ──────────────────
+
+export const LIVING_ARRANGEMENT_WEIGHT_MULTIPLIERS: Record<string, Record<string, number>> = {
+  shared:         { fairnessDeviation: 1.0, totalTransitions: 1.0, nonDaycareHandoffs: 1.0, weekendFragmentation: 1.0, schoolNightDisruption: 1.0 },
+  primary_visits: { fairnessDeviation: 0.5, totalTransitions: 1.5, nonDaycareHandoffs: 1.0, weekendFragmentation: 0.7, schoolNightDisruption: 1.2 },
+  undecided:      { fairnessDeviation: 1.0, totalTransitions: 1.0, nonDaycareHandoffs: 1.0, weekendFragmentation: 1.0, schoolNightDisruption: 1.0 },
 };
 
 // ─── Proposals ──────────────────────────────────────────────
@@ -111,7 +119,7 @@ export const SHARE_LINK_TOKEN_BYTES = 32;
 
 // ─── Offline Cache ──────────────────────────────────────────
 
-export const CACHE_HORIZON_WEEKS = 12;
+export const CACHE_HORIZON_WEEKS = 18;
 export const CACHE_STALE_THRESHOLD_HOURS = 1;
 
 // ─── Account Deletion ───────────────────────────────────────

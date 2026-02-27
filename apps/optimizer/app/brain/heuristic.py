@@ -60,6 +60,11 @@ PATTERNS: dict[str, list[int]] = {
     "3-4-4-3": [0,0,0,1,1,1,1, 0,0,0,0,1,1,1],
     # Frequent short blocks: 2-2-3 repeating (good for young children)
     "2-2-3":   [0,0,1,1,0,0,0, 1,1,0,0,1,1,1],
+    # Primary home patterns (asymmetric, parent_a = primary)
+    # B gets weekends only: 10A, 4B
+    "primary-weekends": [0,0,0,0,0,1,1, 0,0,0,0,0,1,1],
+    # B gets 1 midweek night per week: 12A, 2B
+    "primary-midweek":  [0,0,1,0,0,0,0, 0,0,1,0,0,0,0],
 }
 
 # Map profiles to preferred patterns
@@ -69,6 +74,16 @@ PROFILE_PATTERN_PREFS: dict[str, list[str]] = {
     OptionProfile.LOGISTICS:      ["5-2-2-5", "7-7", "3-4-4-3"],
     OptionProfile.WEEKEND_PARITY: ["3-4-4-3", "2-2-3", "5-2-2-5"],
     OptionProfile.CHILD_ROUTINE:  ["7-7", "5-2-2-5", "3-4-4-3"],
+}
+
+# When living_arrangement == 'primary_visits', override STABILITY and CHILD_ROUTINE
+# to prefer primary-home patterns (fewer transitions, anchored to primary parent).
+PRIMARY_PROFILE_PATTERN_PREFS: dict[str, list[str]] = {
+    OptionProfile.STABILITY:      ["primary-weekends", "7-7", "5-2-2-5"],
+    OptionProfile.FAIRNESS:       ["3-4-4-3", "2-2-5-5", "2-2-3"],
+    OptionProfile.LOGISTICS:      ["5-2-2-5", "primary-weekends", "7-7"],
+    OptionProfile.WEEKEND_PARITY: ["primary-weekends", "3-4-4-3", "2-2-3"],
+    OptionProfile.CHILD_ROUTINE:  ["primary-weekends", "primary-midweek", "7-7"],
 }
 
 
@@ -184,11 +199,19 @@ def generate_options_heuristic(
     a_locked_py = {_js_to_python_dow(d) for d in inputs.parent_a.availability.locked_nights}
     b_locked_py = {_js_to_python_dow(d) for d in parent_b.availability.locked_nights}
 
+    arrangement = inputs.living_arrangement
+    if isinstance(arrangement, str):
+        arrangement_value = arrangement
+    else:
+        arrangement_value = arrangement.value if hasattr(arrangement, 'value') else str(arrangement)
+    is_primary = arrangement_value == "primary_visits"
+    prefs_map = PRIMARY_PROFILE_PATTERN_PREFS if is_primary else PROFILE_PATTERN_PREFS
+
     profiles = config.profiles or list(OptionProfile)
     options: list[ScheduleOption] = []
 
     for profile in profiles:
-        pattern_names = PROFILE_PATTERN_PREFS.get(profile, ["3-4-4-3"])
+        pattern_names = prefs_map.get(profile, ["3-4-4-3"])
         for pname in pattern_names:
             base = PATTERNS[pname]
             adjusted = _apply_locked_nights(base, dates, a_locked_py, b_locked_py)

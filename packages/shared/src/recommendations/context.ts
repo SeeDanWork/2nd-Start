@@ -35,6 +35,7 @@ export interface FamilyContextDefaults {
     maxAway: number;
   }>;
   solverWeightProfile: SolverWeightProfile;
+  livingArrangement: string;
 }
 
 // ─── Band → Solver Weight Profile Mapping ─────────────────────────
@@ -72,6 +73,7 @@ const DEFAULT_GOALS: FamilyGoals = {
 export function computeFamilyContextDefaults(
   children: Array<{ childId: string; dateOfBirth: string | null }>,
   goals?: FamilyGoals,
+  livingArrangement?: string,
 ): FamilyContextDefaults {
   const g = goals ?? DEFAULT_GOALS;
 
@@ -80,18 +82,30 @@ export function computeFamilyContextDefaults(
     (c): c is { childId: string; dateOfBirth: string } => c.dateOfBirth !== null,
   );
 
+  const arrangement = livingArrangement ?? 'shared';
+
   // Fallback: no valid children → school-age defaults
   if (validChildren.length === 0) {
     const defs = AGE_BAND_DEFAULTS[SCHOOL_AGE_BAND];
     const adjMax = adjustMaxConsecutive(defs.maxConsecutive, g, SCHOOL_AGE_BAND);
     const adjAway = adjustMaxConsecutive(defs.maxAway, g, SCHOOL_AGE_BAND);
+    const fallbackTemplates: TemplateId[] = [...defs.preferredTemplates];
+    if (arrangement === 'primary_visits') {
+      const primaryIds: TemplateId[] = ['primary_weekends', 'primary_plus_midweek'];
+      for (const id of [...primaryIds].reverse()) {
+        if (!fallbackTemplates.includes(id)) {
+          fallbackTemplates.unshift(id);
+        }
+      }
+    }
     return {
       youngestBand: SCHOOL_AGE_BAND,
       maxConsecutive: adjMax,
       maxAway: adjAway,
-      preferredTemplateIds: [...defs.preferredTemplates],
+      preferredTemplateIds: fallbackTemplates,
       perChild: [],
       solverWeightProfile: BAND_TO_PROFILE[SCHOOL_AGE_BAND],
+      livingArrangement: arrangement,
     };
   }
 
@@ -119,6 +133,16 @@ export function computeFamilyContextDefaults(
   // Preferred templates from youngest band
   const preferredTemplateIds = [...youngestDefs.preferredTemplates];
 
+  // Prepend primary templates for primary_visits arrangement
+  if (arrangement === 'primary_visits') {
+    const primaryIds: TemplateId[] = ['primary_weekends', 'primary_plus_midweek'];
+    for (const id of [...primaryIds].reverse()) {
+      if (!preferredTemplateIds.includes(id)) {
+        preferredTemplateIds.unshift(id);
+      }
+    }
+  }
+
   // Solver weight profile from youngest band
   const solverWeightProfile = BAND_TO_PROFILE[youngest];
 
@@ -129,5 +153,6 @@ export function computeFamilyContextDefaults(
     preferredTemplateIds,
     perChild,
     solverWeightProfile,
+    livingArrangement: arrangement,
   };
 }

@@ -8,6 +8,7 @@ import {
   type FamilyGoals,
   DEFAULT_SOLVER_WEIGHTS,
   AGE_WEIGHT_MULTIPLIERS,
+  LIVING_ARRANGEMENT_WEIGHT_MULTIPLIERS,
 } from '@adcp/shared';
 
 const STALE_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -71,15 +72,17 @@ export class FamilyContextService {
    * Get age-adjusted solver weights for this family.
    */
   getAdjustedWeights(context: FamilyContextDefaults): Record<keyof typeof DEFAULT_SOLVER_WEIGHTS, number> {
-    const multipliers = AGE_WEIGHT_MULTIPLIERS[context.solverWeightProfile]
+    const ageMult = AGE_WEIGHT_MULTIPLIERS[context.solverWeightProfile]
       ?? AGE_WEIGHT_MULTIPLIERS['school_age'];
+    const arrMult = LIVING_ARRANGEMENT_WEIGHT_MULTIPLIERS[context.livingArrangement]
+      ?? LIVING_ARRANGEMENT_WEIGHT_MULTIPLIERS['shared'];
 
     return {
-      fairnessDeviation: Math.round(DEFAULT_SOLVER_WEIGHTS.fairnessDeviation * (multipliers.fairnessDeviation ?? 1)),
-      totalTransitions: Math.round(DEFAULT_SOLVER_WEIGHTS.totalTransitions * (multipliers.totalTransitions ?? 1)),
-      nonDaycareHandoffs: Math.round(DEFAULT_SOLVER_WEIGHTS.nonDaycareHandoffs * (multipliers.nonDaycareHandoffs ?? 1)),
-      weekendFragmentation: Math.round(DEFAULT_SOLVER_WEIGHTS.weekendFragmentation * (multipliers.weekendFragmentation ?? 1)),
-      schoolNightDisruption: Math.round(DEFAULT_SOLVER_WEIGHTS.schoolNightDisruption * (multipliers.schoolNightDisruption ?? 1)),
+      fairnessDeviation: Math.round(DEFAULT_SOLVER_WEIGHTS.fairnessDeviation * (ageMult.fairnessDeviation ?? 1) * (arrMult.fairnessDeviation ?? 1)),
+      totalTransitions: Math.round(DEFAULT_SOLVER_WEIGHTS.totalTransitions * (ageMult.totalTransitions ?? 1) * (arrMult.totalTransitions ?? 1)),
+      nonDaycareHandoffs: Math.round(DEFAULT_SOLVER_WEIGHTS.nonDaycareHandoffs * (ageMult.nonDaycareHandoffs ?? 1) * (arrMult.nonDaycareHandoffs ?? 1)),
+      weekendFragmentation: Math.round(DEFAULT_SOLVER_WEIGHTS.weekendFragmentation * (ageMult.weekendFragmentation ?? 1) * (arrMult.weekendFragmentation ?? 1)),
+      schoolNightDisruption: Math.round(DEFAULT_SOLVER_WEIGHTS.schoolNightDisruption * (ageMult.schoolNightDisruption ?? 1) * (arrMult.schoolNightDisruption ?? 1)),
     };
   }
 
@@ -98,10 +101,11 @@ export class FamilyContextService {
       dateOfBirth: c.dateOfBirth,
     }));
 
-    // Extract goals from onboardingInput if available
+    // Extract goals and living arrangement from onboardingInput if available
     const goals = this.extractGoals(family);
+    const livingArrangement = this.extractLivingArrangement(family);
 
-    const defaults = computeFamilyContextDefaults(children, goals);
+    const defaults = computeFamilyContextDefaults(children, goals, livingArrangement);
 
     // Store in JSONB column
     const stored = {
@@ -134,6 +138,11 @@ export class FamilyContextService {
     };
   }
 
+  private extractLivingArrangement(family: Family): string {
+    const input = family.onboardingInput as Record<string, any> | null;
+    return input?.living_arrangement ?? 'shared';
+  }
+
   private extractDefaults(cached: Record<string, unknown>): FamilyContextDefaults {
     return {
       youngestBand: cached.youngestBand as FamilyContextDefaults['youngestBand'],
@@ -142,6 +151,7 @@ export class FamilyContextService {
       preferredTemplateIds: cached.preferredTemplateIds as FamilyContextDefaults['preferredTemplateIds'],
       perChild: cached.perChild as FamilyContextDefaults['perChild'],
       solverWeightProfile: cached.solverWeightProfile as FamilyContextDefaults['solverWeightProfile'],
+      livingArrangement: (cached.livingArrangement as string) ?? 'shared',
     };
   }
 }

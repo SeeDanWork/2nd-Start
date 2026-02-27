@@ -52,7 +52,7 @@ from app.brain.domain import (
     ParentPreferences,
     ParentConstraints,
 )
-from app.brain.profiles import get_profile_weights, get_profile_name, SolverWeights
+from app.brain.profiles import get_profile_weights, get_profile_name, SolverWeights, apply_arrangement_multipliers
 from app.brain.stats import compute_stats
 from app.brain.explain import generate_explanation
 from app.brain.conflicts import detect_conflicts
@@ -414,8 +414,15 @@ def generate_options(
     profiles = config.profiles or list(OptionProfile)
     options: list[ScheduleOption] = []
 
+    arrangement = inputs.living_arrangement
+    if isinstance(arrangement, str):
+        arrangement_value = arrangement
+    else:
+        arrangement_value = arrangement.value if hasattr(arrangement, 'value') else str(arrangement)
+
     for profile in profiles:
         weights = get_profile_weights(profile)
+        weights = apply_arrangement_multipliers(weights, arrangement_value)
         option = _solve_single_profile(
             dates=dates,
             profile=profile,
