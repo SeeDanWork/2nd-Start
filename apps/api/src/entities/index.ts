@@ -21,3 +21,6 @@ export { StabilitySnapshot } from './stability-snapshot.entity';
 export { AuditLog } from './audit-log.entity';
 export { ShareLink } from './share-link.entity';
 export { NotificationRecord } from './notification-record.entity';
+export { DisruptionEvent } from './disruption-event.entity';
+export { OverlayPolicyEntity } from './overlay-policy.entity';
+export { PolicyDecisionRecord } from './policy-decision-record.entity';

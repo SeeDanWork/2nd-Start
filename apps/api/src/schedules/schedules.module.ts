@@ -14,6 +14,7 @@ import {
 } from '../entities';
 import { FamiliesModule } from '../families/families.module';
 import { FamilyContextModule } from '../family-context/family-context.module';
+import { DisruptionsModule } from '../disruptions/disruptions.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { FamilyContextModule } from '../family-context/family-context.module';
     }),
     FamiliesModule,
     FamilyContextModule,
+    DisruptionsModule,
   ],
   controllers: [SchedulesController],
   providers: [SchedulesService],

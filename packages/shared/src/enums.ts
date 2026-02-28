@@ -212,6 +212,64 @@ export enum LivingArrangement {
   UNDECIDED = 'undecided',
 }
 
+// ─── Disruption Overlay ──────────────────────────────────────
+
+export enum DisruptionEventType {
+  PUBLIC_HOLIDAY = 'public_holiday',
+  SCHOOL_CLOSED = 'school_closed',
+  SCHOOL_HALF_DAY = 'school_half_day',
+  EMERGENCY_CLOSURE = 'emergency_closure',
+  CHILD_SICK = 'child_sick',
+  CAREGIVER_SICK = 'caregiver_sick',
+  PARENT_TRAVEL = 'parent_travel',
+  TRANSPORT_FAILURE = 'transport_failure',
+  FAMILY_EVENT = 'family_event',
+  CAMP_WEEK = 'camp_week',
+  BREAK = 'break',
+  SUMMER_PERIOD = 'summer_period',
+  OTHER_DECLARED = 'other_declared',
+}
+
+export enum DisruptionScope {
+  HOUSEHOLD = 'household',
+  CHILD_ID = 'child_id',
+}
+
+export enum DisruptionSource {
+  AUTO_LOCALE = 'auto_locale',
+  AUTO_INFERRED = 'auto_inferred',
+  USER_DECLARED = 'user_declared',
+  LEARNED_POLICY = 'learned_policy',
+}
+
+export enum OverrideStrength {
+  NONE = 'none',
+  LOGISTICS_ONLY = 'logistics_only',
+  SOFT = 'soft',
+  HARD = 'hard',
+}
+
+export enum OverlayActionType {
+  NO_OVERRIDE = 'no_override',
+  LOGISTICS_FALLBACK = 'logistics_fallback',
+  BLOCK_ASSIGNMENT = 'block_assignment',
+  DELAY_EXCHANGE = 'delay_exchange',
+  GENERATE_PROPOSALS = 'generate_proposals',
+}
+
+export enum PolicySource {
+  GLOBAL_DEFAULT = 'global_default',
+  LEARNED_POLICY = 'learned_policy',
+  FAMILY_SPECIFIC = 'family_specific',
+}
+
+// ─── Multi-Child Scoring ──────────────────────────────────────
+
+export enum MultiChildScoringMode {
+  INDIVIDUAL = 'individual',
+  GROUPED = 'grouped',
+}
+
 // ─── Guardrails ─────────────────────────────────────────────
 
 export enum ConsentRuleType {

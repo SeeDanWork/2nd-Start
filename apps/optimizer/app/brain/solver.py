@@ -52,7 +52,7 @@ from app.brain.domain import (
     ParentPreferences,
     ParentConstraints,
 )
-from app.brain.profiles import get_profile_weights, get_profile_name, SolverWeights, apply_arrangement_multipliers
+from app.brain.profiles import get_profile_weights, get_profile_name, SolverWeights, apply_arrangement_multipliers, aggregate_multi_child_weights
 from app.brain.stats import compute_stats
 from app.brain.explain import generate_explanation
 from app.brain.conflicts import detect_conflicts
@@ -92,23 +92,35 @@ def _default_parent_b(parent_a: ParentProfile) -> ParentProfile:
     )
 
 
-def _age_band_defaults(age_bands: list[str]) -> dict:
+def _age_band_defaults(age_bands: list[str], number_of_children: int = 1) -> dict:
     """
     Derive solver hints from children's age bands.
-    Uses the youngest child's band (most restrictive).
+
+    For ≤4 children (INDIVIDUAL): youngest child's band governs.
+    For 5+ children (GROUPED): collapse to meta-groups, MIN across all.
     """
     priority = {AgeBand.INFANT: 0, AgeBand.SCHOOL_AGE: 1, AgeBand.TEEN: 2}
     youngest = min(age_bands, key=lambda b: priority.get(b, 1))
 
-    if youngest == AgeBand.INFANT:
-        # 0-4: more frequent exchanges, shorter blocks
-        return {"suggested_max_consecutive": 3, "prefer_short_blocks": True}
-    elif youngest == AgeBand.TEEN:
-        # 11-17: longer blocks, fewer transitions
-        return {"suggested_max_consecutive": 7, "prefer_short_blocks": False}
+    band_max = {AgeBand.INFANT: 3, AgeBand.SCHOOL_AGE: 5, AgeBand.TEEN: 7}
+
+    if number_of_children <= 4:
+        # INDIVIDUAL mode: youngest child governs
+        suggested = band_max.get(youngest, 5)
+        return {
+            "suggested_max_consecutive": suggested,
+            "prefer_short_blocks": youngest == AgeBand.INFANT,
+            "scoring_mode": "individual",
+        }
     else:
-        # 5-10: standard school-driven patterns
-        return {"suggested_max_consecutive": 5, "prefer_short_blocks": False}
+        # GROUPED mode (5+): MIN across all bands present
+        present_maxes = [band_max.get(b, 5) for b in age_bands]
+        suggested = min(present_maxes) if present_maxes else 5
+        return {
+            "suggested_max_consecutive": suggested,
+            "prefer_short_blocks": youngest == AgeBand.INFANT,
+            "scoring_mode": "grouped",
+        }
 
 
 def _build_handoffs(
@@ -405,7 +417,7 @@ def generate_options(
     is_partial = inputs.parent_b is None
 
     # ── Age-band hints ──
-    age_hints = _age_band_defaults(inputs.children_age_bands)
+    age_hints = _age_band_defaults(inputs.children_age_bands, inputs.number_of_children)
 
     # ── Generate dates ──
     dates = _date_range(inputs.shared.start_date, inputs.shared.horizon_days)
@@ -423,6 +435,9 @@ def generate_options(
     for profile in profiles:
         weights = get_profile_weights(profile)
         weights = apply_arrangement_multipliers(weights, arrangement_value)
+        # Apply multi-child weight aggregation for families with >1 child
+        if inputs.number_of_children > 1:
+            weights = aggregate_multi_child_weights(weights, inputs.children_age_bands)
         option = _solve_single_profile(
             dates=dates,
             profile=profile,

@@ -106,6 +106,13 @@ def generate_proposals(request: ProposalRequest) -> ProposalResponse:
         model.add(t[d] <= x[d] + x[d_prev])
         model.add(t[d] <= 2 - x[d] - x[d_prev])
 
+    # Disruption locks (override everything — from overlay engine)
+    for dl in request.disruption_locks:
+        dl_date = date.fromisoformat(dl.date)
+        if dl_date in x:
+            parent_val = 0 if dl.parent.value == "parent_a" else 1
+            model.add(x[dl_date] == parent_val)
+
     # Hard constraints: locked nights
     for lock in request.locked_nights:
         parent_val = 0 if lock.parent.value == "parent_a" else 1

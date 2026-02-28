@@ -21,6 +21,26 @@ const KEYWORD_MAP: Array<{ patterns: RegExp[]; actionType: string }> = [
     patterns: [/\bschedule\b/i, /\bcalendar\b/i, /\bview\b/i],
     actionType: 'view_schedule',
   },
+  {
+    patterns: [/\bsick\b/i, /\bill\b/i, /\bfever\b/i, /\bvomit/i, /\bnot\s+feeling\s+well\b/i],
+    actionType: 'illness_protocol',
+  },
+  {
+    patterns: [/\bclos(ed|ure|ing)\b/i, /\bno\s+school\b/i, /\bschool\s+closed\b/i, /\bdaycare\s+closed\b/i],
+    actionType: 'school_closure',
+  },
+  {
+    patterns: [/\bemergency\b/i, /\bcancel/i, /\bdisrupt/i, /\bunexpected\b/i],
+    actionType: 'disruption_report',
+  },
+  {
+    patterns: [/\bmulti.?child\b/i, /\bsibling/i, /\bchildren.+ages?\b/i, /\bhow.+scoring\b/i],
+    actionType: 'explain_multi_child',
+  },
+  {
+    patterns: [/\bhandoff\b/i, /\bpick.?up\b/i, /\bdrop.?off\b/i, /\btransport/i],
+    actionType: 'handoff_logistics',
+  },
 ];
 
 /**

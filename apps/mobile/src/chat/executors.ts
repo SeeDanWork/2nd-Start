@@ -91,6 +91,88 @@ const executors: Record<
       ],
     };
   },
+
+  illness_protocol: async (_params) => {
+    return {
+      messages: [
+        {
+          role: 'bot',
+          content: "I'm sorry to hear someone isn't feeling well. Let me help adjust the schedule.",
+          chips: [
+            { label: 'A child is sick', value: 'child_sick' },
+            { label: 'I / caregiver is sick', value: 'caregiver_sick' },
+          ],
+        },
+      ],
+    };
+  },
+
+  school_closure: async (_params) => {
+    return {
+      messages: [
+        {
+          role: 'bot',
+          content: "School or daycare closed? I'll adjust handoff locations while keeping the custody schedule the same.",
+          chips: [
+            { label: 'Just tomorrow', value: 'tomorrow' },
+            { label: 'Multiple days', value: 'multiple' },
+          ],
+        },
+      ],
+    };
+  },
+
+  disruption_report: async (_params) => {
+    return {
+      messages: [
+        {
+          role: 'bot',
+          content: "Something unexpected? Let me help you adjust the schedule.",
+          chips: [
+            { label: 'School/daycare closed', value: 'school_closed' },
+            { label: 'Emergency', value: 'emergency' },
+            { label: 'Travel plans', value: 'travel' },
+            { label: 'Other', value: 'other' },
+          ],
+        },
+      ],
+    };
+  },
+
+  explain_multi_child: async (_params) => {
+    return {
+      messages: [
+        {
+          role: 'bot',
+          content: "Your schedule accounts for all your children's ages:\n\n" +
+            "• **Safety first**: The most restrictive limits come from your youngest child\n" +
+            "• **Stability focus**: Transition penalties are set by the most sensitive age\n" +
+            "• **Sibling unity**: All siblings always stay together\n\n" +
+            "The schedule automatically adjusts as your children grow.",
+          card: {
+            type: 'multi_child_summary',
+            data: { loading: true },
+          },
+        },
+      ],
+    };
+  },
+
+  handoff_logistics: async (_params) => {
+    return {
+      messages: [
+        {
+          role: 'bot',
+          content: "Need to change a handoff? I can help find an alternative.",
+          chips: [
+            { label: "Can't get to school", value: 'transport' },
+            { label: 'Need different location', value: 'location' },
+            { label: 'Need different time', value: 'time' },
+          ],
+        },
+      ],
+    };
+  },
 };
 
 export async function executeAction(action: StructuredAction): Promise<ExecutorResult> {

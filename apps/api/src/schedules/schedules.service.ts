@@ -31,6 +31,7 @@ import {
   DEFAULT_SCHEDULE_HORIZON_WEEKS,
 } from '@adcp/shared';
 import { FamilyContextService } from '../family-context/family-context.service';
+import { DisruptionsService } from '../disruptions/disruptions.service';
 
 @Injectable()
 export class SchedulesService {
@@ -53,6 +54,7 @@ export class SchedulesService {
     private readonly constraintRepo: Repository<Constraint>,
     private readonly httpService: HttpService,
     private readonly familyContextService: FamilyContextService,
+    private readonly disruptionsService: DisruptionsService,
   ) {}
 
   async getActiveSchedule(familyId: string): Promise<BaseScheduleVersion | null> {
@@ -233,7 +235,19 @@ export class SchedulesService {
       );
     }
 
-    // 5. Build solver request payload (age-adjusted weights)
+    // 5. Compute disruption overlay
+    const disruptionOverlay = await this.disruptionsService.computeAllOverlays(familyId, []);
+
+    // Apply disruption weight adjustments on top of age+arrangement weights
+    const finalWeights = { ...adjustedWeights };
+    for (const [key, multiplier] of Object.entries(disruptionOverlay.weight_adjustments)) {
+      const camelKey = key as keyof typeof finalWeights;
+      if (camelKey in finalWeights) {
+        finalWeights[camelKey] = Math.round(finalWeights[camelKey] * multiplier);
+      }
+    }
+
+    // 6. Build solver request payload (age-adjusted + disruption-adjusted weights)
     const solverPayload = {
       horizon_start: horizonStart,
       horizon_end: horizonEnd,
@@ -251,14 +265,19 @@ export class SchedulesService {
         daycare_closed: h.daycareClosed,
       })),
       weights: {
-        fairness_deviation: adjustedWeights.fairnessDeviation,
-        total_transitions: adjustedWeights.totalTransitions,
-        non_daycare_handoffs: adjustedWeights.nonDaycareHandoffs,
-        weekend_fragmentation: adjustedWeights.weekendFragmentation,
-        school_night_disruption: adjustedWeights.schoolNightDisruption,
+        fairness_deviation: finalWeights.fairnessDeviation,
+        total_transitions: finalWeights.totalTransitions,
+        non_daycare_handoffs: finalWeights.nonDaycareHandoffs,
+        weekend_fragmentation: finalWeights.weekendFragmentation,
+        school_night_disruption: finalWeights.schoolNightDisruption,
       },
       timeout_seconds: SOLVER_TIMEOUT_SECONDS,
       max_solutions: SOLVER_MAX_SOLUTIONS,
+      disruption_locks: disruptionOverlay.disruption_locks.map((dl) => ({
+        parent: dl.parent,
+        date: dl.date,
+        source: dl.source,
+      })),
     };
 
     // 5. Call optimizer service

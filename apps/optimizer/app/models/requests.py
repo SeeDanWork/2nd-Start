@@ -42,6 +42,12 @@ class HolidayEntry(BaseModel):
     daycare_closed: bool = False
 
 
+class DisruptionLock(BaseModel):
+    parent: ParentRole
+    date: str
+    source: str = "disruption"
+
+
 class ScheduleRequest(BaseModel):
     horizon_start: str
     horizon_end: str
@@ -58,6 +64,7 @@ class ScheduleRequest(BaseModel):
     max_solutions: int = 10
     timeout_seconds: int = 30
     weekend_split_window_weeks: int = 8
+    disruption_locks: list[DisruptionLock] = []
 
 
 class FrozenAssignment(BaseModel):
@@ -90,3 +97,4 @@ class ProposalRequest(BaseModel):
     max_solutions: int = 10
     timeout_seconds: int = 30
     current_schedule_hint: list[FrozenAssignment] = []
+    disruption_locks: list[DisruptionLock] = []

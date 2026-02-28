@@ -12,6 +12,9 @@ import {
   youngestBand as getYoungestBand,
   adjustMaxConsecutive,
 } from './age_baselines';
+import { MultiChildScoringMode } from '../enums';
+import { selectScoringMode, computeMultiChildScoring } from './multi_child';
+import type { MultiChildResult } from './multi_child';
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -36,6 +39,12 @@ export interface FamilyContextDefaults {
   }>;
   solverWeightProfile: SolverWeightProfile;
   livingArrangement: string;
+  /** Multi-child scoring mode (INDIVIDUAL ≤4, GROUPED 5+) */
+  scoringMode: MultiChildScoringMode;
+  /** Hard constraint floors from multi-child aggregation (MIN across children) */
+  hardConstraintFloors: { maxConsecutive: number; maxAway: number };
+  /** Whether fairness was capped at stability due to young children */
+  fairnessCapped: boolean;
 }
 
 // ─── Band → Solver Weight Profile Mapping ─────────────────────────
@@ -106,6 +115,9 @@ export function computeFamilyContextDefaults(
       perChild: [],
       solverWeightProfile: BAND_TO_PROFILE[SCHOOL_AGE_BAND],
       livingArrangement: arrangement,
+      scoringMode: MultiChildScoringMode.INDIVIDUAL,
+      hardConstraintFloors: { maxConsecutive: adjMax, maxAway: adjAway },
+      fairnessCapped: false,
     };
   }
 
@@ -126,9 +138,19 @@ export function computeFamilyContextDefaults(
   const youngest = getYoungestBand(bands);
   const youngestDefs = AGE_BAND_DEFAULTS[youngest];
 
-  // Family-level adjusted values come from youngest child
-  const maxConsecutive = adjustMaxConsecutive(youngestDefs.maxConsecutive, g, youngest);
-  const maxAway = adjustMaxConsecutive(youngestDefs.maxAway, g, youngest);
+  // Multi-child scoring: dual-mode aggregation
+  const multiChildResult = computeMultiChildScoring(
+    perChild.map((c) => ({
+      childId: c.childId,
+      ageBand: c.ageBand,
+      maxConsecutive: c.maxConsecutive,
+      maxAway: c.maxAway,
+    })),
+  );
+
+  // Hard constraint floors from multi-child aggregation (MIN across children)
+  const maxConsecutive = multiChildResult.hardConstraintFloors.maxConsecutive;
+  const maxAway = multiChildResult.hardConstraintFloors.maxAway;
 
   // Preferred templates from youngest band
   const preferredTemplateIds = [...youngestDefs.preferredTemplates];
@@ -154,5 +176,8 @@ export function computeFamilyContextDefaults(
     perChild,
     solverWeightProfile,
     livingArrangement: arrangement,
+    scoringMode: multiChildResult.scoringMode,
+    hardConstraintFloors: multiChildResult.hardConstraintFloors,
+    fairnessCapped: multiChildResult.fairnessCapped,
   };
 }

@@ -33,6 +33,7 @@ import {
 } from '@adcp/shared';
 import { SchedulesService } from '../schedules/schedules.service';
 import { FamilyContextService } from '../family-context/family-context.service';
+import { DisruptionsService } from '../disruptions/disruptions.service';
 
 @Injectable()
 export class ProposalsService {
@@ -60,6 +61,7 @@ export class ProposalsService {
     private readonly httpService: HttpService,
     private readonly schedulesService: SchedulesService,
     private readonly familyContextService: FamilyContextService,
+    private readonly disruptionsService: DisruptionsService,
   ) {}
 
   async generateProposals(
@@ -96,10 +98,20 @@ export class ProposalsService {
     const adjustedWeights = this.familyContextService.getAdjustedWeights(familyCtx);
 
     // Build proposal solver payload
+    // Default 8-week horizon, but extend if request dates fall beyond it
     const today = new Date();
     const horizonStart = today.toISOString().split('T')[0];
     const horizonEnd = new Date(today);
     horizonEnd.setDate(horizonEnd.getDate() + DEFAULT_PROPOSAL_HORIZON_WEEKS * 7);
+
+    const latestRequestDate = request.dates.length > 0
+      ? new Date(request.dates.sort().pop()! + 'T00:00:00Z')
+      : null;
+    if (latestRequestDate && latestRequestDate > horizonEnd) {
+      // Extend horizon 2 weeks past the latest requested date
+      horizonEnd.setTime(latestRequestDate.getTime());
+      horizonEnd.setDate(horizonEnd.getDate() + 14);
+    }
 
     const lockedNights: Array<{ parent: string; days_of_week: number[] }> = [];
     const maxConsecutive: Array<{ parent: string; max_nights: number }> = [];
@@ -141,6 +153,21 @@ export class ProposalsService {
       swap_target_dates: [],
     }];
 
+    // Compute disruption overlay
+    const disruptionOverlay = await this.disruptionsService.computeAllOverlays(
+      familyId,
+      currentAssignments.map((a) => ({ date: a.date, assignedTo: a.assignedTo })),
+    );
+
+    // Apply disruption weight adjustments
+    const finalWeights = { ...adjustedWeights };
+    for (const [key, multiplier] of Object.entries(disruptionOverlay.weight_adjustments)) {
+      const camelKey = key as keyof typeof finalWeights;
+      if (camelKey in finalWeights) {
+        finalWeights[camelKey] = Math.round(finalWeights[camelKey] * multiplier);
+      }
+    }
+
     const solverPayload = {
       horizon_start: horizonStart,
       horizon_end: horizonEnd.toISOString().split('T')[0],
@@ -152,17 +179,22 @@ export class ProposalsService {
       max_consecutive: maxConsecutive,
       max_transitions_per_week: maxTransitionsPerWeek,
       weights: {
-        fairness_deviation: adjustedWeights.fairnessDeviation,
-        total_transitions: adjustedWeights.totalTransitions,
-        non_daycare_handoffs: adjustedWeights.nonDaycareHandoffs,
-        weekend_fragmentation: adjustedWeights.weekendFragmentation,
-        school_night_disruption: adjustedWeights.schoolNightDisruption,
+        fairness_deviation: finalWeights.fairnessDeviation,
+        total_transitions: finalWeights.totalTransitions,
+        non_daycare_handoffs: finalWeights.nonDaycareHandoffs,
+        weekend_fragmentation: finalWeights.weekendFragmentation,
+        school_night_disruption: finalWeights.schoolNightDisruption,
       },
       timeout_seconds: SOLVER_TIMEOUT_SECONDS,
       max_solutions: SOLVER_MAX_SOLUTIONS,
       current_schedule_hint: currentAssignments.map((a) => ({
         date: a.date,
         parent: a.assignedTo,
+      })),
+      disruption_locks: disruptionOverlay.disruption_locks.map((dl) => ({
+        parent: dl.parent,
+        date: dl.date,
+        source: dl.source,
       })),
     };
 

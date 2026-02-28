@@ -167,6 +167,15 @@ def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
 
     # ─── Hard Constraints ────────────────────────────────────
 
+    # 0. Disruption locks (override everything — from overlay engine)
+    disruption_locked_dates: set[date] = set()
+    for dl in request.disruption_locks:
+        dl_date = date.fromisoformat(dl.date)
+        if dl_date in x:
+            parent_val = 0 if dl.parent.value == "parent_a" else 1
+            model.add(x[dl_date] == parent_val)
+            disruption_locked_dates.add(dl_date)
+
     # 1. Locked nights
     for lock in request.locked_nights:
         parent_val = 0 if lock.parent.value == "parent_a" else 1

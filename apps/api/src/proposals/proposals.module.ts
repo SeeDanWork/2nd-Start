@@ -18,6 +18,7 @@ import {
 } from '../entities';
 import { SchedulesModule } from '../schedules/schedules.module';
 import { FamilyContextModule } from '../family-context/family-context.module';
+import { DisruptionsModule } from '../disruptions/disruptions.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { FamilyContextModule } from '../family-context/family-context.module';
     }),
     SchedulesModule,
     FamilyContextModule,
+    DisruptionsModule,
   ],
   controllers: [ProposalsController],
   providers: [ProposalsService],

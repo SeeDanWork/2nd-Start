@@ -151,3 +151,127 @@ def get_profile_weights(profile: str) -> SolverWeights:
 def get_profile_name(profile: str) -> str:
     """Human-readable name for a profile."""
     return PROFILE_DISPLAY_NAMES.get(profile, profile.replace("_", " ").title())
+
+
+# ── Multi-Child Weight Aggregation ─────────────────────────────────────
+
+# Age band priority: lower = younger = more restrictive
+AGE_BAND_PRIORITY = {"0-4": 0, "5-10": 1, "11-17": 2}
+
+# Stability keys: MAX across children (most sensitive child)
+STABILITY_FIELDS = ("total_transitions", "school_night_disruption", "weekend_fragmentation")
+
+# Fairness keys: weighted average
+FAIRNESS_FIELDS = ("fairness_deviation",)
+
+# Young/teen fairness contribution factors
+FAIRNESS_YOUNG_FACTOR = 0.5  # under-5
+FAIRNESS_TEEN_FACTOR = 1.5   # 11+
+
+
+def _fairness_factor(age_band: str) -> float:
+    """Weight factor for fairness contribution by age band."""
+    p = AGE_BAND_PRIORITY.get(age_band, 1)
+    if p == 0:
+        return FAIRNESS_YOUNG_FACTOR
+    if p == 2:
+        return FAIRNESS_TEEN_FACTOR
+    return 1.0
+
+
+def aggregate_multi_child_weights(
+    base_weights: SolverWeights,
+    age_bands: list[str],
+) -> SolverWeights:
+    """
+    Aggregate solver weights across multiple children's age bands.
+
+    Mirrors the shared TypeScript logic:
+    - Stability categories: MAX across children
+    - Fairness categories: weighted average (young 0.5×, teen 1.5×)
+    - Stability > fairness cap when any child is young (0-4)
+
+    For single-child families, returns base_weights unchanged.
+    """
+    if len(age_bands) <= 1:
+        return base_weights
+
+    # Age multiplier tables matching constants.ts AGE_WEIGHT_MULTIPLIERS
+    age_multipliers = {
+        "0-4": {
+            "fairness_deviation": 0.7, "total_transitions": 2.0,
+            "non_school_handoffs": 1.0, "weekend_fragmentation": 1.0,
+            "school_night_disruption": 0.5,
+        },
+        "5-10": {
+            "fairness_deviation": 1.0, "total_transitions": 1.0,
+            "non_school_handoffs": 1.0, "weekend_fragmentation": 1.0,
+            "school_night_disruption": 1.0,
+        },
+        "11-17": {
+            "fairness_deviation": 1.5, "total_transitions": 0.7,
+            "non_school_handoffs": 1.0, "weekend_fragmentation": 1.0,
+            "school_night_disruption": 1.0,
+        },
+    }
+
+    base_dict = {
+        "fairness_deviation": base_weights.fairness_deviation,
+        "total_transitions": base_weights.total_transitions,
+        "non_school_handoffs": base_weights.non_school_handoffs,
+        "weekend_fragmentation": base_weights.weekend_fragmentation,
+        "school_night_disruption": base_weights.school_night_disruption,
+        "weekend_parity": base_weights.weekend_parity,
+        "max_consecutive_penalty": base_weights.max_consecutive_penalty,
+    }
+
+    # Per-child computed weights
+    per_child = []
+    for band in age_bands:
+        m = age_multipliers.get(band, age_multipliers["5-10"])
+        computed = {}
+        for key, val in base_dict.items():
+            computed[key] = round(val * m.get(key, 1.0))
+        per_child.append({"band": band, "computed": computed})
+
+    result = {}
+
+    # Stability: MAX
+    for key in STABILITY_FIELDS:
+        result[key] = max(cw["computed"].get(key, 0) for cw in per_child)
+
+    # Other: MAX
+    for key in ("non_school_handoffs", "weekend_parity", "max_consecutive_penalty"):
+        result[key] = max(cw["computed"].get(key, 0) for cw in per_child)
+
+    # Fairness: weighted average
+    for key in FAIRNESS_FIELDS:
+        weighted_sum = 0.0
+        total_weight = 0.0
+        for cw in per_child:
+            fw = _fairness_factor(cw["band"])
+            weighted_sum += cw["computed"].get(key, 0) * fw
+            total_weight += fw
+        result[key] = round(weighted_sum / total_weight) if total_weight > 0 else 0
+
+    # Stability > fairness cap when any child is young
+    has_young = any(AGE_BAND_PRIORITY.get(b, 1) == 0 for b in age_bands)
+    if has_young:
+        max_stability = max(
+            result.get("total_transitions", 0),
+            result.get("school_night_disruption", 0),
+            result.get("weekend_fragmentation", 0),
+        )
+        for key in FAIRNESS_FIELDS:
+            if result[key] > max_stability:
+                result[key] = max_stability
+
+    return SolverWeights(
+        fairness_deviation=result.get("fairness_deviation", base_weights.fairness_deviation),
+        total_transitions=result.get("total_transitions", base_weights.total_transitions),
+        non_school_handoffs=result.get("non_school_handoffs", base_weights.non_school_handoffs),
+        weekend_fragmentation=result.get("weekend_fragmentation", base_weights.weekend_fragmentation),
+        school_night_disruption=result.get("school_night_disruption", base_weights.school_night_disruption),
+        weekend_parity=result.get("weekend_parity", base_weights.weekend_parity),
+        max_consecutive_penalty=result.get("max_consecutive_penalty", base_weights.max_consecutive_penalty),
+    )

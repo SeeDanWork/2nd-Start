@@ -9,6 +9,8 @@ import {
   DEFAULT_SOLVER_WEIGHTS,
   AGE_WEIGHT_MULTIPLIERS,
   LIVING_ARRANGEMENT_WEIGHT_MULTIPLIERS,
+  MultiChildScoringMode,
+  aggregateMultiChildWeights,
 } from '@adcp/shared';
 
 const STALE_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -70,12 +72,41 @@ export class FamilyContextService {
 
   /**
    * Get age-adjusted solver weights for this family.
+   *
+   * For multi-child families, uses aggregated weights (stability=MAX, fairness=weighted_avg)
+   * instead of youngest-only. Single-child families behave as before.
    */
   getAdjustedWeights(context: FamilyContextDefaults): Record<keyof typeof DEFAULT_SOLVER_WEIGHTS, number> {
-    const ageMult = AGE_WEIGHT_MULTIPLIERS[context.solverWeightProfile]
-      ?? AGE_WEIGHT_MULTIPLIERS['school_age'];
     const arrMult = LIVING_ARRANGEMENT_WEIGHT_MULTIPLIERS[context.livingArrangement]
       ?? LIVING_ARRANGEMENT_WEIGHT_MULTIPLIERS['shared'];
+
+    // Multi-child: use aggregated weights from multi_child scoring
+    if (context.perChild.length > 1) {
+      const contributors = context.perChild.map((c) => ({
+        band: c.ageBand,
+        weight: 1,
+      }));
+      const baseWeights: Record<string, number> = {
+        fairnessDeviation: DEFAULT_SOLVER_WEIGHTS.fairnessDeviation,
+        totalTransitions: DEFAULT_SOLVER_WEIGHTS.totalTransitions,
+        nonDaycareHandoffs: DEFAULT_SOLVER_WEIGHTS.nonDaycareHandoffs,
+        weekendFragmentation: DEFAULT_SOLVER_WEIGHTS.weekendFragmentation,
+        schoolNightDisruption: DEFAULT_SOLVER_WEIGHTS.schoolNightDisruption,
+      };
+      const { weights: agg } = aggregateMultiChildWeights(contributors, baseWeights);
+
+      return {
+        fairnessDeviation: Math.round((agg.fairnessDeviation ?? DEFAULT_SOLVER_WEIGHTS.fairnessDeviation) * (arrMult.fairnessDeviation ?? 1)),
+        totalTransitions: Math.round((agg.totalTransitions ?? DEFAULT_SOLVER_WEIGHTS.totalTransitions) * (arrMult.totalTransitions ?? 1)),
+        nonDaycareHandoffs: Math.round((agg.nonDaycareHandoffs ?? DEFAULT_SOLVER_WEIGHTS.nonDaycareHandoffs) * (arrMult.nonDaycareHandoffs ?? 1)),
+        weekendFragmentation: Math.round((agg.weekendFragmentation ?? DEFAULT_SOLVER_WEIGHTS.weekendFragmentation) * (arrMult.weekendFragmentation ?? 1)),
+        schoolNightDisruption: Math.round((agg.schoolNightDisruption ?? DEFAULT_SOLVER_WEIGHTS.schoolNightDisruption) * (arrMult.schoolNightDisruption ?? 1)),
+      };
+    }
+
+    // Single-child: original youngest-only logic
+    const ageMult = AGE_WEIGHT_MULTIPLIERS[context.solverWeightProfile]
+      ?? AGE_WEIGHT_MULTIPLIERS['school_age'];
 
     return {
       fairnessDeviation: Math.round(DEFAULT_SOLVER_WEIGHTS.fairnessDeviation * (ageMult.fairnessDeviation ?? 1) * (arrMult.fairnessDeviation ?? 1)),
@@ -152,6 +183,12 @@ export class FamilyContextService {
       perChild: cached.perChild as FamilyContextDefaults['perChild'],
       solverWeightProfile: cached.solverWeightProfile as FamilyContextDefaults['solverWeightProfile'],
       livingArrangement: (cached.livingArrangement as string) ?? 'shared',
+      scoringMode: (cached.scoringMode as FamilyContextDefaults['scoringMode']) ?? MultiChildScoringMode.INDIVIDUAL,
+      hardConstraintFloors: (cached.hardConstraintFloors as FamilyContextDefaults['hardConstraintFloors']) ?? {
+        maxConsecutive: cached.maxConsecutive as number,
+        maxAway: cached.maxAway as number,
+      },
+      fairnessCapped: (cached.fairnessCapped as boolean) ?? false,
     };
   }
 }

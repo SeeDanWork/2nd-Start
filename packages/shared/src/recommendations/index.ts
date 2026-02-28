@@ -8,6 +8,7 @@ export * from './templates';
 export * from './scoring';
 export * from './explain';
 export * from './context';
+export * from './multi_child';
 
 // V1 (deprecated) — kept for backward compatibility
 export * from './baselines';

@@ -71,6 +71,23 @@ export const LIVING_ARRANGEMENT_WEIGHT_MULTIPLIERS: Record<string, Record<string
   undecided:      { fairnessDeviation: 1.0, totalTransitions: 1.0, nonDaycareHandoffs: 1.0, weekendFragmentation: 1.0, schoolNightDisruption: 1.0 },
 };
 
+// ─── Multi-Child Scoring ─────────────────────────────────────
+
+/** ≤4 children: each scored individually. 5+: collapse to meta-groups. */
+export const MULTI_CHILD_THRESHOLD = 4;
+
+/** Under-5 children contribute 0.5× to fairness weighted average. */
+export const MULTI_CHILD_FAIRNESS_YOUNG_FACTOR = 0.5;
+
+/** 11+ children contribute 1.5× to fairness weighted average. */
+export const MULTI_CHILD_FAIRNESS_TEEN_FACTOR = 1.5;
+
+/** Fairness weight cannot exceed stability weight when any child is under 5. */
+export const MULTI_CHILD_STABILITY_CEILING = true;
+
+/** Formal invariant: siblings are never split across households. */
+export const SIBLING_DIVERGENCE = 0;
+
 // ─── Proposals ──────────────────────────────────────────────
 
 export const DEFAULT_PROPOSAL_EXPIRY_HOURS = 48;

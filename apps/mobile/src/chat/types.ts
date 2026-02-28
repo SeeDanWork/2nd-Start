@@ -5,7 +5,21 @@ export interface ChipOption {
 }
 
 export interface ActionCard {
-  type: 'schedule_option' | 'schedule_preview' | 'confirmation' | 'stats' | 'checklist' | 'info' | 'day_selector' | 'text_input' | 'loading';
+  type:
+    | 'schedule_option'
+    | 'schedule_preview'
+    | 'confirmation'
+    | 'stats'
+    | 'checklist'
+    | 'info'
+    | 'day_selector'
+    | 'text_input'
+    | 'loading'
+    | 'disruption_preview'
+    | 'policy_preview'
+    | 'multi_child_summary'
+    | 'date_range_picker'
+    | 'impact_preview';
   data: Record<string, unknown>;
 }
 
@@ -36,4 +50,22 @@ export interface OnboardingTurn {
   card?: ActionCard;
   actionType: string;
   autoAdvance?: boolean;
+}
+
+// ─── Scenario Flows ───────────────────────────────────────────
+
+export interface ScenarioTurn {
+  message: string;
+  chips?: ChipOption[];
+  card?: ActionCard;
+  actionType: string;
+  /** If set, skip this turn when the condition is false */
+  condition?: (context: Record<string, unknown>) => boolean;
+}
+
+export interface ScenarioFlow {
+  id: string;
+  name: string;
+  description: string;
+  turns: ScenarioTurn[];
 }
