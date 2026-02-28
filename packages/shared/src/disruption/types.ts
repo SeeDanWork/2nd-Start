@@ -91,6 +91,7 @@ export interface WeightAdjustment {
   key: string;           // solver weight key
   multiplier: number;    // 1.0 = no change, >1 = increase penalty
   reason: string;
+  date?: string;         // optional: per-date adjustment (e.g. Rule C night-before)
 }
 
 export interface DisruptionOverlayResult {

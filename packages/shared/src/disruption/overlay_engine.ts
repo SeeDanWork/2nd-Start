@@ -8,6 +8,7 @@ import {
   OverlayActionType,
   OverrideStrength,
 } from '../enums';
+import { SCHOOL_NIGHT_HOLIDAY_MULTIPLIER } from '../constants';
 import type {
   DisruptionEvent,
   DisruptionOverlayResult,
@@ -156,6 +157,28 @@ export function computeOverlay(
       multiplier: 1.3,
       reason: 'Long disruption (>72h): increased fairness concern',
     });
+  }
+
+  // Rule C: School-night sensitivity depends on tomorrow.
+  // If a PUBLIC_HOLIDAY or SCHOOL_CLOSED falls on a day, the NIGHT BEFORE
+  // should not be scored as school-night-sensitive (treat as weekend-like).
+  if (
+    event.type === DisruptionEventType.PUBLIC_HOLIDAY ||
+    event.type === DisruptionEventType.SCHOOL_CLOSED ||
+    event.type === DisruptionEventType.EMERGENCY_CLOSURE
+  ) {
+    for (const date of dates) {
+      const prevNight = new Date(date + 'T00:00:00Z');
+      prevNight.setUTCDate(prevNight.getUTCDate() - 1);
+      const prevDate = prevNight.toISOString().split('T')[0];
+      weightAdjustments.push({
+        key: 'schoolNightDisruption',
+        multiplier: SCHOOL_NIGHT_HOLIDAY_MULTIPLIER,
+        date: prevDate,
+        reason: `Rule C: night before ${date} (${event.type}) treated as weekend-like`,
+      });
+    }
+    reasons.push(`Rule C: school-night penalty reduced for ${dates.length} night(s) before ${event.type}`);
   }
 
   return {

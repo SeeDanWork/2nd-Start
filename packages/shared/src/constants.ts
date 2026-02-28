@@ -71,6 +71,34 @@ export const LIVING_ARRANGEMENT_WEIGHT_MULTIPLIERS: Record<string, Record<string
   undecided:      { fairnessDeviation: 1.0, totalTransitions: 1.0, nonDaycareHandoffs: 1.0, weekendFragmentation: 1.0, schoolNightDisruption: 1.0 },
 };
 
+// ─── Solver Precedence Hierarchy ─────────────────────────────
+//
+// Explicit ordering from §8 of the scheduling spec. Higher tiers
+// are enforced first and may never be overridden by lower tiers.
+// Multi-child logic, disruption overlays, and all weight
+// adjustments must preserve this ordering.
+
+export const SOLVER_PRECEDENCE_HIERARCHY = [
+  { tier: 1, name: 'hard_constraints',           description: 'Locked nights, max consecutive, max away — absolute, never relaxed' },
+  { tier: 2, name: 'young_child_stability',       description: 'Transition caps and stability weights for youngest child — safety-critical' },
+  { tier: 3, name: 'living_arrangement',           description: 'Arrangement multipliers (shared / primary_visits / undecided)' },
+  { tier: 4, name: 'profile_weights',             description: 'Age-band solver weight profile (infant / young_child / school_age / teen)' },
+  { tier: 5, name: 'fairness_and_weekend_goals',  description: 'Fairness deviation, weekend parity — soft goals, capped by stability' },
+  { tier: 6, name: 'parent_preferences',          description: 'User-declared preferences and template selections' },
+  { tier: 7, name: 'logistics_optimizations',     description: 'Exchange timing, handoff locations, commute minimization' },
+] as const;
+
+export type SolverPrecedenceTier = (typeof SOLVER_PRECEDENCE_HIERARCHY)[number]['tier'];
+
+// ─── School-Night Sensitivity (Rule C) ──────────────────────
+//
+// A night is school-night-sensitive only if the NEXT day is a
+// school day. If the next day is a PUBLIC_HOLIDAY or SCHOOL_CLOSED,
+// the night before is treated as weekend-like by multiplying
+// schoolNightDisruption weight by this factor.
+
+export const SCHOOL_NIGHT_HOLIDAY_MULTIPLIER = 0.1;
+
 // ─── Multi-Child Scoring ─────────────────────────────────────
 
 /** ≤4 children: each scored individually. 5+: collapse to meta-groups. */

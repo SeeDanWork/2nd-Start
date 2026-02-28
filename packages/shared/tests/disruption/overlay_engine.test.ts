@@ -10,6 +10,10 @@ import {
   OverlayActionType,
   PolicySource,
 } from '../../src/enums';
+import {
+  SOLVER_PRECEDENCE_HIERARCHY,
+  SCHOOL_NIGHT_HOLIDAY_MULTIPLIER,
+} from '../../src/constants';
 
 function makeEvent(overrides: Partial<DisruptionEvent> = {}): DisruptionEvent {
   return {
@@ -121,6 +125,78 @@ describe('computeOverlay', () => {
     expect(result.weightAdjustments).toHaveLength(1);
     expect(result.weightAdjustments[0].key).toBe('fairnessDeviation');
     expect(result.weightAdjustments[0].multiplier).toBe(1.5);
+  });
+
+  it('Rule C: PUBLIC_HOLIDAY reduces school-night penalty for night before', () => {
+    const event = makeEvent({
+      type: DisruptionEventType.PUBLIC_HOLIDAY,
+      startDate: '2026-03-16', // Monday holiday
+      endDate: '2026-03-16',
+    });
+    const result = computeOverlay(
+      event,
+      makePolicy(OverlayActionType.LOGISTICS_FALLBACK),
+      assignments,
+    );
+    // Night before (2026-03-15, Sunday night) should have reduced schoolNightDisruption
+    const schoolAdj = result.weightAdjustments.find(
+      (a) => a.key === 'schoolNightDisruption' && a.date === '2026-03-15',
+    );
+    expect(schoolAdj).toBeDefined();
+    expect(schoolAdj!.multiplier).toBe(0.1);
+    expect(schoolAdj!.reason).toContain('Rule C');
+    expect(result.reasons).toEqual(
+      expect.arrayContaining([expect.stringContaining('Rule C')]),
+    );
+  });
+
+  it('Rule C: SCHOOL_CLOSED reduces school-night penalty for each night before', () => {
+    const event = makeEvent({
+      type: DisruptionEventType.SCHOOL_CLOSED,
+      startDate: '2026-03-10',
+      endDate: '2026-03-11', // 2-day closure
+    });
+    const result = computeOverlay(
+      event,
+      makePolicy(OverlayActionType.LOGISTICS_FALLBACK),
+      assignments,
+    );
+    // Should have adjustments for nights before both days (2026-03-09 and 2026-03-10)
+    const schoolAdjs = result.weightAdjustments.filter(
+      (a) => a.key === 'schoolNightDisruption',
+    );
+    expect(schoolAdjs).toHaveLength(2);
+    expect(schoolAdjs.map((a) => a.date).sort()).toEqual(['2026-03-09', '2026-03-10']);
+  });
+
+  it('Rule C: EMERGENCY_CLOSURE also triggers school-night reduction', () => {
+    const event = makeEvent({
+      type: DisruptionEventType.EMERGENCY_CLOSURE,
+      startDate: '2026-03-10',
+      endDate: '2026-03-10',
+    });
+    const result = computeOverlay(
+      event,
+      makePolicy(OverlayActionType.LOGISTICS_FALLBACK),
+      assignments,
+    );
+    const schoolAdj = result.weightAdjustments.find(
+      (a) => a.key === 'schoolNightDisruption',
+    );
+    expect(schoolAdj).toBeDefined();
+    expect(schoolAdj!.date).toBe('2026-03-09');
+  });
+
+  it('Rule C: non-school events (CHILD_SICK) do NOT reduce school-night penalty', () => {
+    const result = computeOverlay(
+      makeEvent({ type: DisruptionEventType.CHILD_SICK }),
+      makePolicy(OverlayActionType.DELAY_EXCHANGE),
+      assignments,
+    );
+    const schoolAdjs = result.weightAdjustments.filter(
+      (a) => a.key === 'schoolNightDisruption',
+    );
+    expect(schoolAdjs).toHaveLength(0);
   });
 
   it('long disruption (>72h) adds fairness weight adjustment', () => {
@@ -236,5 +312,41 @@ describe('toSolverPayload', () => {
       expect(lock).toHaveProperty('source', 'disruption');
       expect(['parent_a', 'parent_b']).toContain(lock.parent);
     }
+  });
+});
+
+describe('SOLVER_PRECEDENCE_HIERARCHY (§8)', () => {
+  it('contains exactly 7 tiers in strict ascending order', () => {
+    expect(SOLVER_PRECEDENCE_HIERARCHY).toHaveLength(7);
+    for (let i = 0; i < SOLVER_PRECEDENCE_HIERARCHY.length; i++) {
+      expect(SOLVER_PRECEDENCE_HIERARCHY[i].tier).toBe(i + 1);
+    }
+  });
+
+  it('tier 1 is hard constraints (absolute, never relaxed)', () => {
+    expect(SOLVER_PRECEDENCE_HIERARCHY[0].name).toBe('hard_constraints');
+  });
+
+  it('tier 2 is young-child stability (safety-critical)', () => {
+    expect(SOLVER_PRECEDENCE_HIERARCHY[1].name).toBe('young_child_stability');
+  });
+
+  it('fairness (tier 5) is always below stability (tier 2)', () => {
+    const stability = SOLVER_PRECEDENCE_HIERARCHY.find((h) => h.name === 'young_child_stability')!;
+    const fairness = SOLVER_PRECEDENCE_HIERARCHY.find((h) => h.name === 'fairness_and_weekend_goals')!;
+    expect(stability.tier).toBeLessThan(fairness.tier);
+  });
+
+  it('logistics (tier 7) is always the lowest priority', () => {
+    const logistics = SOLVER_PRECEDENCE_HIERARCHY[SOLVER_PRECEDENCE_HIERARCHY.length - 1];
+    expect(logistics.name).toBe('logistics_optimizations');
+    expect(logistics.tier).toBe(7);
+  });
+});
+
+describe('SCHOOL_NIGHT_HOLIDAY_MULTIPLIER', () => {
+  it('is a small positive number (near-zero, weekend-like)', () => {
+    expect(SCHOOL_NIGHT_HOLIDAY_MULTIPLIER).toBeGreaterThan(0);
+    expect(SCHOOL_NIGHT_HOLIDAY_MULTIPLIER).toBeLessThanOrEqual(0.2);
   });
 });
