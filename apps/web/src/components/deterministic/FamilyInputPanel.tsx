@@ -21,15 +21,11 @@ prefer anchor exchange`;
 interface Props {
   value: string;
   onChange: (v: string) => void;
-  onCompute: () => void;
-  onExportPdf?: () => void;
-  exportEnabled?: boolean;
-  exporting?: boolean;
   errors: string[];
   warnings: string[];
 }
 
-export function FamilyInputPanel({ value, onChange, onCompute, onExportPdf, exportEnabled, exporting, errors, warnings }: Props) {
+export function FamilyInputPanel({ value, onChange, errors, warnings }: Props) {
   return (
     <div style={styles.panel}>
       <div style={styles.header}>Family Description</div>
@@ -55,25 +51,6 @@ export function FamilyInputPanel({ value, onChange, onCompute, onExportPdf, expo
           placeholder={PLACEHOLDER}
           spellCheck={false}
         />
-
-        <div style={styles.buttonRow}>
-          <button style={styles.computeButton} onClick={onCompute}>
-            Compute
-          </button>
-          {onExportPdf && (
-            <button
-              style={{
-                ...styles.exportButton,
-                opacity: exportEnabled ? 1 : 0.5,
-                cursor: exportEnabled ? 'pointer' : 'not-allowed',
-              }}
-              onClick={onExportPdf}
-              disabled={!exportEnabled}
-            >
-              {exporting ? 'Exporting...' : 'Export PDF'}
-            </button>
-          )}
-        </div>
 
         {warnings.length > 0 && (
           <div style={styles.warningBox}>
@@ -167,32 +144,6 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 12,
     resize: 'vertical',
     outline: 'none',
-  },
-  buttonRow: {
-    display: 'flex',
-    gap: 8,
-  },
-  computeButton: {
-    flex: 1,
-    padding: '8px 16px',
-    backgroundColor: '#4A90D9',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 6,
-    cursor: 'pointer',
-    fontSize: 13,
-    fontWeight: 600,
-  },
-  exportButton: {
-    flex: 1,
-    padding: '8px 16px',
-    backgroundColor: '#22c55e',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 6,
-    cursor: 'pointer',
-    fontSize: 13,
-    fontWeight: 600,
   },
   warningBox: {
     padding: 6,

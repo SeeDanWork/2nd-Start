@@ -215,17 +215,36 @@ export function DeterministicView() {
     }
   }
 
+  const exportEnabled = milestones.length > 0 && !exporting;
+
   return (
     <div style={styles.root}>
+      {/* Global header with actions */}
+      <div style={styles.globalHeader}>
+        <span style={styles.globalTitle}>Deterministic Model Tester</span>
+        <div style={styles.globalActions}>
+          <button style={styles.computeButton} onClick={compute}>
+            Compute
+          </button>
+          <button
+            style={{
+              ...styles.exportButton,
+              opacity: exportEnabled ? 1 : 0.5,
+              cursor: exportEnabled ? 'pointer' : 'not-allowed',
+            }}
+            onClick={handleExportPdf}
+            disabled={!exportEnabled}
+          >
+            {exporting ? 'Exporting...' : 'Export PDF'}
+          </button>
+        </div>
+      </div>
+
       {/* Input panels row */}
       <div style={styles.inputRow}>
         <FamilyInputPanel
           value={familyText}
           onChange={setFamilyText}
-          onCompute={compute}
-          onExportPdf={handleExportPdf}
-          exportEnabled={milestones.length > 0 && !exporting}
-          exporting={exporting}
           errors={errors}
           warnings={warnings}
         />
@@ -325,6 +344,43 @@ const styles: Record<string, CSSProperties> = {
   root: {
     display: 'flex',
     flexDirection: 'column',
+  },
+  globalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '8px 12px',
+    backgroundColor: '#1a1a2e',
+    borderBottom: '1px solid #e5e7eb',
+  },
+  globalTitle: {
+    fontWeight: 700,
+    fontSize: 14,
+    color: '#fff',
+  },
+  globalActions: {
+    display: 'flex',
+    gap: 8,
+  },
+  computeButton: {
+    padding: '6px 16px',
+    backgroundColor: '#4A90D9',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: 600,
+  },
+  exportButton: {
+    padding: '6px 16px',
+    backgroundColor: '#22c55e',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: 600,
   },
   inputRow: {
     display: 'flex',
