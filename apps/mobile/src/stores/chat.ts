@@ -8,6 +8,7 @@ import { JOINER_TURNS } from '../chat/flows/joiner';
 import { LIFECYCLE_WELCOME_MESSAGE, LIFECYCLE_CHIPS } from '../chat/flows/lifecycle';
 import { useAuthStore } from './auth';
 import { onboardingApi, familiesApi, calendarApi, apiClient } from '../api/client';
+import { DEFAULT_SCHEDULE_HORIZON_WEEKS } from '@adcp/shared';
 
 function makeId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -40,6 +41,7 @@ function userMessage(content: string): ChatMessage {
 export interface WizardState {
   childrenCount: number;
   ageBands: string[];
+  livingArrangement: string;
   schoolDays: number[];
   daycareDays: number[];
   exchangeLocation: string;
@@ -100,6 +102,7 @@ interface ChatState {
 const DEFAULT_WIZARD: WizardState = {
   childrenCount: 1,
   ageBands: ['5_to_10'],
+  livingArrangement: 'shared',
   schoolDays: [1, 2, 3, 4, 5],
   daycareDays: [1, 2, 3, 4, 5],
   exchangeLocation: 'school',
@@ -140,6 +143,7 @@ function buildOnboardingInput(wizard: WizardState, userId: string) {
   return {
     number_of_children: wizard.childrenCount,
     children_age_bands: wizard.ageBands.map((b) => AGE_BAND_MAP[b] || b),
+    living_arrangement: wizard.livingArrangement,
     school_schedule: {
       school_days: wizard.schoolDays,
     },
@@ -161,7 +165,7 @@ function buildOnboardingInput(wizard: WizardState, userId: string) {
     },
     shared: {
       start_date: startDate,
-      horizon_days: 14,
+      horizon_days: DEFAULT_SCHEDULE_HORIZON_WEEKS * 7,
     },
   };
 }
@@ -600,6 +604,13 @@ async function handleOnboardingChip(
     case 'set_age_bands':
       set((s) => ({
         wizard: { ...s.wizard, ageBands: [value] },
+      }));
+      get().advanceOnboarding();
+      break;
+
+    case 'set_living_arrangement':
+      set((s) => ({
+        wizard: { ...s.wizard, livingArrangement: value },
       }));
       get().advanceOnboarding();
       break;

@@ -23,6 +23,16 @@ export const ONBOARDING_TURNS: OnboardingTurn[] = [
   },
   // Turn 2
   {
+    message: "How will your children's time be divided between homes?",
+    chips: [
+      { label: 'Two homes, shared time', value: 'shared' },
+      { label: 'Primary home with visits', value: 'primary_visits' },
+      { label: "We're not sure yet", value: 'undecided' },
+    ],
+    actionType: 'set_living_arrangement',
+  },
+  // Turn 3
+  {
     message: 'Which days is school or daycare?',
     card: {
       type: 'day_selector',
@@ -34,7 +44,7 @@ export const ONBOARDING_TURNS: OnboardingTurn[] = [
     ],
     actionType: 'set_school_days',
   },
-  // Turn 3
+  // Turn 4
   {
     message: 'Where do handoffs usually happen?',
     chips: [
@@ -45,7 +55,7 @@ export const ONBOARDING_TURNS: OnboardingTurn[] = [
     ],
     actionType: 'set_exchange_location',
   },
-  // Turn 4
+  // Turn 5
   {
     message: "Any nights you're regularly unavailable?",
     card: {
@@ -58,7 +68,7 @@ export const ONBOARDING_TURNS: OnboardingTurn[] = [
     ],
     actionType: 'set_locked_nights',
   },
-  // Turn 5
+  // Turn 6
   {
     message: 'How should overnights be split?',
     chips: [
@@ -68,7 +78,7 @@ export const ONBOARDING_TURNS: OnboardingTurn[] = [
     ],
     actionType: 'set_target_split',
   },
-  // Turn 6
+  // Turn 7
   {
     message: "Great! Let's create your family.",
     card: {
@@ -78,7 +88,7 @@ export const ONBOARDING_TURNS: OnboardingTurn[] = [
     chips: [{ label: 'Create Family', value: 'create' }],
     actionType: 'create_family',
   },
-  // Turn 7
+  // Turn 8
   {
     message: 'Want to invite your co-parent now?',
     card: {
@@ -91,7 +101,7 @@ export const ONBOARDING_TURNS: OnboardingTurn[] = [
     ],
     actionType: 'invite_coparent',
   },
-  // Turn 8
+  // Turn 9
   {
     message: 'Building your schedule options...',
     card: {
@@ -108,7 +118,7 @@ export const ONBOARDING_TURNS: OnboardingTurn[] = [
     actionType: 'generate_options',
     autoAdvance: true,
   },
-  // Turn 9
+  // Turn 10
   {
     message: 'Here are your schedule options. Tap to see details.',
     card: {
@@ -117,7 +127,7 @@ export const ONBOARDING_TURNS: OnboardingTurn[] = [
     },
     actionType: 'select_schedule',
   },
-  // Turn 10
+  // Turn 11
   {
     message: "You're all set! Your schedule is ready.",
     card: {

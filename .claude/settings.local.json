@@ -58,7 +58,25 @@
       "Bash(ls:*)",
       "Bash(gh pr:*)",
       "Bash(git remote:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "mcp__figma-remote-mcp__get_design_context",
+      "Bash(node:*)",
+      "WebFetch(domain:www.custodyxchange.com)",
+      "WebFetch(domain:www.coloradodivorcemediation.com)",
+      "WebFetch(domain:azcourthelp.org)",
+      "WebFetch(domain:mncourts.gov)",
+      "WebFetch(domain:www.macenylaw.com)",
+      "WebFetch(domain:www.thetobycenter.org)",
+      "WebFetch(domain:pmc.ncbi.nlm.nih.gov)",
+      "WebFetch(domain:sharedparenting.wordpress.com)",
+      "WebFetch(domain:timtab.com)",
+      "WebFetch(domain:www.courts.oregon.gov)",
+      "WebFetch(domain:www.jointparenting.org)",
+      "WebFetch(domain:lawmgp.com)",
+      "WebFetch(domain:indianalawyer.esq)",
+      "WebFetch(domain:www.novolawyers.com)",
+      "WebFetch(domain:cordellcordell.com)",
+      "WebFetch(domain:pnwfamilylaw.com)"
     ]
   }
 }
