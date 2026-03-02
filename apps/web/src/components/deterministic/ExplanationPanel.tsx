@@ -4,7 +4,15 @@ import type {
   TemplateScoreV2,
   DisruptionOverlayResult,
   FamilyContextDefaults,
+  ScheduleMode,
+  ThreeModeRecommendation,
 } from '@adcp/shared';
+
+const MODE_LABELS: Record<ScheduleMode, { label: string; color: string }> = {
+  evidence: { label: 'Evidence Best', color: '#1d4ed8' },
+  parent_vision: { label: 'Parent Vision', color: '#166534' },
+  balanced: { label: 'Balanced', color: '#7c3aed' },
+};
 
 interface Props {
   recommendation: BaselineRecommendationOutputV2 | null;
@@ -12,6 +20,10 @@ interface Props {
   overlays: DisruptionOverlayResult[];
   /** When set, show this template instead of the top-ranked one */
   activeTemplate?: TemplateScoreV2 | null;
+  /** Active schedule mode (when three-mode is active) */
+  activeMode?: ScheduleMode;
+  /** Active mode's recommendation result */
+  activeModeResult?: ThreeModeRecommendation | null;
 }
 
 function confidenceColor(c: string): string {
@@ -20,7 +32,7 @@ function confidenceColor(c: string): string {
   return '#ef4444';
 }
 
-export function ExplanationPanel({ recommendation, context, overlays, activeTemplate }: Props) {
+export function ExplanationPanel({ recommendation, context, overlays, activeTemplate, activeMode, activeModeResult }: Props) {
   if (!recommendation) {
     return (
       <div style={styles.panel}>
@@ -39,6 +51,28 @@ export function ExplanationPanel({ recommendation, context, overlays, activeTemp
     <div style={styles.panel}>
       <div style={styles.header}>Explanation</div>
       <div style={styles.content}>
+        {/* Active mode indicator */}
+        {activeMode && (
+          <div style={{
+            ...styles.modeBadge,
+            backgroundColor: MODE_LABELS[activeMode].color + '18',
+            borderLeft: `3px solid ${MODE_LABELS[activeMode].color}`,
+          }}>
+            <span style={{ ...styles.modeBadgeLabel, color: MODE_LABELS[activeMode].color }}>
+              {MODE_LABELS[activeMode].label}
+            </span>
+            {activeMode === 'parent_vision' && (
+              <span style={styles.modeBadgeDesc}>Rankings shaped by parent preferences</span>
+            )}
+            {activeMode === 'balanced' && (
+              <span style={styles.modeBadgeDesc}>Blending evidence with parent preferences</span>
+            )}
+            {activeMode === 'evidence' && (
+              <span style={styles.modeBadgeDesc}>Pure developmental-psychology recommendation</span>
+            )}
+          </div>
+        )}
+
         {/* Rationale */}
         {agg.rationaleBullets.length > 0 && (
           <div style={styles.section}>
@@ -84,6 +118,23 @@ export function ExplanationPanel({ recommendation, context, overlays, activeTemp
                   </ul>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Preference fit scores (when in parent_vision or balanced mode) */}
+        {activeModeResult && activeMode && activeMode !== 'evidence' && top?.debug?.preferenceFit != null && (
+          <div style={styles.section}>
+            <div style={styles.sectionTitle}>Preference Fit</div>
+            <div style={styles.infoRow}>
+              <span style={styles.infoLabel}>Preference Score:</span>
+              <span style={styles.infoValue}>{top.debug.preferenceFit.toFixed(3)}</span>
+            </div>
+            <div style={styles.infoRow}>
+              <span style={styles.infoLabel}>Mode Weight:</span>
+              <span style={styles.infoValue}>
+                {activeMode === 'parent_vision' ? '65%' : '30%'}
+              </span>
             </div>
           </div>
         )}
@@ -287,5 +338,20 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 10,
     color: '#9ca3af',
     lineHeight: '16px',
+  },
+  modeBadge: {
+    padding: '6px 8px',
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  modeBadgeLabel: {
+    fontWeight: 700,
+    fontSize: 12,
+  },
+  modeBadgeDesc: {
+    display: 'block',
+    fontSize: 10,
+    color: '#6b7280',
+    marginTop: 2,
   },
 };

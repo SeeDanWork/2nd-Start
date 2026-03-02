@@ -15,6 +15,8 @@ import type {
   PresetOutput,
   DisruptionEvent,
   CurrentAssignment,
+  ParentPreferenceInput,
+  ThreeModeOutput,
 } from '@adcp/shared';
 import {
   birthdateToAgeBand,
@@ -23,6 +25,7 @@ import {
   adjustMaxConsecutive,
   computeMultiChildScoring,
   recommendBaselineV2,
+  recommendThreeModes,
   computePresetRecommendations,
   resolvePolicy,
   getDefaultPolicy,
@@ -92,6 +95,8 @@ export interface MilestoneSnapshot {
   /** Top 4 templates with their generated schedules */
   templateSchedules: TemplateSchedule[];
   presetOutput: PresetOutput | null;
+  /** Three-mode results (present when preferences are provided) */
+  modeResults: ThreeModeOutput | null;
 }
 
 // ─── Milestone Offsets ────────────────────────────────────────────
@@ -307,10 +312,12 @@ export interface MilestoneComputeInput {
   arrangement: string;
   /** Parsed disruption events (may be empty) */
   disruptionEvents: DisruptionEvent[];
+  /** Optional parent preferences for three-mode output */
+  preferences?: ParentPreferenceInput;
 }
 
 export function computeMilestones(input: MilestoneComputeInput): MilestoneSnapshot[] {
-  const { familyInput, arrangement, disruptionEvents } = input;
+  const { familyInput, arrangement, disruptionEvents, preferences } = input;
   const today = new Date().toISOString().slice(0, 10);
   const snapshots: MilestoneSnapshot[] = [];
 
@@ -347,6 +354,12 @@ export function computeMilestones(input: MilestoneComputeInput): MilestoneSnapsh
 
     // 3. Run recommendation pipeline
     const recommendation = recommendBaselineV2(modifiedInput);
+
+    // 3b. Run three-mode pipeline if preferences provided
+    let modeResults: ThreeModeOutput | null = null;
+    if (preferences) {
+      modeResults = recommendThreeModes(modifiedInput, preferences);
+    }
 
     // 4. Compute family-level context manually (since computeFamilyContextDefaults lacks refDate)
     const bands = children.map((c) => c.ageBand);
@@ -477,6 +490,7 @@ export function computeMilestones(input: MilestoneComputeInput): MilestoneSnapsh
       scheduleDays,
       templateSchedules,
       presetOutput,
+      modeResults,
     };
 
     snapshots.push(snapshot);

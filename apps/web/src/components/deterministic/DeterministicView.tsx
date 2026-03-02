@@ -2,13 +2,20 @@ import { useState, CSSProperties } from 'react';
 import type {
   BaselineRecommendationInputV2,
   DisruptionEvent,
+  ParentPreferenceInput,
+  ScheduleMode,
+  ThreeModeOutput,
+  TemplateScoreV2,
 } from '@adcp/shared';
+import { TEMPLATES_V2 } from '@adcp/shared';
 import { parseFamilyInput, parseDisruptionInput } from './parseInput';
-import { computeMilestones } from './milestones';
-import type { MilestoneSnapshot } from './milestones';
+import { computeMilestones, generateScheduleDays } from './milestones';
+import type { MilestoneSnapshot, TemplateSchedule } from './milestones';
 import { exportMilestoneReport } from './pdf/exportPdf';
 import { FamilyInputPanel } from './FamilyInputPanel';
 import { DisruptionInputPanel } from './DisruptionInputPanel';
+import { ParentPreferencePanel } from './ParentPreferencePanel';
+import { ScheduleModeSelector } from './ScheduleModeSelector';
 import { MilestoneSelector } from './MilestoneSelector';
 import { DisruptionMilestoneTable } from './DisruptionMilestoneTable';
 import { DeterministicSchedule } from './DeterministicSchedule';
@@ -28,6 +35,29 @@ interface Tab {
   templateIdx?: number;
 }
 
+// ─── Helpers ────────────────────────────────────────────────────────
+
+function getModeTemplateSchedules(
+  modeResults: ThreeModeOutput | null,
+  mode: ScheduleMode,
+  lockMap: Map<string, string>,
+  refDate: string | undefined,
+  maxConsecutive: number | undefined,
+): TemplateSchedule[] {
+  if (!modeResults) return [];
+  const result = mode === 'evidence' ? modeResults.evidence
+    : mode === 'parent_vision' ? modeResults.parentVision
+    : modeResults.balanced;
+  const top4 = result.recommendedTemplates.slice(0, 4);
+  return top4.map((ts) => {
+    const tmpl = TEMPLATES_V2.find((t) => t.id === ts.templateId) ?? TEMPLATES_V2[0];
+    return {
+      template: ts,
+      scheduleDays: generateScheduleDays(tmpl.pattern14, lockMap, refDate, maxConsecutive),
+    };
+  });
+}
+
 // ─── Main Component ──────────────────────────────────────────────────
 
 export function DeterministicView() {
@@ -42,6 +72,10 @@ export function DeterministicView() {
 
   // Parsed input (needed for export)
   const [lastParsedInput, setLastParsedInput] = useState<BaselineRecommendationInputV2 | null>(null);
+
+  // Three-mode state
+  const [preferences, setPreferences] = useState<ParentPreferenceInput | null>(null);
+  const [activeMode, setActiveMode] = useState<ScheduleMode>('evidence');
 
   // Tab state
   const [activeTabIdx, setActiveTabIdx] = useState(0);
@@ -60,9 +94,36 @@ export function DeterministicView() {
   const overlays = selected?.overlays ?? [];
   const solverPayload = selected?.solverPayload ?? null;
   const presetOutput = selected?.presetOutput ?? null;
-  const templateSchedules = selected?.templateSchedules ?? [];
+  const modeResults = selected?.modeResults ?? null;
 
-  // Build tabs from current milestone data
+  // Build lock map for active milestone
+  const lockMap = new Map<string, string>();
+  if (selected?.solverPayload) {
+    for (const lock of selected.solverPayload.disruption_locks) {
+      lockMap.set(lock.date, lock.parent);
+    }
+  }
+
+  // Determine which template schedules to show based on mode
+  const hasModes = modeResults !== null;
+  const templateSchedules = hasModes
+    ? getModeTemplateSchedules(
+        modeResults,
+        activeMode,
+        lockMap,
+        selected?.refDate,
+        selected?.context?.hardConstraintFloors.maxConsecutive,
+      )
+    : selected?.templateSchedules ?? [];
+
+  // Get mode-specific recommendation for panels
+  const activeModeResult = hasModes
+    ? (activeMode === 'evidence' ? modeResults.evidence
+      : activeMode === 'parent_vision' ? modeResults.parentVision
+      : modeResults.balanced)
+    : null;
+
+  // Build tabs from current template schedules
   const tabs: Tab[] = [];
   for (let i = 0; i < templateSchedules.length; i++) {
     const ts = templateSchedules[i];
@@ -94,34 +155,39 @@ export function DeterministicView() {
     setActivePresetId(preset.id);
   }
 
-  function compute() {
+  function handleApplyPreferences(prefs: ParentPreferenceInput) {
+    setPreferences(prefs);
+    // Re-compute if we already have family input
+    if (lastParsedInput) {
+      computeWithPreferences(prefs);
+    }
+  }
+
+  function computeWithPreferences(prefs: ParentPreferenceInput | null) {
     setErrors([]);
     setWarnings([]);
 
-    // 1. Parse family input
     const familyResult = parseFamilyInput(familyText);
     setWarnings(familyResult.warnings);
 
     const input = familyResult.input;
     setLastParsedInput(input);
 
-    // 2. Detect arrangement
     const detectedArrangement = /\bprimary\b/.test(familyText.toLowerCase()) ? 'primary_visits' :
                                 /\bundecided\b/.test(familyText.toLowerCase()) ? 'undecided' : 'shared';
     setArrangement(detectedArrangement);
 
-    // 3. Parse disruption events
     const events: DisruptionEvent[] = disruptionText.trim()
       ? parseDisruptionInput(disruptionText)
       : [];
     setParsedDisruptionCount(events.length);
 
-    // 4. Compute all milestones in one pass
     try {
       const snapshots = computeMilestones({
         familyInput: input,
         arrangement: detectedArrangement,
         disruptionEvents: events,
+        preferences: prefs ?? undefined,
       });
       setMilestones(snapshots);
       setSelectedMilestoneIdx(0);
@@ -130,6 +196,10 @@ export function DeterministicView() {
       const msg = err instanceof Error ? err.message : String(err);
       setErrors([`Computation error: ${msg}`]);
     }
+  }
+
+  function compute() {
+    computeWithPreferences(preferences);
   }
 
   async function handleExportPdf() {
@@ -167,7 +237,20 @@ export function DeterministicView() {
           activePresetId={activePresetId}
           parsedCount={parsedDisruptionCount}
         />
+        <ParentPreferencePanel onApply={handleApplyPreferences} />
       </div>
+
+      {/* Schedule mode selector (only when preferences are active) */}
+      {hasModes && (
+        <ScheduleModeSelector
+          activeMode={activeMode}
+          onSelectMode={(mode) => {
+            setActiveMode(mode);
+            setActiveTabIdx(0);
+          }}
+          modeResults={modeResults}
+        />
+      )}
 
       {/* Milestone selector */}
       <MilestoneSelector
@@ -219,6 +302,8 @@ export function DeterministicView() {
             context={context}
             overlays={overlays}
             activeTemplate={activeTemplateSched?.template ?? null}
+            activeMode={hasModes ? activeMode : undefined}
+            activeModeResult={activeModeResult}
           />
           <TechnicalDebugPanel
             recommendation={recommendation}
@@ -227,6 +312,8 @@ export function DeterministicView() {
             solverPayload={solverPayload}
             presets={presetOutput}
             arrangement={arrangement}
+            activeMode={hasModes ? activeMode : undefined}
+            activeModeResult={activeModeResult}
           />
         </div>
       )}

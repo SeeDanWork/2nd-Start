@@ -5,6 +5,8 @@ import type {
   DisruptionOverlayResult,
   SolverPayloadOverlay,
   PresetOutput,
+  ScheduleMode,
+  ThreeModeRecommendation,
 } from '@adcp/shared';
 import {
   DEFAULT_SOLVER_WEIGHTS,
@@ -12,6 +14,7 @@ import {
   LIVING_ARRANGEMENT_WEIGHT_MULTIPLIERS,
   SOLVER_PRECEDENCE_HIERARCHY,
   TEMPLATES_V2,
+  MODE_WEIGHT_PROFILES,
 } from '@adcp/shared';
 
 interface Props {
@@ -21,6 +24,8 @@ interface Props {
   solverPayload: SolverPayloadOverlay | null;
   presets: PresetOutput | null;
   arrangement: string;
+  activeMode?: ScheduleMode;
+  activeModeResult?: ThreeModeRecommendation | null;
 }
 
 function DetailsSection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -41,7 +46,7 @@ function Row({ label, value }: { label: string; value: string | number | boolean
   );
 }
 
-export function TechnicalDebugPanel({ recommendation, context, overlays, solverPayload, presets, arrangement }: Props) {
+export function TechnicalDebugPanel({ recommendation, context, overlays, solverPayload, presets, arrangement, activeMode, activeModeResult }: Props) {
   if (!recommendation || !context) {
     return (
       <div style={styles.panel}>
@@ -117,41 +122,68 @@ export function TechnicalDebugPanel({ recommendation, context, overlays, solverP
         </DetailsSection>
 
         {/* 3. Template Scores */}
-        <DetailsSection title="Template Scores">
-          {recommendation.debug?.scoreBreakdown && (
-            <div style={styles.scoreGrid}>
-              <div style={styles.scoreHeader}>
-                <span>Template</span>
-                <span>Age</span>
-                <span>Goal</span>
-                <span>Log</span>
-                <span>Con</span>
-                <span>Total</span>
+        <DetailsSection title={`Template Scores${activeMode ? ` (${activeMode})` : ''}`}>
+          {(() => {
+            const breakdown = activeModeResult?.scoreBreakdown ?? recommendation.debug?.scoreBreakdown;
+            const topId = activeModeResult?.recommendedTemplates[0]?.templateId
+              ?? recommendation.aggregate.recommendedTemplates[0]?.templateId;
+            const showPref = activeModeResult != null;
+            if (!breakdown) return null;
+            return (
+              <div style={styles.scoreGrid}>
+                <div style={showPref ? styles.scoreHeader6 : styles.scoreHeader}>
+                  <span>Template</span>
+                  <span>Age</span>
+                  <span>Goal</span>
+                  <span>Log</span>
+                  <span>Con</span>
+                  {showPref && <span>Pref</span>}
+                  <span>Total</span>
+                </div>
+                {TEMPLATES_V2.map((t) => {
+                  const bd = breakdown[t.id];
+                  if (!bd) return null;
+                  const isTop = topId === t.id;
+                  return (
+                    <div
+                      key={t.id}
+                      style={{
+                        ...(showPref ? styles.scoreRow6 : styles.scoreRow),
+                        ...(isTop ? styles.topRow : {}),
+                      }}
+                    >
+                      <span style={styles.scoreLabel} title={t.name}>{t.id}</span>
+                      <span style={styles.mono}>{bd.ageFit.toFixed(2)}</span>
+                      <span style={styles.mono}>{bd.goalFit.toFixed(2)}</span>
+                      <span style={styles.mono}>{bd.logisticsFit.toFixed(2)}</span>
+                      <span style={styles.mono}>{bd.constraintFit.toFixed(2)}</span>
+                      {showPref && <span style={styles.mono}>{(bd as any).preferenceFit?.toFixed(2) ?? '—'}</span>}
+                      <span style={{ ...styles.mono, fontWeight: 600 }}>{bd.total.toFixed(2)}</span>
+                    </div>
+                  );
+                })}
               </div>
-              {TEMPLATES_V2.map((t) => {
-                const bd = recommendation.debug!.scoreBreakdown[t.id];
-                if (!bd) return null;
-                const isTop = recommendation.aggregate.recommendedTemplates[0]?.templateId === t.id;
-                return (
-                  <div
-                    key={t.id}
-                    style={{
-                      ...styles.scoreRow,
-                      ...(isTop ? styles.topRow : {}),
-                    }}
-                  >
-                    <span style={styles.scoreLabel} title={t.name}>{t.id}</span>
-                    <span style={styles.mono}>{bd.ageFit.toFixed(2)}</span>
-                    <span style={styles.mono}>{bd.goalFit.toFixed(2)}</span>
-                    <span style={styles.mono}>{bd.logisticsFit.toFixed(2)}</span>
-                    <span style={styles.mono}>{bd.constraintFit.toFixed(2)}</span>
-                    <span style={{ ...styles.mono, fontWeight: 600 }}>{bd.total.toFixed(2)}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+            );
+          })()}
         </DetailsSection>
+
+        {/* 3b. Mode Weight Profile */}
+        {activeMode && (
+          <DetailsSection title="Mode Weight Profile">
+            {(() => {
+              const mw = MODE_WEIGHT_PROFILES[activeMode];
+              return (
+                <div style={styles.subTable}>
+                  <Row label="ageFit" value={`${(mw.ageFit * 100).toFixed(0)}%`} />
+                  <Row label="goalFit" value={`${(mw.goalFit * 100).toFixed(0)}%`} />
+                  <Row label="logisticsFit" value={`${(mw.logisticsFit * 100).toFixed(0)}%`} />
+                  <Row label="constraintFit" value={`${(mw.constraintFit * 100).toFixed(0)}%`} />
+                  <Row label="preferenceFit" value={`${(mw.preferenceFit * 100).toFixed(0)}%`} />
+                </div>
+              );
+            })()}
+          </DetailsSection>
+        )}
 
         {/* 4. Multi-Child Details */}
         {Object.keys(recommendation.perChild).length > 1 && (
@@ -388,6 +420,23 @@ const styles: Record<string, CSSProperties> = {
   scoreRow: {
     display: 'grid',
     gridTemplateColumns: '80px repeat(5, 1fr)',
+    gap: 4,
+    fontSize: 10,
+    padding: '2px 0',
+  },
+  scoreHeader6: {
+    display: 'grid',
+    gridTemplateColumns: '80px repeat(6, 1fr)',
+    gap: 4,
+    fontWeight: 600,
+    fontSize: 10,
+    color: '#6b7280',
+    borderBottom: '1px solid #e5e7eb',
+    paddingBottom: 2,
+  },
+  scoreRow6: {
+    display: 'grid',
+    gridTemplateColumns: '80px repeat(6, 1fr)',
     gap: 4,
     fontSize: 10,
     padding: '2px 0',

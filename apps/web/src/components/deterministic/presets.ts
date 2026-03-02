@@ -235,6 +235,46 @@ school anchor
     disruptionText: `emergency closure 2026-11-25
 holiday 2026-11-26`,
   },
+
+  // ─── Three-Mode Testing ──────────────────────────────────────────
+
+  {
+    id: 'three-mode-equal',
+    name: 'Three-Mode: Equal Split Family',
+    category: 'Three-Mode',
+    description: 'Cooperative parents wanting 50/50 split. Apply preferences with default sliders to compare evidence vs parent vision vs balanced modes.',
+    familyText: `child born 2019-05-15
+shared arrangement
+stability and fairness goals
+school anchor
+15 minutes apart
+prefer anchor exchange`,
+    disruptionText: '',
+  },
+  {
+    id: 'three-mode-primary-preference',
+    name: 'Three-Mode: Primary with Weekend Pref',
+    category: 'Three-Mode',
+    description: 'Parent A wants 70% time, few handoffs, alternating weekends. Shows divergence between evidence (age-driven) and parent vision (preference-driven) modes.',
+    familyText: `child born 2020-08-10
+shared arrangement
+stability goals
+daycare anchor
+25 minutes apart`,
+    disruptionText: '',
+  },
+  {
+    id: 'three-mode-teen-blocks',
+    name: 'Three-Mode: Teen Prefers Long Blocks',
+    category: 'Three-Mode',
+    description: 'Teen where parent picks 2-week blocks. Evidence may prefer alternating weeks, parent vision should push 2-week blocks high.',
+    familyText: `child born 2011-03-01
+shared arrangement
+fairness goals
+school anchor
+45 minutes apart`,
+    disruptionText: '',
+  },
 ];
 
 export const PRESET_CATEGORIES = [...new Set(PRESETS.map((p) => p.category))];

@@ -24,6 +24,14 @@ import {
   generateTradeoffs,
   getDisclaimers,
 } from './explain';
+import {
+  type ParentPreferenceInput,
+  type ScheduleMode,
+  type ModeWeightProfile,
+  MODE_WEIGHT_PROFILES,
+  ALL_SCHEDULE_MODES,
+  preferenceFit,
+} from './preferences';
 
 // ─── Zod Input Schema ─────────────────────────────────────────────
 
@@ -83,11 +91,13 @@ export interface TemplateScoreV2 {
   confidence: 'low' | 'medium' | 'high';
   suggestedWhen: string[];
   tradeoffs: string[];
+  mode?: ScheduleMode;
   debug?: {
     ageFit: number;
     goalFit: number;
     logisticsFit: number;
     constraintFit: number;
+    preferenceFit?: number;
   };
 }
 
@@ -313,6 +323,7 @@ interface ScoredTemplateInternal {
     goalFit: number;
     logisticsFit: number;
     constraintFit: number;
+    preferenceFit: number;
   };
   total: number;
 }
@@ -321,6 +332,7 @@ function scoreAllTemplates(
   input: BaselineRecommendationInputV2,
   bandDefaults: { maxConsecutive: number; preferredTemplates: TemplateId[] },
   childAgeMonths?: number,
+  preferences?: ParentPreferenceInput,
 ): ScoredTemplateInternal[] {
   const weights = getWeights(input.goals);
 
@@ -335,6 +347,7 @@ function scoreAllTemplates(
         input.distanceBetweenHomesMinutes,
       ),
       constraintFit: constraintFit(template, input.constraintsSummary),
+      preferenceFit: preferences ? preferenceFit(template, preferences) : 0,
     };
 
     const total =
@@ -498,6 +511,7 @@ export function recommendBaselineV2(
     goalFit: number;
     logisticsFit: number;
     constraintFit: number;
+    preferenceFit: number;
     total: number;
   }> = {};
   for (const s of scored) {
@@ -506,6 +520,7 @@ export function recommendBaselineV2(
       goalFit: Math.round(s.scores.goalFit * 1000) / 1000,
       logisticsFit: Math.round(s.scores.logisticsFit * 1000) / 1000,
       constraintFit: Math.round(s.scores.constraintFit * 1000) / 1000,
+      preferenceFit: Math.round(s.scores.preferenceFit * 1000) / 1000,
       total: Math.round(s.total * 1000) / 1000,
     };
   }
@@ -523,5 +538,153 @@ export function recommendBaselineV2(
     },
     disclaimers: getDisclaimers(),
     debug: { scoreBreakdown: scoreBreakdown as any },
+  };
+}
+
+// ─── Three-Mode Output ───────────────────────────────────────────
+
+export interface ThreeModeRecommendation {
+  mode: ScheduleMode;
+  recommendedTemplates: TemplateScoreV2[];
+  /** Score breakdown keyed by templateId */
+  scoreBreakdown: Record<string, {
+    ageFit: number;
+    goalFit: number;
+    logisticsFit: number;
+    constraintFit: number;
+    preferenceFit: number;
+    total: number;
+  }>;
+}
+
+export interface ThreeModeOutput {
+  evidence: ThreeModeRecommendation;
+  parentVision: ThreeModeRecommendation;
+  balanced: ThreeModeRecommendation;
+  /** Full recommendation output from evidence mode (backward compatible) */
+  baselineOutput: BaselineRecommendationOutputV2;
+}
+
+/**
+ * Produces 3 ranked template lists from a single scoring pass by applying
+ * mode-dependent weight profiles. The evidence mode is identical to
+ * recommendBaselineV2() output.
+ */
+export function recommendThreeModes(
+  rawInput: BaselineRecommendationInputV2,
+  preferences: ParentPreferenceInput,
+): ThreeModeOutput {
+  // Validate
+  const input = BaselineRecommendationInputSchema.parse(rawInput);
+
+  // Get the baseline output (evidence mode — unchanged behavior)
+  const baselineOutput = recommendBaselineV2(input);
+
+  // Resolve child age info for scoring
+  const perChildList = input.children.map((child) =>
+    getChildDefaults(
+      { childId: child.childId, ageBand: child.ageBand as AgeBandV2, birthdate: child.birthdate },
+    ),
+  );
+  const youngestAgeBand = youngestBand(perChildList.map((c) => c.ageBand));
+  const youngestChild = perChildList.reduce((youngest, c) => {
+    const cIdx = AGE_BAND_ORDER_V2.indexOf(c.ageBand);
+    const yIdx = AGE_BAND_ORDER_V2.indexOf(youngest.ageBand);
+    return cIdx < yIdx ? c : youngest;
+  }, perChildList[0]);
+  const youngestBirthdate = input.children.find(
+    (c) => c.childId === youngestChild.childId,
+  )?.birthdate;
+  const youngestAgeMonths = youngestBirthdate
+    ? ageInMonths(youngestBirthdate)
+    : undefined;
+  const bandDefaults = AGE_BAND_DEFAULTS[youngestAgeBand];
+
+  // Score all templates once (with preference scores computed)
+  const rawScored = scoreAllTemplates(input, bandDefaults, youngestAgeMonths, preferences);
+
+  // For each mode, apply mode-specific weights and produce a ranked list
+  function buildModeResult(mode: ScheduleMode): ThreeModeRecommendation {
+    const modeWeights: ModeWeightProfile = MODE_WEIGHT_PROFILES[mode];
+
+    // Compute mode-weighted totals
+    const modeScored = rawScored.map((s) => {
+      const total =
+        modeWeights.ageFit * s.scores.ageFit +
+        modeWeights.goalFit * s.scores.goalFit +
+        modeWeights.logisticsFit * s.scores.logisticsFit +
+        modeWeights.constraintFit * s.scores.constraintFit +
+        modeWeights.preferenceFit * s.scores.preferenceFit;
+      return { ...s, total };
+    });
+
+    // Sort by total descending
+    modeScored.sort((a, b) => b.total - a.total);
+
+    // Take top 5
+    const top5 = modeScored.slice(0, 5);
+    const highestScore = top5[0]?.total ?? 0;
+    const secondScore = top5[1]?.total ?? 0;
+    const scoreGap = highestScore - secondScore;
+    const relativeGap = highestScore > 0 ? scoreGap / highestScore : 0;
+
+    const recommendedTemplates: TemplateScoreV2[] = top5.map((s, i) => {
+      let confidence: 'low' | 'medium' | 'high';
+      if (i === 0) {
+        confidence = relativeGap >= 0.15 ? 'high' : relativeGap >= 0.08 ? 'medium' : 'low';
+      } else {
+        const gap = highestScore - s.total;
+        const relGap = highestScore > 0 ? gap / highestScore : 0;
+        confidence = relGap <= 0.08 ? 'medium' : 'low';
+      }
+
+      const patternStr = s.template.pattern14
+        .map((v) => (v === 0 ? 'A' : 'B'))
+        .join('');
+      const weeks: string[] = [];
+      for (let w = 0; w < patternStr.length; w += 7) {
+        weeks.push(patternStr.slice(w, w + 7));
+      }
+
+      return {
+        templateId: s.template.id,
+        name: s.template.name,
+        patternSummary: weeks.join(' '),
+        score: Math.round(s.total * 1000) / 1000,
+        confidence,
+        suggestedWhen: generateSuggestedWhen(s.template, input),
+        tradeoffs: generateTradeoffs(s.template, input),
+        mode,
+        debug: {
+          ageFit: Math.round(s.scores.ageFit * 1000) / 1000,
+          goalFit: Math.round(s.scores.goalFit * 1000) / 1000,
+          logisticsFit: Math.round(s.scores.logisticsFit * 1000) / 1000,
+          constraintFit: Math.round(s.scores.constraintFit * 1000) / 1000,
+          preferenceFit: Math.round(s.scores.preferenceFit * 1000) / 1000,
+        },
+      };
+    });
+
+    // Build score breakdown for all templates
+    const scoreBreakdown: ThreeModeRecommendation['scoreBreakdown'] = {};
+    for (const s of modeScored) {
+      scoreBreakdown[s.template.id] = {
+        ageFit: Math.round(s.scores.ageFit * 1000) / 1000,
+        goalFit: Math.round(s.scores.goalFit * 1000) / 1000,
+        logisticsFit: Math.round(s.scores.logisticsFit * 1000) / 1000,
+        constraintFit: Math.round(s.scores.constraintFit * 1000) / 1000,
+        preferenceFit: Math.round(s.scores.preferenceFit * 1000) / 1000,
+        total: Math.round(s.total * 1000) / 1000,
+      };
+    }
+
+    return { mode, recommendedTemplates, scoreBreakdown };
+  }
+
+  return {
+    evidence: buildModeResult('evidence'),
+    parentVision: buildModeResult('parent_vision'),
+    balanced: buildModeResult('balanced'),
+    baselineOutput,
   };
 }
