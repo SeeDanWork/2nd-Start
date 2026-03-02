@@ -28,13 +28,12 @@ camp 2026-06-15 2 weeks`;
 interface Props {
   value: string;
   onChange: (v: string) => void;
-  onCompute: () => void;
   onLoadPreset: (preset: Preset) => void;
   activePresetId: string;
   parsedCount: number;
 }
 
-export function DisruptionInputPanel({ value, onChange, onCompute, onLoadPreset, activePresetId, parsedCount }: Props) {
+export function DisruptionInputPanel({ value, onChange, onLoadPreset, activePresetId, parsedCount }: Props) {
   return (
     <div style={styles.panel}>
       <div style={styles.header}>Disruption Scenarios</div>
@@ -82,10 +81,6 @@ export function DisruptionInputPanel({ value, onChange, onCompute, onLoadPreset,
           placeholder={PLACEHOLDER}
           spellCheck={false}
         />
-
-        <button style={styles.computeButton} onClick={onCompute}>
-          Compute
-        </button>
 
         <div style={styles.statusBar}>
           Parsed <strong>{parsedCount}</strong> event{parsedCount !== 1 ? 's' : ''}
@@ -179,16 +174,6 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 12,
     resize: 'vertical',
     outline: 'none',
-  },
-  computeButton: {
-    padding: '8px 16px',
-    backgroundColor: '#4A90D9',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 6,
-    cursor: 'pointer',
-    fontSize: 13,
-    fontWeight: 600,
   },
   statusBar: {
     fontSize: 11,

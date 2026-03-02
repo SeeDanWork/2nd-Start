@@ -1,4 +1,5 @@
 import { CSSProperties } from 'react';
+import { FAMILY_PRESETS, FAMILY_PRESET_CATEGORIES, type FamilyPreset } from './familyPresets';
 
 const FIELD_GUIDE = [
   { label: 'Children', examples: ['kids ages 3 and 7', 'child born 2022-05-15', '8 month old'] },
@@ -21,15 +22,43 @@ prefer anchor exchange`;
 interface Props {
   value: string;
   onChange: (v: string) => void;
+  onLoadPreset: (preset: FamilyPreset) => void;
+  activeFamilyPresetId: string;
   errors: string[];
   warnings: string[];
 }
 
-export function FamilyInputPanel({ value, onChange, errors, warnings }: Props) {
+export function FamilyInputPanel({ value, onChange, onLoadPreset, activeFamilyPresetId, errors, warnings }: Props) {
   return (
     <div style={styles.panel}>
       <div style={styles.header}>Family Description</div>
       <div style={styles.content}>
+        {/* Preset dropdown */}
+        <div>
+          <select
+            style={styles.select}
+            value={activeFamilyPresetId}
+            onChange={(e) => {
+              const preset = FAMILY_PRESETS.find((p) => p.id === e.target.value);
+              if (preset) onLoadPreset(preset);
+            }}
+          >
+            <option value="">Load preset family...</option>
+            {FAMILY_PRESET_CATEGORIES.map((cat) => (
+              <optgroup key={cat} label={cat}>
+                {FAMILY_PRESETS.filter((p) => p.category === cat).map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          {activeFamilyPresetId && (
+            <div style={styles.presetDesc}>
+              {FAMILY_PRESETS.find((p) => p.id === activeFamilyPresetId)?.description}
+            </div>
+          )}
+        </div>
+
         <div style={styles.guide}>
           <div style={styles.guideTitle}>Accepted Fields</div>
           {FIELD_GUIDE.map((f) => (
@@ -94,6 +123,24 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: 8,
+  },
+  select: {
+    width: '100%',
+    padding: '6px 8px',
+    border: '1px solid #e5e7eb',
+    borderRadius: 4,
+    fontSize: 11,
+    backgroundColor: '#fff',
+    color: '#1a1a2e',
+    cursor: 'pointer',
+    outline: 'none',
+  },
+  presetDesc: {
+    fontSize: 10,
+    color: '#6b7280',
+    fontStyle: 'italic',
+    padding: '4px 0 0',
+    lineHeight: '14px',
   },
   guide: {
     fontSize: 11,

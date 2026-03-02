@@ -23,6 +23,7 @@ import { DeterministicCalendar } from './DeterministicCalendar';
 import { ExplanationPanel } from './ExplanationPanel';
 import { TechnicalDebugPanel } from './TechnicalDebugPanel';
 import type { Preset } from './presets';
+import type { FamilyPreset } from './familyPresets';
 
 // ─── Tab Types ──────────────────────────────────────────────────────
 
@@ -85,6 +86,7 @@ export function DeterministicView() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [parsedDisruptionCount, setParsedDisruptionCount] = useState(0);
   const [activePresetId, setActivePresetId] = useState('');
+  const [activeFamilyPresetId, setActiveFamilyPresetId] = useState('');
   const [exporting, setExporting] = useState(false);
 
   // Derive panel data from selected milestone
@@ -149,10 +151,16 @@ export function DeterministicView() {
     : null;
   const displayDays = activeTemplateSched?.scheduleDays ?? selected?.scheduleDays ?? [];
 
+  function loadFamilyPreset(preset: FamilyPreset) {
+    setFamilyText(preset.familyText);
+    setActiveFamilyPresetId(preset.id);
+  }
+
   function loadPreset(preset: Preset) {
     setFamilyText(preset.familyText);
     setDisruptionText(preset.disruptionText);
     setActivePresetId(preset.id);
+    setActiveFamilyPresetId('');
   }
 
   function handleApplyPreferences(prefs: ParentPreferenceInput) {
@@ -245,13 +253,14 @@ export function DeterministicView() {
         <FamilyInputPanel
           value={familyText}
           onChange={setFamilyText}
+          onLoadPreset={loadFamilyPreset}
+          activeFamilyPresetId={activeFamilyPresetId}
           errors={errors}
           warnings={warnings}
         />
         <DisruptionInputPanel
           value={disruptionText}
           onChange={setDisruptionText}
-          onCompute={compute}
           onLoadPreset={loadPreset}
           activePresetId={activePresetId}
           parsedCount={parsedDisruptionCount}
