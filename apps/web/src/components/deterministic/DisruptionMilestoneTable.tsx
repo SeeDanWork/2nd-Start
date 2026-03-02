@@ -86,8 +86,6 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: 12,
-    maxHeight: 300,
-    overflow: 'auto',
   },
   eventBlock: {
     display: 'flex',

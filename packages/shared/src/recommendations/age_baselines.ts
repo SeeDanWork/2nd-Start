@@ -60,51 +60,73 @@ export const AGE_BAND_ORDER_V2: AgeBandV2[] = [
 
 // ─── Band Defaults Table ──────────────────────────────────────────
 
+// Evidence basis for maxConsecutive by age:
+// - Kelly & Lamb (2000): 2yo max 2 nights, 4yo handles 3 days
+// - Indiana Guidelines: graduated by sub-age
+// - Warshak (2014) consensus: shared residential viable under 4
+// - State guidelines: 5-7 nights acceptable for school-age
+//
+// preferredTemplates: ordered by developmental fit (equal-time first for
+// shared arrangements, then primary variants)
 export const AGE_BAND_DEFAULTS: Record<AgeBandV2, AgeBandDefaults> = {
   '0-6m': {
+    // Indiana: max 1x24hr/week. Kelly: conservative no overnights.
     maxConsecutive: 1,
     maxAway: 1,
     preferredTemplates: ['223_daytime', '223'],
   },
   '6-12m': {
+    // Indiana (5-12mo): max 1 overnight/week, 3 visits. Warshak: overnights safe.
     maxConsecutive: 2,
     maxAway: 2,
-    preferredTemplates: ['223', '3443'],
+    preferredTemplates: ['223', '223_daytime', 'alt_weekends_midweek'],
   },
   '1-2y': {
+    // Kelly & Lamb: max 2 consecutive nights at age 2. Indiana: graduated.
     maxConsecutive: 2,
     maxAway: 3,
-    preferredTemplates: ['223', '3443'],
+    preferredTemplates: ['223', '3443', 'alt_weekends_midweek'],
   },
   '2-3y': {
+    // Kelly & Lamb: max 2-3 nights. Emery: cooperative = 2-2-3.
     maxConsecutive: 3,
     maxAway: 3,
-    preferredTemplates: ['223', '3443', '2255'],
+    preferredTemplates: ['223', '3443', '43'],
   },
   '3-5y': {
+    // Indiana (age 3+): alternating weekends + midweek. Max 4 nights.
+    // Kelly: most 4yo handle 3-day separations. Week-on/off discouraged.
     maxConsecutive: 4,
     maxAway: 4,
-    preferredTemplates: ['3443', '2255', '223'],
+    preferredTemplates: ['3443', '43', '223', '7on7off_midweek'],
   },
   '5-7y': {
+    // State guidelines: 5-night blocks acceptable. Alternating weeks viable
+    // from 5-6 but with midweek contact recommended. Arizona Plan 12.
     maxConsecutive: 5,
     maxAway: 5,
-    preferredTemplates: ['2255', '3443', '7on7off'],
+    preferredTemplates: ['7on7off_midweek', '2255', '3443', '43'],
   },
   '8-10y': {
+    // State guidelines: 7-night blocks acceptable. Emery: cooperative = alternating weeks.
+    // Midweek contact still recommended for younger end.
     maxConsecutive: 7,
     maxAway: 7,
-    preferredTemplates: ['7on7off', '2255'],
+    preferredTemplates: ['7on7off', '7on7off_midweek', '2255', '3443'],
   },
   '11-13y': {
+    // State guidelines: 7-14 nights acceptable. Child can express preferences.
+    // Emery: cooperative = alternating weeks with flexibility.
     maxConsecutive: 7,
     maxAway: 7,
-    preferredTemplates: ['7on7off', '2255', 'primary_plus_midweek'],
+    preferredTemplates: ['7on7off', '2255', '7on7off_midweek', '2week_blocks'],
   },
   '14-17y': {
-    maxConsecutive: 7,
-    maxAway: 7,
-    preferredTemplates: ['7on7off', '2week_blocks', 'primary_plus_midweek'],
+    // Teens: 7-14 nights standard. Flexibility > rigid pattern.
+    // Indiana: non-consecutive weeks permitted. 2-week blocks viable.
+    maxConsecutive: 14,
+    maxAway: 14,
+    preferredTemplates: ['7on7off', '2week_blocks', '2255', '7on7off_midweek'],
   },
 };
 

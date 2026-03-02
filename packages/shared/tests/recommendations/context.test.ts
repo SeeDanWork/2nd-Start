@@ -51,12 +51,12 @@ describe('computeFamilyContextDefaults', () => {
 
   // ─── Single teenager ───────────────────────────────────────
 
-  it('single 15-year-old → teen profile, maxConsecutive=7', () => {
+  it('single 15-year-old → teen profile, maxConsecutive=14', () => {
     const ctx = computeFamilyContextDefaults([
       { childId: 'teen', dateOfBirth: monthsAgo(15 * 12) },
     ]);
     expect(ctx.youngestBand).toBe('14-17y');
-    expect(ctx.maxConsecutive).toBe(7);
+    expect(ctx.maxConsecutive).toBe(14);
     expect(ctx.solverWeightProfile).toBe('teen');
   });
 
@@ -74,7 +74,7 @@ describe('computeFamilyContextDefaults', () => {
     expect(ctx.perChild).toHaveLength(2);
     const teenChild = ctx.perChild.find((c) => c.childId === 'teen');
     expect(teenChild?.ageBand).toBe('14-17y');
-    expect(teenChild?.maxConsecutive).toBe(7);
+    expect(teenChild?.maxConsecutive).toBe(14);
   });
 
   it('skips children with null DOB, uses remaining valid child', () => {

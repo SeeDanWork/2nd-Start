@@ -68,6 +68,11 @@ export interface MilestoneChange {
   description: string;
 }
 
+export interface TemplateSchedule {
+  template: TemplateScoreV2;
+  scheduleDays: ScheduleDay[];
+}
+
 export interface MilestoneSnapshot {
   label: string;
   refDate: string;
@@ -84,6 +89,8 @@ export interface MilestoneSnapshot {
   overlays: DisruptionOverlayResult[];
   solverPayload: SolverPayloadOverlay | null;
   scheduleDays: ScheduleDay[];
+  /** Top 4 templates with their generated schedules */
+  templateSchedules: TemplateSchedule[];
   presetOutput: PresetOutput | null;
 }
 
@@ -174,11 +181,14 @@ const HORIZON_DAYS = 140;
 /**
  * Generates a schedule from a 14-day pattern, starting at refDate.
  * Disruption locks override the pattern for specific dates.
+ * If maxConsecutive is provided, enforces a cap on consecutive nights
+ * with the same parent by swapping non-locked days.
  */
 export function generateScheduleDays(
   pattern14: (0 | 1)[],
   locks: Map<string, string>,
   refDate?: string,
+  maxConsecutive?: number,
 ): ScheduleDay[] {
   const start = refDate ? new Date(refDate + 'T00:00:00') : new Date();
   // pattern14 uses Mon=index 0. Convert JS day (0=Sun) to Mon-based:
@@ -193,7 +203,7 @@ export function generateScheduleDays(
     d.setDate(d.getDate() + i);
     const dateStr = d.toISOString().slice(0, 10);
 
-    const patternIdx = (startOffset + i) % 14;
+    const patternIdx = (startOffset + i) % pattern14.length;
     const defaultParent = pattern14[patternIdx] === 0 ? 'parent_a' : 'parent_b';
 
     // Check disruption locks
@@ -210,6 +220,36 @@ export function generateScheduleDays(
         assignedTo: defaultParent,
         source: 'Regular schedule',
       });
+    }
+  }
+
+  // Post-process: enforce maxConsecutive by swapping non-locked days
+  if (maxConsecutive && maxConsecutive > 0) {
+    let streakParent = days[0]?.assignedTo ?? 'parent_a';
+    let streakLen = 1;
+
+    for (let i = 1; i < days.length; i++) {
+      if (days[i].assignedTo === streakParent) {
+        streakLen++;
+      } else {
+        streakParent = days[i].assignedTo;
+        streakLen = 1;
+      }
+
+      if (streakLen > maxConsecutive) {
+        // Only swap if this day is NOT a disruption lock
+        if (!locks.has(days[i].date)) {
+          const otherParent = streakParent === 'parent_a' ? 'parent_b' : 'parent_a';
+          days[i] = {
+            date: days[i].date,
+            assignedTo: otherParent as 'parent_a' | 'parent_b',
+            source: 'Max-consecutive cap',
+          };
+          streakParent = otherParent;
+          streakLen = 1;
+        }
+        // If locked, streak continues — we can't break it
+      }
     }
   }
 
@@ -401,14 +441,23 @@ export function computeMilestones(input: MilestoneComputeInput): MilestoneSnapsh
       solverPayload = toSolverPayload(overlays);
     }
 
-    // 12. Build lock map and generate final schedule
+    // 12. Build lock map and generate schedules for top 4 templates
     const lockMap = new Map<string, string>();
     if (solverPayload) {
       for (const lock of solverPayload.disruption_locks) {
         lockMap.set(lock.date, lock.parent);
       }
     }
-    const scheduleDays = generateScheduleDays(topTemplateObj.pattern14, lockMap, refDate);
+    const scheduleDays = generateScheduleDays(topTemplateObj.pattern14, lockMap, refDate, context.hardConstraintFloors.maxConsecutive);
+
+    const top4 = recommendation.aggregate.recommendedTemplates.slice(0, 4);
+    const templateSchedules: TemplateSchedule[] = top4.map((ts) => {
+      const tmpl = TEMPLATES_V2.find((t) => t.id === ts.templateId) ?? topTemplateObj;
+      return {
+        template: ts,
+        scheduleDays: generateScheduleDays(tmpl.pattern14, lockMap, refDate, context.hardConstraintFloors.maxConsecutive),
+      };
+    });
 
     // 13. Build snapshot (changes filled in below)
     const snapshot: MilestoneSnapshot = {
@@ -426,6 +475,7 @@ export function computeMilestones(input: MilestoneComputeInput): MilestoneSnapsh
       overlays,
       solverPayload,
       scheduleDays,
+      templateSchedules,
       presetOutput,
     };
 

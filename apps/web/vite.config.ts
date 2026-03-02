@@ -6,8 +6,11 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@adcp/shared': path.resolve(__dirname, '../../packages/shared/src'),
+      '@adcp/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
     },
+  },
+  optimizeDeps: {
+    exclude: ['@adcp/shared'],
   },
   server: {
     port: 5173,

@@ -20,7 +20,7 @@ export function useScheduleData(familyId: string, token: string) {
     const client = createAuthedClient(() => token);
     const now = new Date();
     const start = now.toISOString().slice(0, 10);
-    const end = new Date(now.getTime() + 90 * 86400000).toISOString().slice(0, 10);
+    const end = new Date(now.getTime() + 140 * 86400000).toISOString().slice(0, 10);
 
     setLoading(true);
     client

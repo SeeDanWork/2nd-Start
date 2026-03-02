@@ -9,11 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@adcp/shared": "*",
+    "@react-pdf/renderer": "^4.3.2",
+    "axios": "^1.7.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "zustand": "^5.0.0",
-    "axios": "^1.7.0",
-    "@adcp/shared": "*"
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

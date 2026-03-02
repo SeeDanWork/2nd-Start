@@ -49,7 +49,7 @@ export interface FamilyContextDefaults {
 
 // ─── Band → Solver Weight Profile Mapping ─────────────────────────
 
-const BAND_TO_PROFILE: Record<AgeBandV2, SolverWeightProfile> = {
+export const BAND_TO_PROFILE: Record<AgeBandV2, SolverWeightProfile> = {
   '0-6m': 'infant',
   '6-12m': 'infant',
   '1-2y': 'young_child',

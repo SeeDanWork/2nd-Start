@@ -39,30 +39,42 @@ function makeInput(
 
 describe('ageFit', () => {
   it('1st preferred → 1.0', () => {
-    const defs = AGE_BAND_DEFAULTS['5-7y']; // preferred: 2255, 3443, 7on7off
-    expect(ageFit(getTemplate('2255'), defs)).toBe(1.0);
+    const defs = AGE_BAND_DEFAULTS['5-7y']; // preferred: 7on7off_midweek, 2255, 3443, 43
+    expect(ageFit(getTemplate('7on7off_midweek'), defs)).toBe(1.0);
   });
 
-  it('2nd preferred → 0.8', () => {
+  it('2nd preferred → 0.85', () => {
     const defs = AGE_BAND_DEFAULTS['5-7y'];
-    expect(ageFit(getTemplate('3443'), defs)).toBe(0.8);
+    expect(ageFit(getTemplate('2255'), defs)).toBe(0.85);
   });
 
-  it('3rd preferred → 0.6', () => {
+  it('3rd preferred → 0.70', () => {
     const defs = AGE_BAND_DEFAULTS['5-7y'];
-    expect(ageFit(getTemplate('7on7off'), defs)).toBe(0.6);
+    expect(ageFit(getTemplate('3443'), defs)).toBe(0.70);
   });
 
-  it('not in preferred list → ~0.3 baseline', () => {
+  it('4th preferred → 0.55', () => {
+    const defs = AGE_BAND_DEFAULTS['5-7y'];
+    expect(ageFit(getTemplate('43'), defs)).toBe(0.55);
+  });
+
+  it('not in preferred list → ~0.25 baseline', () => {
     const defs = AGE_BAND_DEFAULTS['0-6m']; // preferred: 223_daytime, 223
     const score = ageFit(getTemplate('7on7off'), defs);
-    expect(score).toBeLessThan(0.3); // maxBlock(7) > maxConsecutive(1), penalized
+    expect(score).toBeLessThan(0.25); // maxBlock(7) > maxConsecutive(1), penalized
   });
 
-  it('not preferred but maxBlock ≤ maxConsecutive → 0.3', () => {
-    const defs = AGE_BAND_DEFAULTS['8-10y']; // maxConsecutive=7, preferred: 7on7off, 2255
+  it('not preferred but maxBlock ≤ maxConsecutive → 0.25', () => {
+    const defs = AGE_BAND_DEFAULTS['8-10y']; // maxConsecutive=7, preferred: 7on7off, 7on7off_midweek, 2255, 3443
     const score = ageFit(getTemplate('223'), defs); // maxBlock=3 ≤ 7
-    expect(score).toBe(0.3);
+    expect(score).toBe(0.25);
+  });
+
+  it('minAgeMonths penalty when child is too young', () => {
+    const defs = AGE_BAND_DEFAULTS['0-6m'];
+    // 7on7off requires minAgeMonths=72, passing a 3-month-old should get hard penalty
+    const score = ageFit(getTemplate('7on7off'), defs, 3);
+    expect(score).toBe(0.05);
   });
 });
 
@@ -115,9 +127,10 @@ describe('logisticsFit', () => {
 
   it('school + prefer_anchor + schoolAligned → +0.25', () => {
     const score = logisticsFit(
-      getTemplate('3443'), // schoolAligned
+      getTemplate('3443'), // schoolAligned, 4 handoffs
       { type: 'school' },
       'prefer_anchor',
+      35, // > 30 to avoid close-distance penalty
     );
     expect(score).toBe(0.75);
   });
@@ -224,7 +237,7 @@ describe('recommendBaselineV2 output shape', () => {
     const first = result.aggregate.recommendedTemplates[0];
     expect(first.templateId).toBeTruthy();
     expect(first.name).toBeTruthy();
-    expect(first.patternSummary).toMatch(/^[AB]{7} [AB]{7}$/);
+    expect(first.patternSummary).toMatch(/^[AB]{7}( [AB]{7})*$/);
     expect(first.score).toBeGreaterThan(0);
     expect(['low', 'medium', 'high']).toContain(first.confidence);
     expect(first.suggestedWhen.length).toBeGreaterThanOrEqual(2);
@@ -350,7 +363,7 @@ describe('example I/O fixtures', () => {
 
     expect(result.aggregate.defaults.maxConsecutive).toBe(6); // 5+1
     const topId = result.aggregate.recommendedTemplates[0].templateId;
-    expect(['2255', '3443', '7on7off']).toContain(topId);
+    expect(['2255', '3443', '43', '7on7off', '7on7off_midweek']).toContain(topId);
   });
 
   it('fixture 3: 11-13y + shiftWork + ok_in_person → 7on7off first, maxConsecutive=7', () => {

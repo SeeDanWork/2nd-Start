@@ -17,6 +17,17 @@ import { ExplanationPanel } from './ExplanationPanel';
 import { TechnicalDebugPanel } from './TechnicalDebugPanel';
 import type { Preset } from './presets';
 
+// ─── Tab Types ──────────────────────────────────────────────────────
+
+type TabKind = 'template' | 'disruptions';
+
+interface Tab {
+  kind: TabKind;
+  label: string;
+  /** Index into templateSchedules (only for kind=template) */
+  templateIdx?: number;
+}
+
 // ─── Main Component ──────────────────────────────────────────────────
 
 export function DeterministicView() {
@@ -32,6 +43,9 @@ export function DeterministicView() {
   // Parsed input (needed for export)
   const [lastParsedInput, setLastParsedInput] = useState<BaselineRecommendationInputV2 | null>(null);
 
+  // Tab state
+  const [activeTabIdx, setActiveTabIdx] = useState(0);
+
   // UI state
   const [errors, setErrors] = useState<string[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -46,7 +60,33 @@ export function DeterministicView() {
   const overlays = selected?.overlays ?? [];
   const solverPayload = selected?.solverPayload ?? null;
   const presetOutput = selected?.presetOutput ?? null;
-  const scheduleDays = selected?.scheduleDays ?? [];
+  const templateSchedules = selected?.templateSchedules ?? [];
+
+  // Build tabs from current milestone data
+  const tabs: Tab[] = [];
+  for (let i = 0; i < templateSchedules.length; i++) {
+    const ts = templateSchedules[i];
+    const conf = ts.template.confidence.toUpperCase();
+    tabs.push({
+      kind: 'template',
+      label: `${ts.template.name} (${ts.template.score.toFixed(2)} ${conf})`,
+      templateIdx: i,
+    });
+  }
+  const hasOverlays = milestones.some((m) => m.overlays.length > 0);
+  if (hasOverlays) {
+    tabs.push({ kind: 'disruptions', label: 'Disruption Overlays' });
+  }
+
+  // Clamp active tab
+  const safeTabIdx = Math.min(activeTabIdx, Math.max(tabs.length - 1, 0));
+  const activeTab = tabs[safeTabIdx] ?? null;
+
+  // Get schedule days for the active template tab
+  const activeTemplateSched = activeTab?.kind === 'template' && activeTab.templateIdx != null
+    ? templateSchedules[activeTab.templateIdx]
+    : null;
+  const displayDays = activeTemplateSched?.scheduleDays ?? selected?.scheduleDays ?? [];
 
   function loadPreset(preset: Preset) {
     setFamilyText(preset.familyText);
@@ -85,6 +125,7 @@ export function DeterministicView() {
       });
       setMilestones(snapshots);
       setSelectedMilestoneIdx(0);
+      setActiveTabIdx(0);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setErrors([`Computation error: ${msg}`]);
@@ -95,7 +136,6 @@ export function DeterministicView() {
     if (!lastParsedInput || milestones.length === 0) return;
     setExporting(true);
     try {
-      // Reuse already-computed milestones — no recomputation needed
       await exportMilestoneReport(lastParsedInput, arrangement, milestones);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -108,7 +148,7 @@ export function DeterministicView() {
   return (
     <div style={styles.root}>
       {/* Input panels row */}
-      <div style={styles.panels}>
+      <div style={styles.inputRow}>
         <FamilyInputPanel
           value={familyText}
           onChange={setFamilyText}
@@ -133,30 +173,63 @@ export function DeterministicView() {
       <MilestoneSelector
         milestones={milestones}
         selectedIndex={selectedMilestoneIdx}
-        onSelect={setSelectedMilestoneIdx}
+        onSelect={(idx) => {
+          setSelectedMilestoneIdx(idx);
+          setActiveTabIdx(0);
+        }}
       />
 
-      {/* Disruption milestone table (visible when overlays exist) */}
-      <DisruptionMilestoneTable milestones={milestones} />
+      {/* Tab bar */}
+      {tabs.length > 0 && (
+        <div style={styles.tabBar}>
+          {tabs.map((tab, i) => {
+            const isActive = i === safeTabIdx;
+            return (
+              <button
+                key={i}
+                onClick={() => setActiveTabIdx(i)}
+                style={{
+                  ...styles.tab,
+                  ...(isActive ? styles.tabActive : {}),
+                  ...(tab.kind === 'disruptions' ? styles.tabDisruption : {}),
+                  ...(tab.kind === 'disruptions' && isActive ? styles.tabDisruptionActive : {}),
+                }}
+              >
+                {tab.kind === 'template' && (
+                  <span style={styles.tabRank}>#{(tab.templateIdx ?? 0) + 1}</span>
+                )}
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
-      {/* Output panels row */}
-      <div style={styles.panels}>
-        <DeterministicSchedule days={scheduleDays} />
-        <DeterministicCalendar days={scheduleDays} />
-        <ExplanationPanel
-          recommendation={recommendation}
-          context={context}
-          overlays={overlays}
-        />
-        <TechnicalDebugPanel
-          recommendation={recommendation}
-          context={context}
-          overlays={overlays}
-          solverPayload={solverPayload}
-          presets={presetOutput}
-          arrangement={arrangement}
-        />
-      </div>
+      {/* Tab content */}
+      {activeTab?.kind === 'disruptions' ? (
+        <div style={styles.disruptionContent}>
+          <DisruptionMilestoneTable milestones={milestones} />
+        </div>
+      ) : (
+        <div style={styles.panels}>
+          <DeterministicSchedule days={displayDays} />
+          <DeterministicCalendar days={displayDays} />
+          <ExplanationPanel
+            recommendation={recommendation}
+            context={context}
+            overlays={overlays}
+            activeTemplate={activeTemplateSched?.template ?? null}
+          />
+          <TechnicalDebugPanel
+            recommendation={recommendation}
+            context={context}
+            overlays={overlays}
+            solverPayload={solverPayload}
+            presets={presetOutput}
+            arrangement={arrangement}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -165,12 +238,63 @@ const styles: Record<string, CSSProperties> = {
   root: {
     display: 'flex',
     flexDirection: 'column',
-    flex: 1,
-    overflow: 'hidden',
+  },
+  inputRow: {
+    display: 'flex',
+  },
+  tabBar: {
+    display: 'flex',
+    gap: 0,
+    padding: '0 8px',
+    backgroundColor: '#f3f4f6',
+    borderBottom: '2px solid #e5e7eb',
+    overflow: 'auto',
+  },
+  tab: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '8px 14px',
+    fontSize: 11,
+    fontWeight: 500,
+    color: '#6b7280',
+    backgroundColor: 'transparent',
+    border: 'none',
+    borderBottom: '2px solid transparent',
+    marginBottom: -2,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+    transition: 'color 0.15s, border-color 0.15s',
+  },
+  tabActive: {
+    color: '#4A90D9',
+    fontWeight: 700,
+    borderBottomColor: '#4A90D9',
+    backgroundColor: '#fff',
+  },
+  tabDisruption: {
+    color: '#92400e',
+  },
+  tabDisruptionActive: {
+    color: '#92400e',
+    borderBottomColor: '#f59e0b',
+    backgroundColor: '#fffbeb',
+  },
+  tabRank: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 18,
+    height: 18,
+    borderRadius: '50%',
+    backgroundColor: '#e5e7eb',
+    fontSize: 9,
+    fontWeight: 700,
+    color: '#374151',
   },
   panels: {
     display: 'flex',
-    flex: 1,
-    overflow: 'hidden',
+  },
+  disruptionContent: {
   },
 };

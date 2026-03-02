@@ -109,8 +109,22 @@ export function computeOverlay(
       }
       reasons.push(`Blocked ${dates.length} day(s) due to ${event.type}`);
 
-      // Schedule compensatory days after disruption
-      if (dates.length > 0) {
+      // Schedule compensatory days after disruption — lock them to the blocked parent
+      if (dates.length > 0 && blockedParent) {
+        const afterEnd = new Date(event.endDate + 'T00:00:00Z');
+        for (let i = 1; i <= Math.min(dates.length, 3); i++) {
+          const compDate = new Date(afterEnd);
+          compDate.setUTCDate(compDate.getUTCDate() + i);
+          const compDateStr = compDate.toISOString().split('T')[0];
+          compensatoryDays.push(compDateStr);
+          locks.push({
+            date: compDateStr,
+            assignedTo: blockedParent,
+            reason: `${event.type}: compensatory day for ${blockedParent}`,
+          });
+        }
+        reasons.push(`${compensatoryDays.length} compensatory day(s) locked to ${blockedParent}`);
+      } else if (dates.length > 0) {
         const afterEnd = new Date(event.endDate + 'T00:00:00Z');
         for (let i = 1; i <= Math.min(dates.length, 3); i++) {
           const compDate = new Date(afterEnd);

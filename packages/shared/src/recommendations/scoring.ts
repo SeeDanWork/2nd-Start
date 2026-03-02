@@ -11,6 +11,7 @@ import {
   type AggregatedDefaults,
   AGE_BAND_DEFAULTS,
   AGE_BAND_ORDER_V2,
+  ageInMonths,
   getChildDefaults,
   youngestBand,
   adjustMaxConsecutive,
@@ -154,24 +155,32 @@ function getWeights(goals: BaselineRecommendationInputV2['goals']): Weights {
 
 /**
  * ageFit: How well does the template match the age band's preferred list?
- * 1st in preferred → 1.0, 2nd → 0.8, 3rd → 0.6
- * Not listed: 0.3 baseline, penalized if maxBlock > band's maxConsecutive
+ * 1st in preferred → 1.0, 2nd → 0.85, 3rd → 0.70, 4th → 0.55
+ * Not listed: 0.25 baseline, penalized if maxBlock > band's maxConsecutive
+ * Templates below minimum age get a hard penalty.
  */
 export function ageFit(
   template: TemplateDefV2,
   bandDefaults: { maxConsecutive: number; preferredTemplates: TemplateId[] },
+  childAgeMonths?: number,
 ): number {
+  // Hard penalty if child is below template's minimum recommended age
+  if (childAgeMonths != null && template.minAgeMonths > 0 && childAgeMonths < template.minAgeMonths) {
+    return 0.05;
+  }
+
   const idx = bandDefaults.preferredTemplates.indexOf(template.id);
   if (idx === 0) return 1.0;
-  if (idx === 1) return 0.8;
-  if (idx === 2) return 0.6;
+  if (idx === 1) return 0.85;
+  if (idx === 2) return 0.70;
+  if (idx === 3) return 0.55;
 
   // Not in preferred list
-  let score = 0.3;
+  let score = 0.25;
   if (template.maxBlock > bandDefaults.maxConsecutive) {
     // Penalize proportionally: how far over the limit
     const overshoot = template.maxBlock - bandDefaults.maxConsecutive;
-    score -= Math.min(0.2, overshoot * 0.03);
+    score -= Math.min(0.2, overshoot * 0.04);
   }
   return Math.max(0, score);
 }
@@ -231,9 +240,19 @@ export function logisticsFit(
   }
 
   const dist = distanceMinutes ?? 0;
+
+  // Close distance (≤30 min) makes frequent handoffs easy
+  if (dist <= 30 && template.handoffsPer2Weeks <= 4) {
+    // Longer blocks don't leverage the convenience of proximity
+    score -= 0.10;
+  }
+
+  // Medium distance penalizes high handoffs
   if (dist > 45 && template.handoffsPer2Weeks >= 5) {
     score -= 0.15;
   }
+
+  // Long distance rewards low handoffs
   if (dist > 90) {
     const lowHandoffTemplates: TemplateId[] = [
       '7on7off',
@@ -243,6 +262,11 @@ export function logisticsFit(
     if (lowHandoffTemplates.includes(template.id)) {
       score += 0.15;
     }
+  }
+
+  // ok_in_person with school anchor: schoolAligned gets a small boost
+  if (hasAnchor && exchangePreference === 'ok_in_person' && template.schoolAligned) {
+    score += 0.10;
   }
 
   return Math.max(0, Math.min(1, score));
@@ -296,12 +320,13 @@ interface ScoredTemplateInternal {
 function scoreAllTemplates(
   input: BaselineRecommendationInputV2,
   bandDefaults: { maxConsecutive: number; preferredTemplates: TemplateId[] },
+  childAgeMonths?: number,
 ): ScoredTemplateInternal[] {
   const weights = getWeights(input.goals);
 
   return TEMPLATES_V2.map((template) => {
     const scores = {
-      ageFit: ageFit(template, bandDefaults),
+      ageFit: ageFit(template, bandDefaults, childAgeMonths),
       goalFit: goalFit(template, input.goals),
       logisticsFit: logisticsFit(
         template,
@@ -357,30 +382,51 @@ export function recommendBaselineV2(
   );
 
   // Step 4: Score templates against aggregate band
+  // Compute youngest child's age in months for minAgeMonths penalty
+  const youngestChild = perChildList.reduce((youngest, c) => {
+    const cIdx = AGE_BAND_ORDER_V2.indexOf(c.ageBand);
+    const yIdx = AGE_BAND_ORDER_V2.indexOf(youngest.ageBand);
+    return cIdx < yIdx ? c : youngest;
+  }, perChildList[0]);
+  const youngestBirthdate = input.children.find(
+    (c) => c.childId === youngestChild.childId,
+  )?.birthdate;
+  const youngestAgeMonths = youngestBirthdate
+    ? ageInMonths(youngestBirthdate)
+    : undefined;
+
   const bandDefaults = AGE_BAND_DEFAULTS[youngestAgeBand];
-  const scored = scoreAllTemplates(input, bandDefaults);
+  const scored = scoreAllTemplates(input, bandDefaults, youngestAgeMonths);
   scored.sort((a, b) => b.total - a.total);
 
   // Step 5: Take top 5 and assign confidence
+  // Use relative gap (gap / topScore) since logistics+constraint flatten absolute gaps
   const top5 = scored.slice(0, 5);
   const highestScore = top5[0]?.total ?? 0;
   const secondScore = top5[1]?.total ?? 0;
   const scoreGap = highestScore - secondScore;
+  const relativeGap = highestScore > 0 ? scoreGap / highestScore : 0;
 
   const recommendedTemplates: TemplateScoreV2[] = top5.map((s, i) => {
     let confidence: 'low' | 'medium' | 'high';
     if (i === 0) {
-      confidence = scoreGap >= 0.15 ? 'high' : scoreGap >= 0.10 ? 'medium' : 'low';
+      // Relative gap: 15%+ of top score = high, 8%+ = medium
+      confidence = relativeGap >= 0.15 ? 'high' : relativeGap >= 0.08 ? 'medium' : 'low';
     } else {
       const gap = highestScore - s.total;
-      confidence = gap <= 0.05 ? 'medium' : 'low';
+      const relGap = highestScore > 0 ? gap / highestScore : 0;
+      confidence = relGap <= 0.08 ? 'medium' : 'low';
     }
 
-    // Pattern string from binary array
+    // Pattern string from binary array, split into 7-day weeks
     const patternStr = s.template.pattern14
       .map((v) => (v === 0 ? 'A' : 'B'))
       .join('');
-    const patternSummary = patternStr.slice(0, 7) + ' ' + patternStr.slice(7);
+    const weeks: string[] = [];
+    for (let w = 0; w < patternStr.length; w += 7) {
+      weeks.push(patternStr.slice(w, w + 7));
+    }
+    const patternSummary = weeks.join(' ');
 
     return {
       templateId: s.template.id,
@@ -403,7 +449,13 @@ export function recommendBaselineV2(
   const perChild: BaselineRecommendationOutputV2['perChild'] = {};
   for (const child of perChildList) {
     const childBandDefaults = AGE_BAND_DEFAULTS[child.ageBand];
-    const childScored = scoreAllTemplates(input, childBandDefaults);
+    const childBirthdate = input.children.find(
+      (c) => c.childId === child.childId,
+    )?.birthdate;
+    const childAgeMonths = childBirthdate
+      ? ageInMonths(childBirthdate)
+      : undefined;
+    const childScored = scoreAllTemplates(input, childBandDefaults, childAgeMonths);
     childScored.sort((a, b) => b.total - a.total);
 
     perChild[child.childId] = {
