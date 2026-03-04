@@ -29,9 +29,11 @@ import {
   SOLVER_MAX_SOLUTIONS,
   DEFAULT_MAX_TRANSITIONS_PER_WEEK,
   DEFAULT_SCHEDULE_HORIZON_WEEKS,
+  generateIcsString,
 } from '@adcp/shared';
 import { FamilyContextService } from '../family-context/family-context.service';
 import { DisruptionsService } from '../disruptions/disruptions.service';
+import { GoogleCalendarSyncService } from '../google-calendar/google-calendar-sync.service';
 
 @Injectable()
 export class SchedulesService {
@@ -55,6 +57,7 @@ export class SchedulesService {
     private readonly httpService: HttpService,
     private readonly familyContextService: FamilyContextService,
     private readonly disruptionsService: DisruptionsService,
+    private readonly googleCalendarSyncService: GoogleCalendarSyncService,
   ) {}
 
   async getActiveSchedule(familyId: string): Promise<BaseScheduleVersion | null> {
@@ -152,6 +155,37 @@ export class SchedulesService {
       days: Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
       scheduleVersion: active.version,
     };
+  }
+
+  async exportIcs(
+    familyId: string,
+    version: number,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<string> {
+    const schedule = await this.getScheduleVersion(familyId, version);
+
+    const whereClause: Record<string, any> = {
+      familyId,
+      scheduleVersionId: schedule.id,
+    };
+    if (startDate && endDate) {
+      whereClause.date = Between(startDate, endDate);
+    }
+
+    const assignments = await this.assignmentRepo.find({
+      where: whereClause,
+      order: { date: 'ASC' },
+    });
+
+    const days = assignments.map((a) => ({
+      date: a.date,
+      assignedTo: a.assignedTo as 'parent_a' | 'parent_b',
+    }));
+
+    return generateIcsString(days, {
+      uidPrefix: `${familyId}-v${version}`,
+    });
   }
 
   async generateBaseSchedule(
@@ -399,6 +433,11 @@ export class SchedulesService {
       `Generated schedule v${nextVersion} for family ${familyId}: ${solverResponse.status} in ${solverResponse.solve_time_ms}ms`,
     );
 
+    // Fire-and-forget Google Calendar sync
+    this.googleCalendarSyncService.syncScheduleForFamily(familyId).catch((err) => {
+      this.logger.warn(`Google Calendar sync failed: ${err.message}`);
+    });
+
     return version;
   }
 
@@ -478,6 +517,11 @@ export class SchedulesService {
         metadata: { source: 'manual', assignmentCount: assignments.length },
       }),
     );
+
+    // Fire-and-forget Google Calendar sync
+    this.googleCalendarSyncService.syncScheduleForFamily(familyId).catch((err) => {
+      this.logger.warn(`Google Calendar sync failed: ${err.message}`);
+    });
 
     return version;
   }

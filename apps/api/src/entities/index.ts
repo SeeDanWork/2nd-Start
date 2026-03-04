@@ -24,3 +24,4 @@ export { NotificationRecord } from './notification-record.entity';
 export { DisruptionEvent } from './disruption-event.entity';
 export { OverlayPolicyEntity } from './overlay-policy.entity';
 export { PolicyDecisionRecord } from './policy-decision-record.entity';
+export { GoogleCalendarToken } from './google-calendar-token.entity';

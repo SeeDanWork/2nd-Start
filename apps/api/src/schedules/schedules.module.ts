@@ -15,6 +15,7 @@ import {
 import { FamiliesModule } from '../families/families.module';
 import { FamilyContextModule } from '../family-context/family-context.module';
 import { DisruptionsModule } from '../disruptions/disruptions.module';
+import { GoogleCalendarModule } from '../google-calendar/google-calendar.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { DisruptionsModule } from '../disruptions/disruptions.module';
     FamiliesModule,
     FamilyContextModule,
     DisruptionsModule,
+    GoogleCalendarModule,
   ],
   controllers: [SchedulesController],
   providers: [SchedulesService],

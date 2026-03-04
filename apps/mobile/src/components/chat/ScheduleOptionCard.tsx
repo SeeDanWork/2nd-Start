@@ -26,9 +26,21 @@ export function ScheduleOptionCard({ option, onSelect, onDetail }: ScheduleOptio
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{option.profileName}</Text>
         </View>
-        <Text style={styles.score}>
-          Score: {option.stats.score.toFixed(1)}
-        </Text>
+      </View>
+
+      <View style={styles.scoresRow}>
+        <View style={styles.scoreItem}>
+          <Text style={styles.scoreValue}>{option.stats.stabilityScore.toFixed(2)}</Text>
+          <Text style={styles.scoreLabel}>Stability</Text>
+        </View>
+        <View style={styles.scoreItem}>
+          <Text style={styles.scoreValue}>{option.stats.fairnessScore.toFixed(2)}</Text>
+          <Text style={styles.scoreLabel}>Fairness</Text>
+        </View>
+        <View style={styles.scoreItem}>
+          <Text style={styles.scoreValue}>{option.stats.weekendParityScore.toFixed(2)}</Text>
+          <Text style={styles.scoreLabel}>Weekends</Text>
+        </View>
       </View>
 
       <MiniCalendar assignments={pattern} transitionDays={transitions} />
@@ -126,9 +138,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.parentA,
   },
-  score: {
-    fontSize: 12,
+  scoresRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 8,
+    paddingVertical: 6,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+  },
+  scoreItem: {
+    alignItems: 'center',
+  },
+  scoreValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  scoreLabel: {
+    fontSize: 10,
     color: colors.textSecondary,
+    marginTop: 1,
   },
   statsRow: {
     flexDirection: 'row',

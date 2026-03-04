@@ -1,8 +1,8 @@
 export const colors = {
   parentA: '#4A90D9',
   parentB: '#7B61C1',
-  parentALight: '#B3D4F5',
-  parentBLight: '#D1C4E9',
+  parentALight: '#DDF9DC',   // green tint on white (Figma: rgba(86,227,79,0.2))
+  parentBLight: '#DCDDFB',   // purple tint on white (Figma: rgba(80,83,239,0.2))
   background: '#FFFFFF',
   surface: '#F8F9FA',
   text: '#1A1A2E',
@@ -12,4 +12,11 @@ export const colors = {
   warning: '#F59E0B',
   error: '#EF4444',
   neutral: '#9CA3AF',
+
+  // Schedule mode colors
+  disruption: '#F59E0B',
+  maxConsecutive: '#8B5CF6',
+  modeEvidence: '#1D4ED8',
+  modeVision: '#166534',
+  modeBalanced: '#7C3AED',
 } as const;

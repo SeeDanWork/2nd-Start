@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { colors } from '../../../src/theme/colors';
 import { useAuthStore } from '../../../src/stores/auth';
@@ -20,25 +21,29 @@ interface CalendarDay {
   handoffs: Array<{ type: string; fromParent: string; toParent: string }>;
   holidayLabel: string | null;
   daycareClosed: boolean;
+  source?: string;
 }
 
-function getMonthDates(year: number, month: number) {
+type DayCell = { date: string; dayNum: number } | null;
+
+function getMonthRows(year: number, month: number): DayCell[][] {
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
   const startPad = firstDay.getDay(); // 0=Sun
 
-  const days: Array<{ date: string; dayNum: number } | null> = [];
-  // Pad start
+  const days: DayCell[] = [];
   for (let i = 0; i < startPad; i++) days.push(null);
-  // Fill month days
   for (let d = 1; d <= lastDay.getDate(); d++) {
     const dt = new Date(year, month, d);
-    days.push({
-      date: dt.toISOString().split('T')[0],
-      dayNum: d,
-    });
+    days.push({ date: dt.toISOString().split('T')[0], dayNum: d });
   }
-  return days;
+  while (days.length % 7 !== 0) days.push(null);
+
+  const rows: DayCell[][] = [];
+  for (let i = 0; i < days.length; i += 7) {
+    rows.push(days.slice(i, i + 7));
+  }
+  return rows;
 }
 
 function formatMonth(year: number, month: number): string {
@@ -88,7 +93,7 @@ export default function CalendarScreen() {
     else setMonth(month + 1);
   };
 
-  const monthDates = getMonthDates(year, month);
+  const monthRows = getMonthRows(year, month);
   const today = new Date().toISOString().split('T')[0];
   const selectedDay = selectedDate ? calendarData.get(selectedDate) : null;
 
@@ -99,7 +104,9 @@ export default function CalendarScreen() {
         <TouchableOpacity onPress={goToPrevMonth} style={styles.navButton}>
           <Text style={styles.navText}>{'<'}</Text>
         </TouchableOpacity>
-        <Text style={styles.monthTitle}>{formatMonth(year, month)}</Text>
+        <Text style={styles.monthTitle}>
+          {formatMonth(year, month).toUpperCase()}
+        </Text>
         <TouchableOpacity onPress={goToNextMonth} style={styles.navButton}>
           <Text style={styles.navText}>{'>'}</Text>
         </TouchableOpacity>
@@ -108,7 +115,9 @@ export default function CalendarScreen() {
       {/* Day headers */}
       <View style={styles.dayHeaders}>
         {DAY_NAMES.map((d) => (
-          <Text key={d} style={styles.dayHeaderText}>{d}</Text>
+          <View key={d} style={styles.dayHeaderCell}>
+            <Text style={styles.dayHeaderText}>{d}</Text>
+          </View>
         ))}
       </View>
 
@@ -119,42 +128,56 @@ export default function CalendarScreen() {
         </View>
       ) : (
         <View style={styles.grid}>
-          {monthDates.map((cell, i) => {
-            if (!cell) {
-              return <View key={`pad-${i}`} style={styles.cell} />;
-            }
-            const dayData = calendarData.get(cell.date);
-            const parent = dayData?.assignment?.assignedTo;
-            const isTransition = dayData?.assignment?.isTransition;
-            const isToday = cell.date === today;
-            const isSelected = cell.date === selectedDate;
+          {monthRows.map((row, ri) => (
+            <View key={ri} style={styles.weekRow}>
+              {row.map((cell, ci) => {
+                if (!cell) {
+                  return <View key={`pad-${ci}`} style={styles.cell} />;
+                }
+                const dayData = calendarData.get(cell.date);
+                const parent = dayData?.assignment?.assignedTo;
+                const isTransition = dayData?.assignment?.isTransition;
+                const isToday = cell.date === today;
+                const isSelected = cell.date === selectedDate;
+                const isDisruption = dayData?.source === 'disruption';
+                const isMaxConsecutive = dayData?.source === 'max_consecutive';
 
-            let bgColor: string = colors.surface;
-            if (parent === 'parent_a') bgColor = colors.parentALight;
-            else if (parent === 'parent_b') bgColor = colors.parentBLight;
+                const hasAssignment = !!parent;
+                let bgColor: string | undefined;
+                if (parent === 'parent_a') bgColor = colors.parentALight;
+                else if (parent === 'parent_b') bgColor = colors.parentBLight;
 
-            return (
-              <TouchableOpacity
-                key={cell.date}
-                style={[
-                  styles.cell,
-                  { backgroundColor: bgColor },
-                  isToday && styles.cellToday,
-                  isSelected && styles.cellSelected,
-                ]}
-                onPress={() => setSelectedDate(cell.date)}
-              >
-                <Text style={[
-                  styles.cellText,
-                  isToday && styles.cellTextToday,
-                ]}>
-                  {cell.dayNum}
-                </Text>
-                {isTransition && <View style={styles.transitionDot} />}
-                {dayData?.holidayLabel && <View style={styles.holidayDot} />}
-              </TouchableOpacity>
-            );
-          })}
+                return (
+                  <TouchableOpacity
+                    key={cell.date}
+                    style={[
+                      styles.cell,
+                      hasAssignment ? styles.cellAssigned : styles.cellUnassigned,
+                      bgColor ? { backgroundColor: bgColor } : undefined,
+                      isToday && styles.cellToday,
+                      isSelected && styles.cellSelected,
+                    ]}
+                    onPress={() => setSelectedDate(cell.date)}
+                  >
+                    <Text style={[
+                      styles.cellText,
+                      isToday && styles.cellTextToday,
+                    ]}>
+                      {cell.dayNum}
+                    </Text>
+                    {isTransition && <View style={styles.transitionDot} />}
+                    {dayData?.holidayLabel && <View style={styles.holidayDot} />}
+                    {isDisruption && (
+                      <View style={styles.disruptionTriangle} />
+                    )}
+                    {isMaxConsecutive && (
+                      <View style={styles.maxConsecutiveTriangle} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ))}
         </View>
       )}
 
@@ -171,6 +194,10 @@ export default function CalendarScreen() {
         <View style={styles.legendItem}>
           <View style={[styles.legendSwatch, { backgroundColor: colors.warning }]} />
           <Text style={styles.legendText}>Handoff</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={styles.legendTriangle} />
+          <Text style={styles.legendText}>Adjusted</Text>
         </View>
       </View>
 
@@ -210,6 +237,25 @@ export default function CalendarScreen() {
               )}
             </View>
           )}
+          {/* Disruption info */}
+          {selectedDay.source === 'disruption' && (
+            <View style={styles.detailInfoCard}>
+              <Text style={styles.detailInfoTitle}>Disruption Override</Text>
+              <Text style={styles.detailInfoText}>
+                Schedule adjusted for a temporary change.
+              </Text>
+            </View>
+          )}
+          {selectedDay.source === 'max_consecutive' && (
+            <View style={[styles.detailInfoCard, { borderLeftColor: colors.maxConsecutive }]}>
+              <Text style={[styles.detailInfoTitle, { color: colors.maxConsecutive }]}>
+                Max Consecutive Cap
+              </Text>
+              <Text style={styles.detailInfoText}>
+                Adjusted to respect max consecutive nights rule.
+              </Text>
+            </View>
+          )}
           {!selectedDay.assignment && (
             <Text style={styles.detailEmpty}>No schedule data for this day.</Text>
           )}
@@ -219,57 +265,94 @@ export default function CalendarScreen() {
   );
 }
 
+const CELL_GAP = 4;
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: '#E5E5EA' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 8,
   },
   navButton: { padding: 8 },
-  navText: { fontSize: 20, color: colors.parentA, fontWeight: '600' },
-  monthTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
+  navText: { fontSize: 18, color: '#8E8E93', fontWeight: '600' },
+  monthTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#C7C7CC',
+    letterSpacing: 1,
+  },
   dayHeaders: {
     flexDirection: 'row',
-    paddingHorizontal: 4,
+    paddingHorizontal: 24,
+    marginBottom: 2,
   },
-  dayHeaderText: {
+  dayHeaderCell: {
     flex: 1,
-    textAlign: 'center',
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textSecondary,
+    alignItems: 'center',
     paddingVertical: 4,
   },
+  dayHeaderText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#8E8E93',
+    textTransform: 'uppercase',
+  },
   grid: {
+    paddingHorizontal: 24,
+  },
+  weekRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 4,
+    gap: CELL_GAP,
+    marginBottom: CELL_GAP,
   },
   cell: {
-    width: '14.28%',
-    aspectRatio: 1,
+    flex: 1,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 8,
-    marginVertical: 1,
+    borderRadius: 4,
+  },
+  cellAssigned: {
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.12,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 3,
+      },
+      web: {
+        boxShadow: '0px 8px 16px rgba(0, 0, 0, 0.15)',
+      },
+    }),
+  },
+  cellUnassigned: {
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
   },
   cellToday: {
     borderWidth: 2,
-    borderColor: colors.parentA,
+    borderColor: '#3A3A3C',
   },
   cellSelected: {
     borderWidth: 2,
-    borderColor: colors.text,
+    borderColor: '#1A1A2E',
   },
   cellText: {
-    fontSize: 14,
-    color: colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#8E8E93',
+    opacity: 0.65,
   },
   cellTextToday: {
     fontWeight: '700',
+    opacity: 1,
+    color: '#3A3A3C',
   },
   transitionDot: {
     width: 5,
@@ -277,7 +360,7 @@ const styles = StyleSheet.create({
     borderRadius: 2.5,
     backgroundColor: colors.warning,
     position: 'absolute',
-    bottom: 4,
+    bottom: 3,
   },
   holidayDot: {
     width: 5,
@@ -285,8 +368,30 @@ const styles = StyleSheet.create({
     borderRadius: 2.5,
     backgroundColor: colors.success,
     position: 'absolute',
-    bottom: 4,
-    right: '30%',
+    bottom: 3,
+    right: '25%',
+  },
+  disruptionTriangle: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 0,
+    height: 0,
+    borderTopWidth: 8,
+    borderTopColor: colors.disruption,
+    borderLeftWidth: 8,
+    borderLeftColor: 'transparent',
+  },
+  maxConsecutiveTriangle: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 0,
+    height: 0,
+    borderTopWidth: 8,
+    borderTopColor: colors.maxConsecutive,
+    borderLeftWidth: 8,
+    borderLeftColor: 'transparent',
   },
   loadingContainer: {
     height: 260,
@@ -296,26 +401,53 @@ const styles = StyleSheet.create({
   legend: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 16,
+    gap: 12,
     paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    marginHorizontal: 16,
+    marginHorizontal: 24,
+    flexWrap: 'wrap',
   },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendSwatch: { width: 12, height: 12, borderRadius: 3 },
-  legendText: { fontSize: 12, color: colors.textSecondary },
+  legendText: { fontSize: 12, color: '#8E8E93' },
+  legendTriangle: {
+    width: 0,
+    height: 0,
+    borderTopWidth: 8,
+    borderTopColor: colors.disruption,
+    borderLeftWidth: 8,
+    borderLeftColor: 'transparent',
+  },
   detail: {
     flex: 1,
     padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    marginHorizontal: 16,
+    marginTop: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderRadius: 12,
   },
-  detailDate: { fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 8 },
+  detailDate: { fontSize: 16, fontWeight: '700', color: '#3A3A3C', marginBottom: 8 },
   detailRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   detailBadge: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
-  detailText: { fontSize: 14, color: colors.text },
+  detailText: { fontSize: 14, color: '#3A3A3C' },
   detailHoliday: { fontSize: 14, color: colors.success, fontWeight: '600' },
-  detailNote: { fontSize: 12, color: colors.textSecondary },
-  detailEmpty: { fontSize: 14, color: colors.textSecondary, fontStyle: 'italic' },
+  detailNote: { fontSize: 12, color: '#8E8E93' },
+  detailEmpty: { fontSize: 14, color: '#8E8E93', fontStyle: 'italic' },
+  detailInfoCard: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.disruption,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+  },
+  detailInfoTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.disruption,
+    marginBottom: 2,
+  },
+  detailInfoText: {
+    fontSize: 12,
+    color: '#8E8E93',
+  },
 });

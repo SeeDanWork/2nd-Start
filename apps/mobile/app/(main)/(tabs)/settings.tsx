@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,21 @@ import {
   Alert,
   ActivityIndicator,
   Switch,
+  Animated,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { colors } from '../../../src/theme/colors';
 import { useAuthStore } from '../../../src/stores/auth';
 import { useParentLabel, useParentNames } from '../../../src/hooks/useParentName';
-import { constraintsApi, calendarApi, guardrailsApi, sharingApi, familiesApi } from '../../../src/api/client';
+import { constraintsApi, calendarApi, guardrailsApi, sharingApi, familiesApi, apiClient } from '../../../src/api/client';
 import * as SecureStore from '../../../src/utils/storage';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -62,6 +70,10 @@ export default function SettingsScreen() {
   const [ruleType, setRuleType] = useState('fairness_band');
   const [ruleThreshold, setRuleThreshold] = useState('2');
 
+  // Schedule explanation state
+  const [familyContext, setFamilyContext] = useState<any>(null);
+  const [showTechDetails, setShowTechDetails] = useState(false);
+
   const fetchConstraints = useCallback(async () => {
     if (!family) {
       setLoading(false);
@@ -97,6 +109,16 @@ export default function SettingsScreen() {
     }
   }, []);
 
+  const fetchFamilyContext = useCallback(async () => {
+    if (!family) return;
+    try {
+      const { data } = await apiClient.get(`/families/${family.id}/today`);
+      setFamilyContext(data);
+    } catch {
+      // Context not available
+    }
+  }, [family]);
+
   const fetchGuardrails = useCallback(async () => {
     if (!family) return;
     try {
@@ -118,7 +140,8 @@ export default function SettingsScreen() {
     fetchGuardrails();
     fetchMembers();
     fetchPendingInvites();
-  }, [fetchConstraints, fetchGuardrails, fetchMembers, fetchPendingInvites]);
+    fetchFamilyContext();
+  }, [fetchConstraints, fetchGuardrails, fetchMembers, fetchPendingInvites, fetchFamilyContext]);
 
   const addLockedNight = async () => {
     if (!family || lockDays.length === 0) return;
@@ -377,6 +400,147 @@ export default function SettingsScreen() {
       <Text style={styles.generateHint}>
         Uses your constraints to compute an optimal, fair schedule for the next 12 weeks.
       </Text>
+
+      {/* Schedule Explanation section */}
+      <Text style={styles.sectionTitle}>Schedule Explanation</Text>
+      <View style={styles.explanationCard}>
+        <View style={styles.modeBadge}>
+          <Text style={styles.modeBadgeText}>Evidence Best</Text>
+        </View>
+
+        {familyContext ? (
+          <>
+            {familyContext.ageBand && (
+              <View style={styles.explainRow}>
+                <Text style={styles.explainLabel}>Age Band</Text>
+                <Text style={styles.explainValue}>{familyContext.ageBand}</Text>
+              </View>
+            )}
+            {familyContext.templateName && (
+              <View style={styles.explainRow}>
+                <Text style={styles.explainLabel}>Recommended Template</Text>
+                <Text style={styles.explainValue}>{familyContext.templateName}</Text>
+              </View>
+            )}
+            {familyContext.score != null && (
+              <View style={styles.explainRow}>
+                <Text style={styles.explainLabel}>Score</Text>
+                <Text style={styles.explainValue}>
+                  {typeof familyContext.score === 'number' ? familyContext.score.toFixed(1) : familyContext.score}
+                  {familyContext.confidence ? ` (${familyContext.confidence})` : ''}
+                </Text>
+              </View>
+            )}
+            {familyContext.rationale && Array.isArray(familyContext.rationale) && (
+              <View style={styles.explainSection}>
+                <Text style={styles.explainSectionTitle}>Why this schedule</Text>
+                {familyContext.rationale.map((r: string, i: number) => (
+                  <Text key={i} style={styles.bulletText}>• {r}</Text>
+                ))}
+              </View>
+            )}
+            {familyContext.suggestedWhen && Array.isArray(familyContext.suggestedWhen) && (
+              <View style={styles.explainSection}>
+                <Text style={styles.explainSectionTitle}>Works well when</Text>
+                {familyContext.suggestedWhen.map((s: string, i: number) => (
+                  <Text key={i} style={styles.bulletText}>• {s}</Text>
+                ))}
+              </View>
+            )}
+            {familyContext.tradeoffs && Array.isArray(familyContext.tradeoffs) && (
+              <View style={styles.explainSection}>
+                <Text style={styles.explainSectionTitle}>Tradeoffs</Text>
+                {familyContext.tradeoffs.map((t: string, i: number) => (
+                  <Text key={i} style={styles.bulletText}>• {t}</Text>
+                ))}
+              </View>
+            )}
+          </>
+        ) : (
+          <Text style={styles.emptyText}>
+            Generate a schedule to see explanation details.
+          </Text>
+        )}
+      </View>
+
+      {/* Technical Details (collapsed by default) */}
+      <TouchableOpacity
+        style={styles.techHeader}
+        onPress={() => {
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          setShowTechDetails(!showTechDetails);
+        }}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.techHeaderText}>Technical Details</Text>
+        <Text style={styles.chevron}>{showTechDetails ? '▲' : '▼'}</Text>
+      </TouchableOpacity>
+
+      {showTechDetails && (
+        <View style={styles.techCard}>
+          {familyContext ? (
+            <>
+              {/* Family context */}
+              <Text style={styles.techSectionTitle}>Family Context</Text>
+              <View style={styles.techRow}>
+                <Text style={styles.techLabel}>Youngest Age Band</Text>
+                <Text style={styles.techValue}>{familyContext.ageBand || 'N/A'}</Text>
+              </View>
+              <View style={styles.techRow}>
+                <Text style={styles.techLabel}>Weight Profile</Text>
+                <Text style={styles.techValue}>{familyContext.weightProfile || familyContext.solverProfile || 'N/A'}</Text>
+              </View>
+              <View style={styles.techRow}>
+                <Text style={styles.techLabel}>Scoring Mode</Text>
+                <Text style={styles.techValue}>{familyContext.scoringMode || 'evidence'}</Text>
+              </View>
+
+              {/* Hard constraint floors */}
+              <Text style={styles.techSectionTitle}>Hard Constraint Floors</Text>
+              <View style={styles.techRow}>
+                <Text style={styles.techLabel}>Max Consecutive</Text>
+                <Text style={styles.techValue}>{familyContext.maxConsecutive ?? 'N/A'}</Text>
+              </View>
+              <View style={styles.techRow}>
+                <Text style={styles.techLabel}>Max Away</Text>
+                <Text style={styles.techValue}>{familyContext.maxAway ?? 'N/A'}</Text>
+              </View>
+
+              {/* Solver weights */}
+              {familyContext.weights && typeof familyContext.weights === 'object' && (
+                <>
+                  <Text style={styles.techSectionTitle}>Solver Weights</Text>
+                  {Object.entries(familyContext.weights).map(([key, val]: [string, any]) => (
+                    <View key={key} style={styles.techRow}>
+                      <Text style={styles.techLabel}>{key}</Text>
+                      <Text style={styles.techValue}>
+                        {typeof val === 'number' ? val.toFixed(2) : String(val)}
+                      </Text>
+                    </View>
+                  ))}
+                </>
+              )}
+
+              {/* Active constraints */}
+              {constraints.length > 0 && (
+                <>
+                  <Text style={styles.techSectionTitle}>Active Constraints ({constraints.length})</Text>
+                  {constraints.map((c) => (
+                    <View key={c.id} style={styles.techRow}>
+                      <Text style={styles.techLabel}>{c.type}</Text>
+                      <Text style={styles.techValue}>{c.hardness} w:{c.weight}</Text>
+                    </View>
+                  ))}
+                </>
+              )}
+            </>
+          ) : (
+            <Text style={styles.emptyText}>
+              No family context data available.
+            </Text>
+          )}
+        </View>
+      )}
 
       {/* Guardrails section */}
       <Text style={styles.sectionTitle}>Guardrails</Text>
@@ -1030,5 +1194,108 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
     backgroundColor: colors.background,
+  },
+
+  // Schedule Explanation
+  explanationCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+  },
+  modeBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: colors.modeEvidence + '15',
+    borderWidth: 1,
+    borderColor: colors.modeEvidence,
+    marginBottom: 12,
+  },
+  modeBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.modeEvidence,
+  },
+  explainRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  explainLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  explainValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  explainSection: {
+    marginTop: 10,
+  },
+  explainSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  bulletText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 20,
+    paddingLeft: 4,
+  },
+
+  // Technical Details
+  techHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 4,
+  },
+  techHeaderText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  chevron: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  techCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+  },
+  techSectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.text,
+    marginTop: 12,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  techRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 3,
+  },
+  techLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  techValue: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
   },
 });

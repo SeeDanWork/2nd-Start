@@ -6,8 +6,9 @@ import type {
   ScheduleMode,
   ThreeModeOutput,
   TemplateScoreV2,
+  IcsScheduleDay,
 } from '@adcp/shared';
-import { TEMPLATES_V2 } from '@adcp/shared';
+import { TEMPLATES_V2, generateIcsString } from '@adcp/shared';
 import { parseFamilyInput, parseDisruptionInput } from './parseInput';
 import { computeMilestones, generateScheduleDays } from './milestones';
 import type { MilestoneSnapshot, TemplateSchedule } from './milestones';
@@ -157,10 +158,8 @@ export function DeterministicView() {
   }
 
   function loadPreset(preset: Preset) {
-    setFamilyText(preset.familyText);
     setDisruptionText(preset.disruptionText);
     setActivePresetId(preset.id);
-    setActiveFamilyPresetId('');
   }
 
   function handleApplyPreferences(prefs: ParentPreferenceInput) {
@@ -223,6 +222,24 @@ export function DeterministicView() {
     }
   }
 
+  function handleExportCalendar() {
+    if (displayDays.length === 0) return;
+    const icsDays: IcsScheduleDay[] = displayDays.map((d) => ({
+      date: d.date,
+      assignedTo: d.assignedTo as 'parent_a' | 'parent_b',
+    }));
+    const icsContent = generateIcsString(icsDays);
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `adcp-schedule-${new Date().toISOString().slice(0, 10)}.ics`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   const exportEnabled = milestones.length > 0 && !exporting;
 
   return (
@@ -244,6 +261,17 @@ export function DeterministicView() {
             disabled={!exportEnabled}
           >
             {exporting ? 'Exporting...' : 'Export PDF'}
+          </button>
+          <button
+            style={{
+              ...styles.calendarButton,
+              opacity: exportEnabled ? 1 : 0.5,
+              cursor: exportEnabled ? 'pointer' : 'not-allowed',
+            }}
+            onClick={handleExportCalendar}
+            disabled={!exportEnabled}
+          >
+            Export Calendar
           </button>
         </div>
       </div>
@@ -268,8 +296,8 @@ export function DeterministicView() {
         <ParentPreferencePanel onApply={handleApplyPreferences} />
       </div>
 
-      {/* Schedule mode selector (only when preferences are active) */}
-      {hasModes && (
+      {/* Schedule mode selector — always visible when schedule exists */}
+      {milestones.length > 0 && (
         <ScheduleModeSelector
           activeMode={activeMode}
           onSelectMode={(mode) => {
@@ -277,6 +305,7 @@ export function DeterministicView() {
             setActiveTabIdx(0);
           }}
           modeResults={modeResults}
+          disabled={!hasModes}
         />
       )}
 
@@ -384,6 +413,16 @@ const styles: Record<string, CSSProperties> = {
   exportButton: {
     padding: '6px 16px',
     backgroundColor: '#22c55e',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: 600,
+  },
+  calendarButton: {
+    padding: '6px 16px',
+    backgroundColor: '#3b82f6',
     color: '#fff',
     border: 'none',
     borderRadius: 6,

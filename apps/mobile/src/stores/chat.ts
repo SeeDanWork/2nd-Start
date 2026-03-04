@@ -50,6 +50,7 @@ export interface WizardState {
   maxHandoffsPerWeek: number;
   maxConsecutiveAway: number;
   weekendPreference: string;
+  scheduleStartDate: string;
   familyName: string;
   inviteEmail: string;
 }
@@ -62,7 +63,9 @@ export interface ScheduleOption {
     parentANights: number;
     parentBNights: number;
     handoffs: number;
-    score: number;
+    stabilityScore: number;
+    fairnessScore: number;
+    weekendParityScore: number;
   };
   explanation: string[];
 }
@@ -111,6 +114,7 @@ const DEFAULT_WIZARD: WizardState = {
   maxHandoffsPerWeek: 3,
   maxConsecutiveAway: 5,
   weekendPreference: 'alternate',
+  scheduleStartDate: '',
   familyName: '',
   inviteEmail: '',
 };
@@ -122,14 +126,12 @@ const AGE_BAND_MAP: Record<string, string> = {
   '11_to_17': '11-17',
 };
 
-/** Compute next Monday as YYYY-MM-DD */
-function nextMonday(): string {
-  const today = new Date();
-  const dow = today.getDay(); // 0=Sun
-  const daysToMon = dow === 0 ? 1 : 8 - dow;
-  const start = new Date(today);
-  start.setDate(today.getDate() + daysToMon);
-  return start.toISOString().split('T')[0];
+/** Format a Date as YYYY-MM-DD using local time (avoids toISOString timezone shift) */
+function localDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 /**
@@ -137,7 +139,8 @@ function nextMonday(): string {
  * Snake_case keys, nested parent_a / shared / school_schedule objects.
  */
 function buildOnboardingInput(wizard: WizardState, userId: string) {
-  const startDate = nextMonday();
+  const today = new Date();
+  const startDate = wizard.scheduleStartDate || localDateStr(today);
   const hasDaycare = wizard.ageBands.some((b) => b === 'under_5');
 
   return {
@@ -165,7 +168,7 @@ function buildOnboardingInput(wizard: WizardState, userId: string) {
     },
     shared: {
       start_date: startDate,
-      horizon_days: DEFAULT_SCHEDULE_HORIZON_WEEKS * 7,
+      horizon_days: Math.min(DEFAULT_SCHEDULE_HORIZON_WEEKS * 7, 56),
     },
   };
 }
@@ -183,7 +186,9 @@ function mapOptions(data: any): ScheduleOption[] {
       parentANights: opt.stats?.parent_a_overnights ?? 7,
       parentBNights: opt.stats?.parent_b_overnights ?? 7,
       handoffs: opt.stats?.transitions_count ?? 2,
-      score: opt.stats?.stability_score ?? 0,
+      stabilityScore: opt.stats?.stability_score ?? 0,
+      fairnessScore: opt.stats?.fairness_score ?? 0,
+      weekendParityScore: opt.stats?.weekend_parity_score ?? 0,
     },
     explanation: opt.explanation?.bullets || [],
   }));
@@ -353,7 +358,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           },
           shared: {
             ...(state.parentAInput.shared as Record<string, unknown> || {}),
-            start_date: nextMonday(),
+            start_date: state.wizard.scheduleStartDate || localDateStr(new Date()),
           },
         };
       } else {
@@ -486,6 +491,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await handleJoinerChip(value, get, set);
     } else if (state.isOnboarding) {
       await handleOnboardingChip(value, get, set);
+    } else if (value === 'disruption_checkin') {
+      // Show disruption check-in card
+      const todayStr = new Date().toISOString().split('T')[0];
+      set((s) => ({
+        messages: [
+          ...s.messages,
+          userMessage('Report a disruption'),
+          botMessage(
+            "What's happening today? Select any that apply.",
+            { type: 'disruption_checkin', data: { date: todayStr } },
+          ),
+        ],
+      }));
     } else {
       await get().processUserInput(value);
     }
@@ -652,6 +670,40 @@ async function handleOnboardingChip(
       }));
       get().advanceOnboarding();
       break;
+
+    case 'select_pattern':
+      // Pattern selection is handled by PatternPickerCard directly
+      // (it calls advanceOnboarding after setting wizard fields)
+      break;
+
+    case 'set_start_date': {
+      const today = new Date();
+      if (value === 'immediately') {
+        set((s) => ({
+          wizard: { ...s.wizard, scheduleStartDate: localDateStr(today) },
+        }));
+        get().advanceOnboarding();
+      } else if (value === 'next_day') {
+        const tomorrow = new Date(today);
+        tomorrow.setDate(today.getDate() + 1);
+        set((s) => ({
+          wizard: { ...s.wizard, scheduleStartDate: localDateStr(tomorrow) },
+        }));
+        get().advanceOnboarding();
+      } else if (value === 'choose_date') {
+        // Inject a bot message with the calendar picker card — do NOT advance
+        set((s) => ({
+          messages: [
+            ...s.messages,
+            botMessage(
+              'Pick a start date:',
+              { type: 'start_date_picker', data: {} },
+            ),
+          ],
+        }));
+      }
+      break;
+    }
 
     case 'create_family': {
       const wizard = get().wizard;

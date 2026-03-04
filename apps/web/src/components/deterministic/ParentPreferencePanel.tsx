@@ -243,21 +243,12 @@ export function ParentPreferencePanel({ onApply }: Props) {
     setSelectedPatternIdx(idx);
     const gp = patterns[idx];
 
-    // Auto-populate sliders from pattern stats
+    // Populate sliders from pattern stats — user clicks Apply when ready
     setTargetSharePct(gp.splitPct);
     setMaxHandoffsPerWeek(Math.max(1, Math.min(7, Math.round(gp.handoffs / 2))));
     setMaxConsecutiveAway(Math.max(1, Math.min(14, Math.max(gp.maxBlockA, gp.maxBlockB))));
     setWeekendPreference(gp.weekendPref);
-
-    // Auto-apply with derived preferences
-    onApply({
-      targetSharePct: gp.splitPct,
-      maxHandoffsPerWeek: Math.max(1, Math.min(7, Math.round(gp.handoffs / 2))),
-      maxConsecutiveAway: Math.max(1, Math.min(14, Math.max(gp.maxBlockA, gp.maxBlockB))),
-      weekendPreference: gp.weekendPref,
-      priorityWeights: { timeSplit, handoffs, weekends },
-    });
-  }, [patterns, onApply, timeSplit, handoffs, weekends]);
+  }, [patterns]);
 
   return (
     <div style={styles.panel}>

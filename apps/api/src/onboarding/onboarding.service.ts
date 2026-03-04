@@ -198,12 +198,14 @@ export class OnboardingService {
 
   async generateOptions(inputs: Record<string, unknown>, config?: Record<string, unknown>) {
     try {
+      this.logger.debug(`generateOptions payload: ${JSON.stringify({ inputs, config })}`);
       const response = await firstValueFrom(
-        this.httpService.post('/onboarding/options', { inputs, config }),
+        this.httpService.post('/onboarding/options', { inputs, config }, { timeout: 120000 }),
       );
       return response.data;
     } catch (err: any) {
       this.logger.error(`Option generation failed: ${err.message}`);
+      this.logger.error(`Optimizer detail: ${JSON.stringify(err.response?.data)}`);
       const detail = err.response?.data?.detail;
       if (detail?.errors) {
         throw new BadRequestException({

@@ -16,6 +16,7 @@ import {
   AuditAction,
   AuditEntityType,
   SHARE_LINK_TOKEN_BYTES,
+  generateIcsString,
 } from '@adcp/shared';
 import { SchedulesService } from '../schedules/schedules.service';
 
@@ -100,59 +101,21 @@ export class SharingService {
 
   async generateICS(familyId: string): Promise<string> {
     const active = await this.schedulesService.getActiveSchedule(familyId);
-    if (!active) return this.wrapICS('');
+    if (!active) return generateIcsString([]);
 
     const assignments = await this.assignmentRepo.find({
       where: { familyId, scheduleVersionId: active.id },
       order: { date: 'ASC' },
     });
 
-    const handoffs = await this.handoffRepo.find({
-      where: { familyId, scheduleVersionId: active.id },
-      order: { date: 'ASC' },
+    const days = assignments.map((a) => ({
+      date: a.date,
+      assignedTo: a.assignedTo as 'parent_a' | 'parent_b',
+    }));
+
+    return generateIcsString(days, {
+      uidPrefix: `${familyId}-v${active.version}`,
     });
-
-    const events: string[] = [];
-
-    // Consolidate consecutive same-parent nights into single events
-    let blockStart: string | null = null;
-    let blockParent: string | null = null;
-    let blockEnd: string | null = null;
-
-    for (const a of assignments) {
-      if (a.assignedTo === blockParent && blockStart !== null) {
-        blockEnd = a.date;
-      } else {
-        if (blockStart !== null && blockParent !== null) {
-          events.push(this.makeVEvent(
-            blockStart,
-            blockEnd || blockStart,
-            `Overnight: ${blockParent === 'parent_a' ? 'Parent A' : 'Parent B'}`,
-          ));
-        }
-        blockStart = a.date;
-        blockParent = a.assignedTo;
-        blockEnd = a.date;
-      }
-    }
-    if (blockStart !== null && blockParent !== null) {
-      events.push(this.makeVEvent(
-        blockStart,
-        blockEnd || blockStart,
-        `Overnight: ${blockParent === 'parent_a' ? 'Parent A' : 'Parent B'}`,
-      ));
-    }
-
-    // Handoff events
-    for (const h of handoffs) {
-      events.push(this.makeVEvent(
-        h.date,
-        h.date,
-        `Handoff: ${h.fromParent === 'parent_a' ? 'A' : 'B'} → ${h.toParent === 'parent_a' ? 'A' : 'B'} (${h.type})`,
-      ));
-    }
-
-    return this.wrapICS(events.join('\n'));
   }
 
   async generateHTMLCalendar(familyId: string): Promise<string> {
@@ -177,27 +140,4 @@ table{width:100%;border-collapse:collapse}td{padding:8px;border-bottom:1px solid
 </head><body><h1>Shared Calendar</h1><table>${rows}</table></body></html>`;
   }
 
-  private makeVEvent(start: string, end: string, summary: string): string {
-    const dtStart = start.replace(/-/g, '');
-    const nextDay = new Date(end);
-    nextDay.setDate(nextDay.getDate() + 1);
-    const dtEnd = nextDay.toISOString().split('T')[0].replace(/-/g, '');
-    const uid = crypto.randomUUID();
-
-    return `BEGIN:VEVENT
-DTSTART;VALUE=DATE:${dtStart}
-DTEND;VALUE=DATE:${dtEnd}
-SUMMARY:${summary}
-UID:${uid}
-END:VEVENT`;
-  }
-
-  private wrapICS(events: string): string {
-    return `BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//ADCP//Co-Parenting Calendar//EN
-CALSCALE:GREGORIAN
-${events}
-END:VCALENDAR`;
-  }
 }

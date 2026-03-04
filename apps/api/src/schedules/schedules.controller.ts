@@ -5,8 +5,10 @@ import {
   Param,
   Query,
   Body,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { AuthGuard } from '@nestjs/passport';
 import { SchedulesService } from './schedules.service';
 import { FamiliesService } from '../families/families.service';
@@ -75,6 +77,29 @@ export class SchedulesController {
     await this.familiesService.verifyMembership(familyId, user.id);
     const schedule = await this.schedulesService.getScheduleVersion(familyId, parseInt(version, 10));
     return this.schedulesService.getAssignments(familyId, schedule.id, start, end);
+  }
+
+  @Get('schedules/:version/export/ics')
+  @UseGuards(AuthGuard('jwt'))
+  async exportIcs(
+    @CurrentUser() user: User,
+    @Param('familyId') familyId: string,
+    @Param('version') version: string,
+    @Query('start') start: string,
+    @Query('end') end: string,
+    @Res() res: Response,
+  ) {
+    await this.familiesService.verifyMembership(familyId, user.id);
+    const ics = await this.schedulesService.exportIcs(
+      familyId,
+      parseInt(version, 10),
+      start,
+      end,
+    );
+    res
+      .type('text/calendar')
+      .set('Content-Disposition', 'attachment; filename="schedule.ics"')
+      .send(ics);
   }
 
   @Post('schedules/generate')

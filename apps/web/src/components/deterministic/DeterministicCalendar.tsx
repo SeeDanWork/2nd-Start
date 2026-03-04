@@ -12,10 +12,15 @@ const PARENT_COLORS: Record<string, string> = {
   parent_b: '#dcfee5',
 };
 
-/** Border colors for non-regular sources */
-const SOURCE_INDICATORS: Record<string, { border: string; symbol: string }> = {
-  'Disruption': { border: '#f59e0b', symbol: 'D' },
-  'Max-consecutive cap': { border: '#8b5cf6', symbol: 'C' },
+/** Indicator colors for non-regular sources */
+const SOURCE_INDICATORS: Record<string, { color: string }> = {
+  'Disruption': { color: '#f59e0b' },
+  'Max-consecutive cap': { color: '#8b5cf6' },
+};
+
+const TOOLTIP_TEXT: Record<string, string> = {
+  'Disruption': 'Disruption override — schedule adjusted for a temporary change',
+  'Max-consecutive cap': 'Adjusted to respect max consecutive nights rule',
 };
 
 interface Props {
@@ -86,24 +91,24 @@ export function DeterministicCalendar({ days }: Props) {
                   return (
                     <div
                       key={i}
-                      title={source !== 'Regular schedule' && source ? source : undefined}
+                      title={TOOLTIP_TEXT[source] ?? undefined}
                       style={{
                         ...styles.cell,
                         backgroundColor: bg,
                         ...(isToday ? styles.today : {}),
-                        ...(indicator ? {
-                          border: `2px solid ${indicator.border}`,
-                        } : {}),
                       }}
                     >
                       {dayNum}
                       {indicator && (
-                        <span style={{
-                          ...styles.sourceTag,
-                          color: indicator.border,
-                        }}>
-                          {indicator.symbol}
-                        </span>
+                        <div style={{
+                          position: 'absolute',
+                          top: 0,
+                          right: 0,
+                          width: 0,
+                          height: 0,
+                          borderTop: `8px solid ${indicator.color}`,
+                          borderLeft: '8px solid transparent',
+                        }} />
                       )}
                     </div>
                   );
@@ -123,12 +128,16 @@ export function DeterministicCalendar({ days }: Props) {
             <span>Mother</span>
           </div>
           <div style={styles.legendItem}>
-            <div style={{ ...styles.legendDot, backgroundColor: '#fff', border: '2px solid #f59e0b' }} />
-            <span>D = Disruption</span>
+            <div style={{ ...styles.legendDot, backgroundColor: '#fff', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, width: 0, height: 0, borderTop: '6px solid #f59e0b', borderLeft: '6px solid transparent' }} />
+            </div>
+            <span>Disruption</span>
           </div>
           <div style={styles.legendItem}>
-            <div style={{ ...styles.legendDot, backgroundColor: '#fff', border: '2px solid #8b5cf6' }} />
-            <span>C = Max-consecutive cap</span>
+            <div style={{ ...styles.legendDot, backgroundColor: '#fff', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, width: 0, height: 0, borderTop: '6px solid #8b5cf6', borderLeft: '6px solid transparent' }} />
+            </div>
+            <span>Max-consecutive cap</span>
           </div>
         </div>
       </div>
@@ -198,14 +207,6 @@ const styles: Record<string, CSSProperties> = {
     outline: '2px solid #4A90D9',
     outlineOffset: -1,
     fontWeight: 700,
-  },
-  sourceTag: {
-    position: 'absolute' as const,
-    top: 1,
-    right: 2,
-    fontSize: 7,
-    fontWeight: 700,
-    lineHeight: 1,
   },
   legend: {
     display: 'flex',

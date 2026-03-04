@@ -18,6 +18,7 @@ import { EmailModule } from './email/email.module';
 import { FamilyContextModule } from './family-context/family-context.module';
 import { DisruptionsModule } from './disruptions/disruptions.module';
 import { PresetsModule } from './presets/presets.module';
+import { GoogleCalendarModule } from './google-calendar/google-calendar.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { PresetsModule } from './presets/presets.module';
     NotificationModule,
     DisruptionsModule,
     PresetsModule,
+    GoogleCalendarModule,
   ],
 })
 export class AppModule {}

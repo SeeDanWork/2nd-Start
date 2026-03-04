@@ -1,9 +1,32 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { colors } from '../../src/theme/colors';
+import { useAuthStore } from '../../src/stores/auth';
+
+const DEV_EMAIL = 'father@test.local';
 
 export default function WelcomeScreen() {
   const router = useRouter();
+  const { devLogin, restoreFamily } = useAuthStore();
+  const [devLoading, setDevLoading] = useState(false);
+
+  const handleDevLogin = async () => {
+    setDevLoading(true);
+    try {
+      await devLogin(DEV_EMAIL);
+      const family = await restoreFamily();
+      if (family) {
+        router.replace('/(main)/(tabs)/');
+      } else {
+        router.replace('/(auth)/onboarding');
+      }
+    } catch (err: any) {
+      Alert.alert('Dev Login Failed', err.message || 'Is the API running?');
+    } finally {
+      setDevLoading(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -24,6 +47,16 @@ export default function WelcomeScreen() {
             onPress={() => router.push('/(auth)/login')}
           >
             <Text style={styles.secondaryButtonText}>I Have an Account</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.devButton}
+            onPress={handleDevLogin}
+            disabled={devLoading}
+          >
+            <Text style={styles.devButtonText}>
+              {devLoading ? 'Logging in...' : `Dev Login (${DEV_EMAIL})`}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -84,5 +117,19 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
     fontWeight: '600',
+  },
+  devButton: {
+    marginTop: 24,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.warning,
+    borderStyle: 'dashed',
+  },
+  devButtonText: {
+    color: colors.warning,
+    fontSize: 13,
+    fontWeight: '500',
   },
 });

@@ -19,7 +19,10 @@ export interface ActionCard {
     | 'policy_preview'
     | 'multi_child_summary'
     | 'date_range_picker'
-    | 'impact_preview';
+    | 'impact_preview'
+    | 'visual_pattern'
+    | 'disruption_checkin'
+    | 'start_date_picker';
   data: Record<string, unknown>;
 }
 

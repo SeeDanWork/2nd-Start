@@ -6,6 +6,7 @@ export const LIFECYCLE_WELCOME_MESSAGE =
 export const LIFECYCLE_CHIPS: ChipOption[] = [
   { label: 'Swap days', value: 'swap' },
   { label: 'View schedule', value: 'schedule' },
+  { label: 'Report a disruption', value: 'disruption_checkin' },
   { label: 'Running late', value: 'late' },
   { label: 'Why this schedule?', value: 'why' },
 ];

@@ -37,6 +37,7 @@ interface AuthState {
   acceptPendingInvite: () => Promise<Family | null>;
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
+  devLogin: (email: string) => Promise<void>;
   sendMagicLink: (email: string) => Promise<{ message: string }>;
   verifyMagicLink: (token: string) => Promise<{ isNewUser: boolean }>;
   restoreFamily: () => Promise<Family | null>;
@@ -148,6 +149,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } finally {
       set({ isLoading: false });
     }
+  },
+
+  devLogin: async (email: string) => {
+    const { data } = await authApi.devLogin(email);
+    await SecureStore.setItemAsync('accessToken', data.accessToken);
+    await SecureStore.setItemAsync('refreshToken', data.refreshToken);
+    set({
+      isAuthenticated: true,
+      user: data.user,
+      accessToken: data.accessToken,
+    });
   },
 
   sendMagicLink: async (email: string) => {

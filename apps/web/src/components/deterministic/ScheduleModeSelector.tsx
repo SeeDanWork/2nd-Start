@@ -5,6 +5,8 @@ interface Props {
   activeMode: ScheduleMode;
   onSelectMode: (mode: ScheduleMode) => void;
   modeResults: ThreeModeOutput | null;
+  /** When true, Parent Vision and Balanced are shown but not clickable */
+  disabled?: boolean;
 }
 
 const MODE_CONFIG: { mode: ScheduleMode; label: string; color: string; bgColor: string; activeBg: string }[] = [
@@ -21,29 +23,45 @@ function getModeTopTemplate(modeResults: ThreeModeOutput | null, mode: ScheduleM
   return result.recommendedTemplates[0]?.name ?? null;
 }
 
-export function ScheduleModeSelector({ activeMode, onSelectMode, modeResults }: Props) {
+export function ScheduleModeSelector({ activeMode, onSelectMode, modeResults, disabled }: Props) {
   return (
     <div style={styles.bar}>
       {MODE_CONFIG.map((cfg) => {
         const isActive = cfg.mode === activeMode;
         const topName = getModeTopTemplate(modeResults, cfg.mode);
+        // In disabled mode, only evidence is active; the other two are greyed out
+        const isLocked = disabled && cfg.mode !== 'evidence';
         return (
           <button
             key={cfg.mode}
-            onClick={() => onSelectMode(cfg.mode)}
+            onClick={() => !isLocked && onSelectMode(cfg.mode)}
+            disabled={isLocked}
+            title={isLocked ? 'Apply parent preferences to unlock' : undefined}
             style={{
               ...styles.modeButton,
-              color: cfg.color,
-              backgroundColor: isActive ? cfg.activeBg : cfg.bgColor,
-              borderColor: isActive ? cfg.color : 'transparent',
-              fontWeight: isActive ? 700 : 500,
+              ...(isLocked ? {
+                color: '#9ca3af',
+                backgroundColor: '#f3f4f6',
+                borderColor: 'transparent',
+                fontWeight: 500,
+                cursor: 'default',
+                opacity: 0.6,
+              } : {
+                color: cfg.color,
+                backgroundColor: isActive ? cfg.activeBg : cfg.bgColor,
+                borderColor: isActive ? cfg.color : 'transparent',
+                fontWeight: isActive ? 700 : 500,
+              }),
             }}
           >
             <span style={styles.modeLabel}>{cfg.label}</span>
-            {topName && (
+            {topName && !isLocked && (
               <span style={{ ...styles.modeSubtitle, color: cfg.color, opacity: isActive ? 0.8 : 0.5 }}>
                 {topName}
               </span>
+            )}
+            {isLocked && (
+              <span style={styles.modeSubtitle}>Apply preferences</span>
             )}
           </button>
         );

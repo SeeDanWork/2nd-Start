@@ -67,6 +67,13 @@ apiClient.interceptors.response.use(
 
 // Auth API
 export const authApi = {
+  devLogin: (email: string) =>
+    apiClient.post<{
+      accessToken: string;
+      refreshToken: string;
+      user: { id: string; email: string; displayName: string };
+    }>('/auth/dev-login', { email }),
+
   sendMagicLink: (email: string) =>
     apiClient.post('/auth/magic-link', { email }),
 
@@ -256,7 +263,7 @@ export const onboardingApi = {
     apiClient.post('/onboarding/conflicts', { inputs }),
 
   generateOptions: (inputs: Record<string, unknown>, config?: Record<string, unknown>) =>
-    apiClient.post('/onboarding/options', { inputs, config }, { timeout: 35000 }),
+    apiClient.post('/onboarding/options', { inputs, config }, { timeout: 120000 }),
 
   explainOption: (inputs: Record<string, unknown>, profile: string) =>
     apiClient.post('/onboarding/explain', { inputs, profile }),

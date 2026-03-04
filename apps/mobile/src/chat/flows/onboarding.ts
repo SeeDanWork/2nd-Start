@@ -78,7 +78,23 @@ export const ONBOARDING_TURNS: OnboardingTurn[] = [
     ],
     actionType: 'set_target_split',
   },
-  // Turn 7
+  // Turn 7 — Visual pattern picker
+  {
+    message: "Pick a pattern that feels right for your family. These show two weeks of overnights.",
+    card: { type: 'visual_pattern', data: {} },
+    actionType: 'select_pattern',
+  },
+  // Turn 8 — Schedule start date
+  {
+    message: 'When should your schedule start?',
+    chips: [
+      { label: 'Immediately', value: 'immediately' },
+      { label: 'Next Day', value: 'next_day' },
+      { label: 'Choose a Date', value: 'choose_date' },
+    ],
+    actionType: 'set_start_date',
+  },
+  // Turn 9
   {
     message: "Great! Let's create your family.",
     card: {
@@ -88,7 +104,7 @@ export const ONBOARDING_TURNS: OnboardingTurn[] = [
     chips: [{ label: 'Create Family', value: 'create' }],
     actionType: 'create_family',
   },
-  // Turn 8
+  // Turn 10
   {
     message: 'Want to invite your co-parent now?',
     card: {
@@ -101,7 +117,7 @@ export const ONBOARDING_TURNS: OnboardingTurn[] = [
     ],
     actionType: 'invite_coparent',
   },
-  // Turn 9
+  // Turn 11
   {
     message: 'Building your schedule options...',
     card: {
@@ -118,7 +134,7 @@ export const ONBOARDING_TURNS: OnboardingTurn[] = [
     actionType: 'generate_options',
     autoAdvance: true,
   },
-  // Turn 10
+  // Turn 12
   {
     message: 'Here are your schedule options. Tap to see details.',
     card: {
@@ -127,7 +143,7 @@ export const ONBOARDING_TURNS: OnboardingTurn[] = [
     },
     actionType: 'select_schedule',
   },
-  // Turn 11
+  // Turn 13
   {
     message: "You're all set! Your schedule is ready.",
     card: {

@@ -14,6 +14,9 @@ import { DayChipRow } from './DayChipRow';
 import { MiniCalendar } from './MiniCalendar';
 import { ScheduleOptionCard } from './ScheduleOptionCard';
 import { OnboardingChecklist } from './OnboardingChecklist';
+import { PatternPickerCard } from './PatternPickerCard';
+import { DisruptionCheckInCard } from './DisruptionCheckInCard';
+import { StartDatePickerCard } from './StartDatePickerCard';
 import { useChatStore, ScheduleOption } from '../../stores/chat';
 
 interface ChatBubbleProps {
@@ -33,9 +36,11 @@ export function ChatBubble({
 }: ChatBubbleProps) {
   const isBot = message.role === 'bot';
 
+  const hasCard = !!message.card;
+
   return (
     <View style={[styles.row, isBot ? styles.rowBot : styles.rowUser]}>
-      <View style={[styles.bubble, isBot ? styles.bubbleBot : styles.bubbleUser]}>
+      <View style={[styles.bubble, isBot ? styles.bubbleBot : styles.bubbleUser, hasCard && styles.bubbleWide]}>
         {message.content && (
           <Text style={[styles.text, isBot ? styles.textBot : styles.textUser]}>
             {message.content}
@@ -136,6 +141,20 @@ function CardRenderer({
           </Text>
         </View>
       );
+
+    case 'visual_pattern':
+      return <PatternPickerCard disabled={!isLatest} />;
+
+    case 'disruption_checkin':
+      return (
+        <DisruptionCheckInCard
+          date={card.data.date as string | undefined}
+          disabled={!isLatest}
+        />
+      );
+
+    case 'start_date_picker':
+      return <StartDatePickerCard disabled={!isLatest} />;
 
     default:
       return null;
@@ -238,6 +257,9 @@ const styles = StyleSheet.create({
   bubbleBot: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: 4,
+  },
+  bubbleWide: {
+    maxWidth: '100%',
   },
   bubbleUser: {
     backgroundColor: colors.parentA,
