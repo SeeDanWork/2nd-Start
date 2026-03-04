@@ -139,8 +139,12 @@ def _hamming_distance(s1: dict, s2: dict) -> int:
     return sum(1 for d in s1 if s1[d] != s2[d])
 
 
-def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
-    """Generate base schedule using CP-SAT constraint programming."""
+def _solve_core(request: ScheduleRequest) -> ScheduleResponse:
+    """Core solving logic — builds model, solves, returns response.
+
+    Does NOT perform relaxation. Called by generate_base_schedule
+    and by the relaxation engine.
+    """
     t0 = time.time()
 
     start = date.fromisoformat(request.horizon_start)
@@ -205,6 +209,61 @@ def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
                 else:
                     model.add(sum(x[d] for d in window) <= max_n)
 
+    # 2b. Min consecutive nights (outside bonus weeks and disruption locks)
+    bonus_week_dates: set[date] = set()
+    for bw in request.bonus_weeks:
+        bw_start = date.fromisoformat(bw.start_date)
+        bw_end = date.fromisoformat(bw.end_date)
+        d_iter = bw_start
+        while d_iter <= bw_end:
+            bonus_week_dates.add(d_iter)
+            d_iter += timedelta(days=1)
+    exempt_dates = disruption_locked_dates | bonus_week_dates
+
+    for mc in request.min_consecutive:
+        p_idx = 0 if mc.parent.value == "parent_a" else 1
+        min_n = mc.min_nights
+        for i in range(n_days - min_n + 1):
+            block_dates = [dates[i + j] for j in range(min_n)]
+            # Skip if any date in the block is exempt
+            if any(bd in exempt_dates for bd in block_dates):
+                continue
+            # trans_to_p[i]: day i is assigned to parent AND (i==0 OR day i-1 is NOT parent)
+            is_p = model.new_bool_var(f"min_c_is_{mc.parent.value}_{i}")
+            if p_idx == 0:
+                model.add(is_p == 1).only_enforce_if(x[dates[i]].negated())
+                model.add(is_p == 0).only_enforce_if(x[dates[i]])
+            else:
+                model.add(is_p == 1).only_enforce_if(x[dates[i]])
+                model.add(is_p == 0).only_enforce_if(x[dates[i]].negated())
+
+            if i == 0:
+                # First day: if assigned to parent, enforce block
+                for k in range(1, min_n):
+                    if p_idx == 0:
+                        model.add(x[dates[i + k]] == 0).only_enforce_if(is_p)
+                    else:
+                        model.add(x[dates[i + k]] == 1).only_enforce_if(is_p)
+            else:
+                # Transition: day i is parent AND day i-1 is NOT parent
+                was_not_p = model.new_bool_var(f"min_c_was_not_{mc.parent.value}_{i}")
+                if p_idx == 0:
+                    model.add(was_not_p == 1).only_enforce_if(x[dates[i - 1]])
+                    model.add(was_not_p == 0).only_enforce_if(x[dates[i - 1]].negated())
+                else:
+                    model.add(was_not_p == 1).only_enforce_if(x[dates[i - 1]].negated())
+                    model.add(was_not_p == 0).only_enforce_if(x[dates[i - 1]])
+
+                trans = model.new_bool_var(f"min_c_trans_{mc.parent.value}_{i}")
+                model.add_bool_and([is_p, was_not_p]).only_enforce_if(trans)
+                model.add_bool_or([is_p.negated(), was_not_p.negated()]).only_enforce_if(trans.negated())
+
+                for k in range(1, min_n):
+                    if p_idx == 0:
+                        model.add(x[dates[i + k]] == 0).only_enforce_if(trans)
+                    else:
+                        model.add(x[dates[i + k]] == 1).only_enforce_if(trans)
+
     # 3. Max transitions per week
     if request.max_transitions_per_week > 0:
         # Group by ISO week
@@ -237,7 +296,8 @@ def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
     # ─── Soft Constraints (Objective) ────────────────────────
 
     penalties = []
-    w = request.weights
+    from app.solver.seasons import apply_season_multipliers
+    w = apply_season_multipliers(request.weights, request.season_mode)
 
     # Fairness deviation: |sum(x) - target|
     target_b = n_days // 2
@@ -289,13 +349,24 @@ def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
     if school_trans:
         penalties.append(w.school_night_disruption * sum(school_trans))
 
+    # Handoff location preference: penalize transitions on non-preferred days
+    preferred_days_set = set(request.preferred_handoff_days)
+    if preferred_days_set and w.handoff_location_preference > 0:
+        non_pref_trans = []
+        for d in t:
+            js_dow = (d.weekday() + 1) % 7
+            if js_dow not in preferred_days_set:
+                non_pref_trans.append(t[d])
+        if non_pref_trans:
+            penalties.append(w.handoff_location_preference * sum(non_pref_trans))
+
     model.minimize(sum(penalties))
 
     # ─── Solve ───────────────────────────────────────────────
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = request.timeout_seconds
-    solver.parameters.num_workers = 4
+    solver.parameters.num_workers = 1
 
     collector = SolutionCollector(x, request.max_solutions)
     status = solver.solve(model, collector)
@@ -360,20 +431,36 @@ def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
             )
         )
 
+        school_night_trans = sum(
+            1 for a in assignments
+            if a.is_transition and _is_school_night(date.fromisoformat(a.date))
+        )
+
+        handoff_loc_pref = 0
+        if preferred_days_set and w.handoff_location_preference > 0:
+            handoff_loc_pref = sum(
+                1 for a in assignments
+                if a.is_transition
+                and (date.fromisoformat(a.date).weekday() + 1) % 7 not in preferred_days_set
+            )
+
         penalties_bd = PenaltyBreakdown(
             fairness_deviation=float(w.fairness_deviation * fair_dev),
             total_transitions=float(w.total_transitions * total_tr),
             non_daycare_handoffs=float(w.non_daycare_handoffs * non_dc),
             weekend_fragmentation=float(w.weekend_fragmentation * metrics.weekend_fragmentation_count),
-            school_night_disruption=0.0,  # simplified
+            school_night_disruption=float(w.school_night_disruption * school_night_trans),
+            handoff_location_preference=float(w.handoff_location_preference * handoff_loc_pref),
             total=0.0,
         )
-        penalties_bd.total = (
+        penalties_bd.total = round(
             penalties_bd.fairness_deviation
             + penalties_bd.total_transitions
             + penalties_bd.non_daycare_handoffs
             + penalties_bd.weekend_fragmentation
             + penalties_bd.school_night_disruption
+            + penalties_bd.handoff_location_preference,
+            2,
         )
 
         solutions.append(Solution(
@@ -383,13 +470,47 @@ def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
             penalties=penalties_bd,
         ))
 
-    # Sort by total penalty
-    solutions.sort(key=lambda s: s.penalties.total)
+    # Sort by total penalty + tie-break key for determinism
+    from app.solver.tie_break import compute_tie_break_key
+    for s in solutions:
+        sol_map = {}
+        for a in s.assignments:
+            d = date.fromisoformat(a.date)
+            sol_map[d] = 0 if a.parent == "parent_a" else 1
+        s._tie_break = compute_tie_break_key(
+            sol_map, dates, request.weekend_definition,
+            long_distance_dates=request.long_distance_dates,
+        )
+    solutions.sort(key=lambda s: (s.penalties.total, s._tie_break))
     for i, s in enumerate(solutions):
         s.rank = i + 1
+        if hasattr(s, '_tie_break'):
+            del s._tie_break
 
     return ScheduleResponse(
         status=status_str,
         solutions=solutions,
         solve_time_ms=round(solve_time, 1),
     )
+
+
+def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
+    """Generate base schedule with relaxation fallback on infeasibility."""
+    response = _solve_core(request)
+
+    if response.status == "infeasible":
+        from app.solver.relaxation import try_relaxation
+        from app.solver.diagnostics import generate_diagnostics
+        relaxed_response, relaxation_result = try_relaxation(request, _solve_core)
+
+        if relaxed_response is not None and relaxed_response.status != "infeasible":
+            relaxed_response.status = "relaxed_solution"
+            relaxed_response.relaxation_info = relaxation_result.to_info()
+            relaxed_response.diagnostics = generate_diagnostics(request, relaxation_result)
+            return relaxed_response
+
+        # All relaxation attempts exhausted
+        response.relaxation_info = relaxation_result.to_info()
+        response.diagnostics = generate_diagnostics(request, relaxation_result)
+
+    return response

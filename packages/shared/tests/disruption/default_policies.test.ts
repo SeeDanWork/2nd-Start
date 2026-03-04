@@ -11,9 +11,9 @@ import {
 } from '../../src/enums';
 
 describe('DEFAULT_POLICIES', () => {
-  it('covers all 13 event types', () => {
+  it('covers all 23 event types', () => {
     const allTypes = Object.values(DisruptionEventType);
-    expect(allTypes).toHaveLength(13);
+    expect(allTypes).toHaveLength(23);
 
     for (const type of allTypes) {
       const policy = DEFAULT_POLICIES.find((p) => p.eventType === type);

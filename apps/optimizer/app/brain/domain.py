@@ -170,6 +170,7 @@ class OnboardingInput(BaseModel):
         description="None for single-parent onboarding.",
     )
     shared: SharedConstraints
+    season_mode: Optional[str] = None
 
     class Config:
         use_enum_values = True
@@ -231,6 +232,32 @@ class ScheduleStats(BaseModel):
     )
 
 
+class ConstraintApplied(BaseModel):
+    name: str = Field(description="Constraint name, e.g. 'locked_night_parent_a'.")
+    type: str = Field(description="Constraint type (hard/soft).")
+    satisfied: bool = Field(description="Whether this constraint is satisfied.")
+    detail: str = Field(default="", description="Additional detail.")
+
+
+class DisruptionImpact(BaseModel):
+    event_type: str = Field(description="Disruption event type.")
+    action_taken: str = Field(description="Overlay action taken.")
+    affected_dates: list[str] = Field(default_factory=list)
+    compensation_days: int = Field(default=0)
+
+
+class StabilityMetricsExplanation(BaseModel):
+    transitions_per_week: float
+    max_consecutive_nights: int
+    school_night_consistency_pct: float
+
+
+class FairnessMetricsExplanation(BaseModel):
+    overnight_split_pct: float = Field(description="Parent A share as percentage.")
+    weekend_split_pct: float = Field(description="Parent A weekend share as percentage.")
+    deviation_from_target: float
+
+
 class Explanation(BaseModel):
     bullets: list[str] = Field(
         description="3-6 human-readable summary bullets.",
@@ -245,6 +272,30 @@ class Explanation(BaseModel):
         default_factory=list,
         description="Assumptions made (especially for 1-parent mode).",
     )
+    profile_used: str = Field(
+        default="",
+        description="Which solver profile was used.",
+    )
+    primary_objective: str = Field(
+        default="",
+        description="Primary optimization objective.",
+    )
+    key_constraints_applied: list[ConstraintApplied] = Field(
+        default_factory=list,
+        description="Key constraints and whether they were satisfied.",
+    )
+    disruption_impacts: list[DisruptionImpact] = Field(
+        default_factory=list,
+        description="How disruption events affected the schedule.",
+    )
+    stability_metrics: Optional[StabilityMetricsExplanation] = Field(
+        default=None,
+        description="Stability metrics for this option.",
+    )
+    fairness_metrics: Optional[FairnessMetricsExplanation] = Field(
+        default=None,
+        description="Fairness metrics for this option.",
+    )
 
 
 class ScheduleOption(BaseModel):
@@ -255,6 +306,7 @@ class ScheduleOption(BaseModel):
     handoffs: list[HandoffInfo]
     stats: ScheduleStats
     explanation: Explanation
+    similarity_score: float = 0.0
 
 
 class ConflictDetail(BaseModel):

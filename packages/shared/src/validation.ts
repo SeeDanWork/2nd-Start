@@ -209,6 +209,18 @@ export const createRequestSchema = z.object({
   urgency: z.nativeEnum(RequestUrgency).default(RequestUrgency.NORMAL),
 });
 
+// ─── Change Request (Interpreter) ──────────────────────────
+export const changeRequestSchema = z.object({
+  type: z.nativeEnum(RequestType),
+  dates: z.array(isoDateString).min(1).max(31),
+  reasonTag: z.nativeEnum(ReasonTag).optional(),
+  reasonNote: z.string().max(MAX_REASON_NOTE_LENGTH).optional(),
+  urgency: z.nativeEnum(RequestUrgency).default(RequestUrgency.NORMAL),
+  childScope: z.array(uuidString).optional(),
+  disruptionEventId: uuidString.optional(),
+  isEmergency: z.boolean().default(false),
+});
+
 export const updateRequestSchema = z.object({
   dates: z.array(isoDateString).min(1).max(31).optional(),
   reasonTag: z.nativeEnum(ReasonTag).optional().nullable(),

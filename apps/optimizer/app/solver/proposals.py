@@ -50,7 +50,8 @@ def _hamming_distance(s1: dict, s2: dict) -> int:
     return sum(1 for d in s1 if d in s2 and s1[d] != s2[d])
 
 
-def generate_proposals(request: ProposalRequest) -> ProposalResponse:
+def _solve_proposals_core(request: ProposalRequest) -> ProposalResponse:
+    """Core proposal solving logic — no relaxation fallback."""
     t0 = time.time()
 
     start = date.fromisoformat(request.horizon_start)
@@ -138,6 +139,61 @@ def generate_proposals(request: ProposalRequest) -> ProposalResponse:
             else:
                 model.add(sum(x[d] for d in window) <= max_n)
 
+    # Hard constraints: min consecutive
+    # Build exempt dates from disruption locks and bonus weeks
+    disruption_locked_dates: set[date] = set()
+    for dl in request.disruption_locks:
+        disruption_locked_dates.add(date.fromisoformat(dl.date))
+    bonus_week_dates: set[date] = set()
+    for bw in getattr(request, 'bonus_weeks', []):
+        bw_start = date.fromisoformat(bw.start_date)
+        bw_end = date.fromisoformat(bw.end_date)
+        d_iter = bw_start
+        while d_iter <= bw_end:
+            bonus_week_dates.add(d_iter)
+            d_iter += timedelta(days=1)
+    exempt_dates = disruption_locked_dates | bonus_week_dates
+
+    for mc in getattr(request, 'min_consecutive', []):
+        p_idx = 0 if mc.parent.value == "parent_a" else 1
+        min_n = mc.min_nights
+        for i in range(n_days - min_n + 1):
+            block_dates = [dates[i + j] for j in range(min_n)]
+            if any(bd in exempt_dates for bd in block_dates):
+                continue
+            is_p = model.new_bool_var(f"min_c_is_{mc.parent.value}_{i}")
+            if p_idx == 0:
+                model.add(is_p == 1).only_enforce_if(x[dates[i]].negated())
+                model.add(is_p == 0).only_enforce_if(x[dates[i]])
+            else:
+                model.add(is_p == 1).only_enforce_if(x[dates[i]])
+                model.add(is_p == 0).only_enforce_if(x[dates[i]].negated())
+
+            if i == 0:
+                for k in range(1, min_n):
+                    if p_idx == 0:
+                        model.add(x[dates[i + k]] == 0).only_enforce_if(is_p)
+                    else:
+                        model.add(x[dates[i + k]] == 1).only_enforce_if(is_p)
+            else:
+                was_not_p = model.new_bool_var(f"min_c_was_not_{mc.parent.value}_{i}")
+                if p_idx == 0:
+                    model.add(was_not_p == 1).only_enforce_if(x[dates[i - 1]])
+                    model.add(was_not_p == 0).only_enforce_if(x[dates[i - 1]].negated())
+                else:
+                    model.add(was_not_p == 1).only_enforce_if(x[dates[i - 1]].negated())
+                    model.add(was_not_p == 0).only_enforce_if(x[dates[i - 1]])
+
+                trans = model.new_bool_var(f"min_c_trans_{mc.parent.value}_{i}")
+                model.add_bool_and([is_p, was_not_p]).only_enforce_if(trans)
+                model.add_bool_or([is_p.negated(), was_not_p.negated()]).only_enforce_if(trans.negated())
+
+                for k in range(1, min_n):
+                    if p_idx == 0:
+                        model.add(x[dates[i + k]] == 0).only_enforce_if(trans)
+                    else:
+                        model.add(x[dates[i + k]] == 1).only_enforce_if(trans)
+
     # Hard constraints: max transitions per week
     if request.max_transitions_per_week > 0:
         weeks: dict[int, list[date]] = {}
@@ -153,7 +209,8 @@ def generate_proposals(request: ProposalRequest) -> ProposalResponse:
 
     # Objective: minimize disruption from current schedule
     penalties = []
-    w = request.weights
+    from app.solver.seasons import apply_season_multipliers
+    w = apply_season_multipliers(request.weights, request.season_mode)
 
     # 1. Minimize changes from current schedule (Hamming distance)
     diff_vars = []
@@ -188,12 +245,23 @@ def generate_proposals(request: ProposalRequest) -> ProposalResponse:
     if school_trans:
         penalties.append(w.school_night_disruption * sum(school_trans))
 
+    # 5. Handoff location preference: penalize transitions on non-preferred days
+    preferred_days_set = set(getattr(request, 'preferred_handoff_days', []))
+    if preferred_days_set and w.handoff_location_preference > 0:
+        non_pref_trans = []
+        for d in t:
+            js_dow = (d.weekday() + 1) % 7
+            if js_dow not in preferred_days_set:
+                non_pref_trans.append(t[d])
+        if non_pref_trans:
+            penalties.append(w.handoff_location_preference * sum(non_pref_trans))
+
     model.minimize(sum(penalties))
 
     # Solve
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = request.timeout_seconds
-    solver.parameters.num_workers = 4
+    solver.parameters.num_workers = 1
 
     collector = ProposalCollector(x, request.max_solutions)
     status = solver.solve(model, collector)
@@ -250,6 +318,10 @@ def generate_proposals(request: ProposalRequest) -> ProposalResponse:
                     old_parent=old_p,
                     new_parent=new_p,
                 ))
+
+        # Compute similarity score
+        total_comparable = sum(1 for d in dates if d in current_map)
+        similarity_score = round(1.0 - (len(diffs) / max(total_comparable, 1)), 4)
 
         # Compute impacts
         old_a = sum(1 for v in current_map.values() if v == 0)
@@ -315,7 +387,7 @@ def generate_proposals(request: ProposalRequest) -> ProposalResponse:
             non_daycare_handoffs=0,
         )
 
-        penalty_score = len(diffs) * 10.0 + abs(fairness_impact.overnight_delta) * 5.0
+        penalty_score = round(len(diffs) * 10.0 + abs(fairness_impact.overnight_delta) * 5.0, 2)
 
         label = "Minimal disruption" if rank == 1 else f"Option {rank}"
 
@@ -328,13 +400,27 @@ def generate_proposals(request: ProposalRequest) -> ProposalResponse:
             stability_impact=stability_impact,
             handoff_impact=handoff_impact,
             penalty_score=penalty_score,
+            similarity_score=similarity_score,
             is_auto_approvable=False,
         ))
 
-    # Sort by penalty
-    options.sort(key=lambda o: o.penalty_score)
+    # Sort by penalty + tie-break key for determinism
+    from app.solver.tie_break import compute_tie_break_key
+    current_sched = current_map if current_map else None
+    for o in options:
+        sol_map = {}
+        for a in o.assignments:
+            d = date.fromisoformat(a.date)
+            sol_map[d] = 0 if a.parent == "parent_a" else 1
+        o._tie_break = compute_tie_break_key(
+            sol_map, dates, "sat_sun", current_sched,
+            long_distance_dates=getattr(request, 'long_distance_dates', []),
+        )
+    options.sort(key=lambda o: (o.penalty_score, o._tie_break))
     for i, o in enumerate(options):
         o.rank = i + 1
+        if hasattr(o, '_tie_break'):
+            del o._tie_break
 
     status_str = {
         cp_model.OPTIMAL: "optimal",
@@ -346,3 +432,25 @@ def generate_proposals(request: ProposalRequest) -> ProposalResponse:
         options=options,
         solve_time_ms=round(solve_time, 1),
     )
+
+
+def generate_proposals(request: ProposalRequest) -> ProposalResponse:
+    """Generate proposals with relaxation fallback on infeasibility."""
+    response = _solve_proposals_core(request)
+
+    if response.status == "infeasible":
+        from app.solver.relaxation import try_relaxation
+        from app.solver.diagnostics import generate_diagnostics
+        relaxed_response, relaxation_result = try_relaxation(request, _solve_proposals_core)
+
+        if relaxed_response is not None and relaxed_response.status != "infeasible":
+            relaxed_response.status = "relaxed_solution"
+            relaxed_response.relaxation_info = relaxation_result.to_info()
+            relaxed_response.diagnostics = generate_diagnostics(request, relaxation_result)
+            return relaxed_response
+
+        # All relaxation attempts exhausted
+        response.relaxation_info = relaxation_result.to_info()
+        response.diagnostics = generate_diagnostics(request, relaxation_result)
+
+    return response

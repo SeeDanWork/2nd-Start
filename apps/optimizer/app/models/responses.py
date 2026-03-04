@@ -27,6 +27,7 @@ class PenaltyBreakdown(BaseModel):
     non_daycare_handoffs: float
     weekend_fragmentation: float
     school_night_disruption: float
+    handoff_location_preference: float = 0.0
     total: float
 
 
@@ -42,12 +43,38 @@ class ConflictingConstraint(BaseModel):
     suggestion: str
 
 
+class RelaxationStepResponse(BaseModel):
+    constraint_name: str
+    action: str
+    succeeded: bool
+
+
+class RelaxationInfo(BaseModel):
+    was_relaxed: bool
+    steps: list[RelaxationStepResponse] = []
+
+
+class DiagnosticDetail(BaseModel):
+    constraint_name: str
+    description: str
+    suggestion: str
+
+
+class InfeasibilityDiagnostics(BaseModel):
+    infeasible_constraints: list[str] = []
+    relaxation_attempted: list[RelaxationStepResponse] = []
+    relaxation_result: str = "not_attempted"
+    diagnostics: list[DiagnosticDetail] = []
+
+
 class ScheduleResponse(BaseModel):
     status: str
     solutions: list[Solution] = []
     solve_time_ms: float
     conflicting_constraints: list[ConflictingConstraint] = []
     message: Optional[str] = None
+    relaxation_info: Optional[RelaxationInfo] = None
+    diagnostics: Optional[InfeasibilityDiagnostics] = None
 
 
 class CalendarDiff(BaseModel):
@@ -83,6 +110,7 @@ class ProposalOption(BaseModel):
     stability_impact: StabilityImpact
     handoff_impact: HandoffImpact
     penalty_score: float
+    similarity_score: float = 0.0
     is_auto_approvable: bool = False
 
 
@@ -92,3 +120,5 @@ class ProposalResponse(BaseModel):
     solve_time_ms: float
     conflicting_constraints: list[ConflictingConstraint] = []
     message: Optional[str] = None
+    relaxation_info: Optional[RelaxationInfo] = None
+    diagnostics: Optional[InfeasibilityDiagnostics] = None

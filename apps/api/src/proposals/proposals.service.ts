@@ -30,6 +30,7 @@ import {
   SOLVER_TIMEOUT_SECONDS,
   SOLVER_MAX_SOLUTIONS,
   DEFAULT_PROPOSAL_HORIZON_WEEKS,
+  ApplyMode,
 } from '@adcp/shared';
 import { SchedulesService } from '../schedules/schedules.service';
 import { FamilyContextService } from '../family-context/family-context.service';

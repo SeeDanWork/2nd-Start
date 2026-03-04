@@ -228,6 +228,17 @@ export enum DisruptionEventType {
   BREAK = 'break',
   SUMMER_PERIOD = 'summer_period',
   OTHER_DECLARED = 'other_declared',
+  // ─── Phase 1 additions ───
+  WORK_SHIFT_CHANGE = 'work_shift_change',
+  EMERGENCY_WORK_CALL = 'emergency_work_call',
+  HOSPITALIZATION = 'hospitalization',
+  SCHOOL_TRIP = 'school_trip',
+  HOLIDAY_TRAVEL = 'holiday_travel',
+  WEATHER_EMERGENCY = 'weather_emergency',
+  FLIGHT_DELAY = 'flight_delay',
+  FUNERAL = 'funeral',
+  POWER_OUTAGE = 'power_outage',
+  HOME_REPAIR = 'home_repair',
 }
 
 export enum DisruptionScope {
@@ -268,6 +279,14 @@ export enum PolicySource {
 export enum MultiChildScoringMode {
   INDIVIDUAL = 'individual',
   GROUPED = 'grouped',
+}
+
+// ─── Season Modes ───────────────────────────────────────────
+
+export enum SeasonMode {
+  SCHOOL_YEAR = 'school_year',
+  SUMMER = 'summer',
+  HOLIDAY_PERIOD = 'holiday_period',
 }
 
 // ─── Guardrails ─────────────────────────────────────────────

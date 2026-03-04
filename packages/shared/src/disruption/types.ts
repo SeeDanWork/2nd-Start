@@ -3,13 +3,13 @@
 // Shared type interfaces for disruption events, overlay policies,
 // policy decision records, and overlay computation results.
 
-import type {
+import {
   DisruptionEventType,
-  DisruptionScope,
-  DisruptionSource,
-  OverrideStrength,
-  OverlayActionType,
-  PolicySource,
+  type DisruptionScope,
+  type DisruptionSource,
+  type OverrideStrength,
+  type OverlayActionType,
+  type PolicySource,
 } from '../enums';
 
 // ─── Core Interfaces ──────────────────────────────────────────────────
@@ -105,6 +105,54 @@ export interface DisruptionOverlayResult {
   requiresProposal: boolean;
   compensatoryDays: string[];
 }
+
+// ─── Disruption Categories ───────────────────────────────────────────
+
+export type DisruptionCategory =
+  | 'health'
+  | 'work'
+  | 'school'
+  | 'travel'
+  | 'environment'
+  | 'logistics'
+  | 'other';
+
+/**
+ * Maps every disruption event type to one of 7 semantic categories.
+ * Used for grouping in UI, reporting, and policy resolution heuristics.
+ */
+export const DISRUPTION_CATEGORIES: Record<DisruptionEventType, DisruptionCategory> = {
+  // Health
+  [DisruptionEventType.CHILD_SICK]: 'health',
+  [DisruptionEventType.CAREGIVER_SICK]: 'health',
+  [DisruptionEventType.HOSPITALIZATION]: 'health',
+  // Work
+  [DisruptionEventType.PARENT_TRAVEL]: 'work',
+  [DisruptionEventType.WORK_SHIFT_CHANGE]: 'work',
+  [DisruptionEventType.EMERGENCY_WORK_CALL]: 'work',
+  // School
+  [DisruptionEventType.SCHOOL_CLOSED]: 'school',
+  [DisruptionEventType.SCHOOL_HALF_DAY]: 'school',
+  [DisruptionEventType.SCHOOL_TRIP]: 'school',
+  [DisruptionEventType.CAMP_WEEK]: 'school',
+  // Travel
+  [DisruptionEventType.HOLIDAY_TRAVEL]: 'travel',
+  [DisruptionEventType.FLIGHT_DELAY]: 'travel',
+  // Environment
+  [DisruptionEventType.WEATHER_EMERGENCY]: 'environment',
+  [DisruptionEventType.POWER_OUTAGE]: 'environment',
+  [DisruptionEventType.EMERGENCY_CLOSURE]: 'environment',
+  // Logistics
+  [DisruptionEventType.PUBLIC_HOLIDAY]: 'logistics',
+  [DisruptionEventType.TRANSPORT_FAILURE]: 'logistics',
+  [DisruptionEventType.HOME_REPAIR]: 'logistics',
+  // Other
+  [DisruptionEventType.FAMILY_EVENT]: 'other',
+  [DisruptionEventType.BREAK]: 'other',
+  [DisruptionEventType.SUMMER_PERIOD]: 'other',
+  [DisruptionEventType.FUNERAL]: 'other',
+  [DisruptionEventType.OTHER_DECLARED]: 'other',
+};
 
 // ─── Solver Payload Types ─────────────────────────────────────────────
 
