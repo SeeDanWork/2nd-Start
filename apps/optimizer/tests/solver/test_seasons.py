@@ -33,6 +33,10 @@ class TestSeasonWeightMultipliers:
             "weekend_fragmentation",
             "school_night_disruption",
             "handoff_location_preference",
+            "template_alignment",
+            "short_block_penalty",
+            "weekly_rhythm_weight",
+            "routine_consistency_weight",
         }
         for mode in SeasonMode:
             actual = set(SEASON_WEIGHT_MULTIPLIERS[mode].keys())
@@ -79,6 +83,9 @@ class TestApplySeasonMultipliers:
             weekend_fragmentation=41,
             school_night_disruption=53,
             handoff_location_preference=11,
+            short_block_penalty=40,
+            weekly_rhythm_weight=50,
+            routine_consistency_weight=80,
         )
         for mode in SeasonMode:
             result = apply_season_multipliers(w, mode)
@@ -88,6 +95,9 @@ class TestApplySeasonMultipliers:
             assert isinstance(result.weekend_fragmentation, int)
             assert isinstance(result.school_night_disruption, int)
             assert isinstance(result.handoff_location_preference, int)
+            assert isinstance(result.short_block_penalty, int)
+            assert isinstance(result.weekly_rhythm_weight, int)
+            assert isinstance(result.routine_consistency_weight, int)
 
     def test_does_not_mutate_original(self):
         w = SolverWeights(fairness_deviation=100)

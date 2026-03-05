@@ -15,6 +15,10 @@ SEASON_WEIGHT_MULTIPLIERS: dict[SeasonMode, dict[str, float]] = {
         "weekend_fragmentation": 0.8,
         "school_night_disruption": 1.3,
         "handoff_location_preference": 1.0,
+        "template_alignment": 1.0,
+        "short_block_penalty": 1.0,
+        "weekly_rhythm_weight": 1.0,
+        "routine_consistency_weight": 1.0,
     },
     SeasonMode.SUMMER: {
         "fairness_deviation": 1.3,
@@ -23,6 +27,10 @@ SEASON_WEIGHT_MULTIPLIERS: dict[SeasonMode, dict[str, float]] = {
         "weekend_fragmentation": 0.8,
         "school_night_disruption": 0.3,
         "handoff_location_preference": 1.0,
+        "template_alignment": 0.5,
+        "short_block_penalty": 0.7,
+        "weekly_rhythm_weight": 0.5,
+        "routine_consistency_weight": 0.5,
     },
     SeasonMode.HOLIDAY_PERIOD: {
         "fairness_deviation": 1.5,
@@ -31,6 +39,10 @@ SEASON_WEIGHT_MULTIPLIERS: dict[SeasonMode, dict[str, float]] = {
         "weekend_fragmentation": 0.5,
         "school_night_disruption": 0.2,
         "handoff_location_preference": 1.0,
+        "template_alignment": 0.3,
+        "short_block_penalty": 0.5,
+        "weekly_rhythm_weight": 0.3,
+        "routine_consistency_weight": 0.3,
     },
 }
 
@@ -49,4 +61,8 @@ def apply_season_multipliers(weights: SolverWeights, mode: SeasonMode) -> Solver
         weekend_fragmentation=int(round(weights.weekend_fragmentation * multipliers["weekend_fragmentation"])),
         school_night_disruption=int(round(weights.school_night_disruption * multipliers["school_night_disruption"])),
         handoff_location_preference=int(round(weights.handoff_location_preference * multipliers["handoff_location_preference"])),
+        template_alignment=int(round(weights.template_alignment * multipliers["template_alignment"])),
+        short_block_penalty=int(round(weights.short_block_penalty * multipliers["short_block_penalty"])),
+        weekly_rhythm_weight=int(round(weights.weekly_rhythm_weight * multipliers["weekly_rhythm_weight"])),
+        routine_consistency_weight=int(round(weights.routine_consistency_weight * multipliers["routine_consistency_weight"])),
     )

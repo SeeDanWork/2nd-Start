@@ -19,6 +19,10 @@ class SolutionMetrics(BaseModel):
     max_consecutive_b: int
     school_night_consistency_pct: float
     weekend_fragmentation_count: int
+    template_adherence: float = 0.0
+    routine_similarity_pct: float = 0.0
+    transition_pattern_preserved: bool = True
+    short_block_count: int = 0
 
 
 class PenaltyBreakdown(BaseModel):
@@ -28,6 +32,10 @@ class PenaltyBreakdown(BaseModel):
     weekend_fragmentation: float
     school_night_disruption: float
     handoff_location_preference: float = 0.0
+    template_alignment: float = 0.0
+    short_block: float = 0.0
+    weekly_rhythm: float = 0.0
+    routine_consistency: float = 0.0
     total: float
 
 

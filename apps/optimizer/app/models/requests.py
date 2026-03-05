@@ -21,6 +21,10 @@ class SolverWeights(BaseModel):
     weekend_fragmentation: int = 40
     school_night_disruption: int = 60
     handoff_location_preference: int = 0
+    template_alignment: int = 0
+    short_block_penalty: int = 0
+    weekly_rhythm_weight: int = 0
+    routine_consistency_weight: int = 0
 
 
 class LockedNight(BaseModel):
@@ -81,11 +85,17 @@ class ScheduleRequest(BaseModel):
     preferred_handoff_days: list[int] = []  # JS day-of-week (0=Sun..6=Sat)
     long_distance_dates: list[str] = []  # ISO date strings
     season_mode: SeasonMode = SeasonMode.SCHOOL_YEAR
+    template_id: Optional[str] = None
+    previous_schedule_hint: list["FrozenAssignment"] = []
 
 
 class FrozenAssignment(BaseModel):
     date: str
     parent: ParentRole
+
+
+# Rebuild ScheduleRequest to resolve the forward reference to FrozenAssignment
+ScheduleRequest.model_rebuild()
 
 
 class RequestConstraint(BaseModel):
@@ -118,3 +128,4 @@ class ProposalRequest(BaseModel):
     preferred_handoff_days: list[int] = []  # JS day-of-week (0=Sun..6=Sat)
     long_distance_dates: list[str] = []  # ISO date strings
     season_mode: SeasonMode = SeasonMode.SCHOOL_YEAR
+    template_id: Optional[str] = None

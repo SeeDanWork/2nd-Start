@@ -212,6 +212,14 @@ def _solve_proposals_core(request: ProposalRequest) -> ProposalResponse:
     from app.solver.seasons import apply_season_multipliers
     w = apply_season_multipliers(request.weights, request.season_mode)
 
+    # Disruption adjustment: halve routine weights when disruption locks present
+    if request.disruption_locks:
+        w = w.model_copy(update={
+            "routine_consistency_weight": int(round(w.routine_consistency_weight * 0.5)),
+            "weekly_rhythm_weight": int(round(w.weekly_rhythm_weight * 0.5)),
+            "short_block_penalty": int(round(w.short_block_penalty * 0.5)),
+        })
+
     # 1. Minimize changes from current schedule (Hamming distance)
     diff_vars = []
     for d in dates:
@@ -255,6 +263,62 @@ def _solve_proposals_core(request: ProposalRequest) -> ProposalResponse:
                 non_pref_trans.append(t[d])
         if non_pref_trans:
             penalties.append(w.handoff_location_preference * sum(non_pref_trans))
+
+    # 6. Template alignment soft penalty
+    if request.template_id and w.template_alignment > 0:
+        from app.solver.templates import get_template
+        template = get_template(request.template_id)
+        if template:
+            pattern = template.pattern14
+            cycle_len = template.cycle_length
+            tmpl_devs = []
+            for i, d in enumerate(dates):
+                cycle_pos = i % cycle_len
+                expected_parent = pattern[cycle_pos]
+                is_deviation = model.new_bool_var(f"tmpl_dev_{d.isoformat()}")
+                if expected_parent == 0:  # expect parent_a
+                    model.add(x[d] != 0).only_enforce_if(is_deviation)
+                    model.add(x[d] == 0).only_enforce_if(is_deviation.negated())
+                else:  # expect parent_b
+                    model.add(x[d] != 1).only_enforce_if(is_deviation)
+                    model.add(x[d] == 1).only_enforce_if(is_deviation.negated())
+                tmpl_devs.append(is_deviation)
+            penalties.append(w.template_alignment * sum(tmpl_devs))
+
+    # 7. Short block penalty: penalize isolated single-night stays
+    if w.short_block_penalty > 0 and n_days >= 3:
+        short_block_vars = []
+        for i in range(1, n_days - 1):
+            d_cur = dates[i]
+            d_next = dates[i + 1]
+            isolated = model.new_bool_var(f"isolated_{d_cur.isoformat()}")
+            model.add_bool_and([t[d_cur], t[d_next]]).only_enforce_if(isolated)
+            model.add_bool_or([t[d_cur].negated(), t[d_next].negated()]).only_enforce_if(isolated.negated())
+            short_block_vars.append(isolated)
+        if short_block_vars:
+            penalties.append(w.short_block_penalty * sum(short_block_vars))
+
+    # 8. Weekly rhythm penalty: penalize transitions on non-reference DOWs
+    if w.weekly_rhythm_weight > 0 and current_map:
+        ref_trans_dows: set[int] = set()
+        prev_ref_val = None
+        for d in dates:
+            if d in current_map:
+                if prev_ref_val is not None and current_map[d] != prev_ref_val:
+                    ref_trans_dows.add(d.weekday())
+                prev_ref_val = current_map[d]
+        if ref_trans_dows:
+            weekly_rhythm_vars = []
+            for d in t:
+                if d.weekday() not in ref_trans_dows:
+                    weekly_rhythm_vars.append(t[d])
+            if weekly_rhythm_vars:
+                penalties.append(w.weekly_rhythm_weight * sum(weekly_rhythm_vars))
+
+    # 9. Routine consistency: additive on top of existing 200 disruption penalty
+    #    Reuses diff_vars already computed. Effective per-day = 200 + routine_consistency_weight
+    if w.routine_consistency_weight > 0 and diff_vars:
+        penalties.append(w.routine_consistency_weight * sum(diff_vars))
 
     model.minimize(sum(penalties))
 
