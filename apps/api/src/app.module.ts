@@ -21,6 +21,7 @@ import { PresetsModule } from './presets/presets.module';
 import { GoogleCalendarModule } from './google-calendar/google-calendar.module';
 import { MediationModule } from './mediation/mediation.module';
 import { FeedbackModule } from './feedback/feedback.module';
+import { CalendarIntegrationModule } from './calendar-integration/calendar-integration.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { FeedbackModule } from './feedback/feedback.module';
     GoogleCalendarModule,
     FeedbackModule,
     MediationModule,
+    CalendarIntegrationModule,
   ],
 })
 export class AppModule {}

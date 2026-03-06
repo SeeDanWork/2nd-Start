@@ -27,3 +27,6 @@ export { PolicyDecisionRecord } from './policy-decision-record.entity';
 export { GoogleCalendarToken } from './google-calendar-token.entity';
 export { UserFeedback } from './user-feedback.entity';
 export { FeedbackProfile } from './feedback-profile.entity';
+export { CalendarSource } from './calendar-source.entity';
+export { CalendarEvent } from './calendar-event.entity';
+export { CalendarSyncLog } from './calendar-sync-log.entity';
