@@ -8,6 +8,7 @@ import { DiagnosticsPanel } from './DiagnosticsPanel';
 
 export function ScenarioLab() {
   const store = useScenarioStore();
+  const [showControls, setShowControls] = useState(false);
   const [overlayToggles, setOverlayToggles] = useState({
     disruptions: true,
     transitions: true,
@@ -68,24 +69,19 @@ export function ScenarioLab() {
       {/* Top toolbar */}
       <div style={s.toolbar}>
         <div style={s.toolbarLeft}>
-          <span style={s.logo}>Deterministic Scheduling Engine</span>
-          <span style={s.scenarioLabel}>Scenario: {store.scenarioName}</span>
+          <button style={s.controlsBtn} onClick={() => setShowControls(true)}>
+            &#9776; Controls
+          </button>
+          <span style={s.scenarioLabel}>{store.scenarioName}</span>
         </div>
         <div style={s.toolbarCenter}>
           <button style={s.actionBtn} onClick={() => {
             const name = prompt('Scenario name:', store.scenarioName);
             if (name) store.setScenarioName(name);
           }}>Save</button>
-          <button style={s.actionBtn} onClick={() => {
-            const copy = { ...store };
-            store.setScenarioName(store.scenarioName + ' (copy)');
-          }}>Duplicate</button>
           <button style={{ ...s.actionBtn, ...s.resetBtn }} onClick={handleReset}>Reset</button>
           <button
-            style={{
-              ...s.runBtn,
-              opacity: store.isRunning ? 0.6 : 1,
-            }}
+            style={{ ...s.runBtn, opacity: store.isRunning ? 0.6 : 1 }}
             onClick={runSimulation}
             disabled={store.isRunning}
           >
@@ -130,7 +126,6 @@ export function ScenarioLab() {
         <button style={s.timeBtn} onClick={() => store.advanceDays(7)}>+1 Week</button>
         <button style={s.timeBtn} onClick={() => store.advanceDays(30)}>+1 Month</button>
         <button style={s.timeBtnJump} onClick={() => {
-          // Jump to next disruption
           const nextDis = store.disruptions
             .filter((d) => d.startDate > store.currentDate)
             .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
@@ -138,15 +133,24 @@ export function ScenarioLab() {
         }}>Jump to Disruption</button>
       </div>
 
-      {/* Three-pane workspace */}
+      {/* Three-pane workspace: Parent A Chat | Calendar | Parent B Chat */}
       <div style={s.workspace}>
-        <ScenarioControls />
-        <CalendarView overlayToggles={overlayToggles} onToggle={handleToggle} />
-        <LLMChat />
+        <div style={s.chatPane}>
+          <LLMChat parent="a" />
+        </div>
+        <div style={s.calendarPane}>
+          <CalendarView overlayToggles={overlayToggles} onToggle={handleToggle} />
+        </div>
+        <div style={s.chatPane}>
+          <LLMChat parent="b" />
+        </div>
       </div>
 
       {/* Diagnostics */}
       <DiagnosticsPanel />
+
+      {/* Scenario Controls overlay */}
+      <ScenarioControls open={showControls} onClose={() => setShowControls(false)} />
     </div>
   );
 }
@@ -171,16 +175,25 @@ const s: Record<string, CSSProperties> = {
   toolbarLeft: {
     display: 'flex',
     alignItems: 'center',
-    gap: 16,
+    gap: 12,
   },
-  logo: {
-    fontWeight: 700,
-    fontSize: 14,
+  controlsBtn: {
+    padding: '5px 12px',
+    fontSize: 12,
+    fontWeight: 600,
+    backgroundColor: '#334155',
+    color: '#fff',
+    border: '1px solid #475569',
+    borderRadius: 4,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
   },
   scenarioLabel: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#94a3b8',
-    fontWeight: 500,
+    fontWeight: 600,
   },
   toolbarCenter: {
     display: 'flex',
@@ -278,6 +291,21 @@ const s: Record<string, CSSProperties> = {
     display: 'flex',
     flex: 1,
     minHeight: 0,
+    overflow: 'hidden',
+  },
+  chatPane: {
+    display: 'flex',
+    flexDirection: 'column',
+    width: 300,
+    minWidth: 260,
+    borderRight: '1px solid #e5e7eb',
+    overflow: 'hidden',
+  },
+  calendarPane: {
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
+    minWidth: 0,
     overflow: 'hidden',
   },
 };

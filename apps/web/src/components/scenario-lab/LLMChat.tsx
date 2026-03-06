@@ -3,44 +3,73 @@ import { useScenarioStore } from '../../stores/scenario';
 import type { ChatMessage } from '../../stores/scenario';
 import { parseNaturalLanguage } from './scheduleEngine';
 
-const SUGGESTIONS = [
-  'Swap weekends this month.',
-  'School is closed Monday.',
-  'He has to travel next week.',
+const SUGGESTIONS_A = [
   'I need coverage this Friday.',
+  'School is closed Monday.',
   'I have the kids today.',
   'Can she take them Saturday?',
+  'I want extra time this weekend.',
 ];
 
-export function LLMChat() {
-  const { chatMessages, addChatMessage } = useScenarioStore();
+const SUGGESTIONS_B = [
+  'He has to travel next week.',
+  'Swap weekends this month.',
+  'I need the kids Thursday.',
+  'Can he cover Monday?',
+  'School is doing early dismissal.',
+];
+
+const PARENT_CONFIG = {
+  a: {
+    label: 'Parent A',
+    headerBg: '#ffedd0',
+    headerBorder: '#f59e0b',
+    accentColor: '#92400e',
+    bubbleColor: '#4A90D9',
+    suggestions: SUGGESTIONS_A,
+  },
+  b: {
+    label: 'Parent B',
+    headerBg: '#dcfee5',
+    headerBorder: '#22c55e',
+    accentColor: '#166534',
+    bubbleColor: '#22c55e',
+    suggestions: SUGGESTIONS_B,
+  },
+};
+
+interface Props {
+  parent: 'a' | 'b';
+}
+
+export function LLMChat({ parent }: Props) {
+  const store = useScenarioStore();
+  const messages = parent === 'a' ? store.chatMessagesA : store.chatMessagesB;
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const config = PARENT_CONFIG[parent];
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [chatMessages]);
+  }, [messages]);
 
   function handleSend(text?: string) {
     const msg = (text ?? input).trim();
     if (!msg) return;
 
-    // Add user message
     const userMsg: ChatMessage = {
-      id: `chat-${Date.now()}-u`,
+      id: `chat-${parent}-${Date.now()}-u`,
       role: 'user',
       text: msg,
     };
-    addChatMessage(userMsg);
+    store.addChatMessage(parent, userMsg);
 
-    // Parse intent
     const parsed = parseNaturalLanguage(msg);
 
-    // Add system response
     const systemMsg: ChatMessage = {
-      id: `chat-${Date.now()}-s`,
+      id: `chat-${parent}-${Date.now()}-s`,
       role: 'system',
       text: parsed.explanation,
       parsedIntent: {
@@ -55,7 +84,7 @@ export function LLMChat() {
         explanation: parsed.explanation,
       },
     };
-    addChatMessage(systemMsg);
+    store.addChatMessage(parent, systemMsg);
     setInput('');
   }
 
@@ -68,22 +97,29 @@ export function LLMChat() {
 
   return (
     <div style={s.root}>
-      <div style={s.header}>LLM Chat</div>
+      <div style={{ ...s.header, backgroundColor: config.headerBg, borderBottomColor: config.headerBorder }}>
+        <span style={{ ...s.headerLabel, color: config.accentColor }}>{config.label}</span>
+        <button
+          style={s.clearBtn}
+          onClick={() => store.clearChat(parent)}
+          title="Clear chat"
+        >
+          Clear
+        </button>
+      </div>
 
-      {/* Messages */}
       <div style={s.messages} ref={scrollRef}>
-        {chatMessages.length === 0 && (
+        {messages.length === 0 && (
           <div style={s.empty}>
-            <p style={s.emptyText}>Test natural language interpretation.</p>
-            <p style={s.emptyText}>Type a message or try a suggestion below.</p>
+            <p style={s.emptyText}>Speak as {config.label}.</p>
+            <p style={s.emptyText}>Type a message or try a suggestion.</p>
           </div>
         )}
-        {chatMessages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
+        {messages.map((msg) => (
+          <MessageBubble key={msg.id} message={msg} bubbleColor={config.bubbleColor} />
         ))}
       </div>
 
-      {/* Input */}
       <div style={s.inputArea}>
         <div style={s.inputRow}>
           <input
@@ -91,21 +127,24 @@ export function LLMChat() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
+            placeholder={`Speak as ${config.label}...`}
             style={s.input}
           />
-          <button style={s.sendBtn} onClick={() => handleSend()}>
+          <button
+            style={{ ...s.sendBtn, backgroundColor: config.bubbleColor }}
+            onClick={() => handleSend()}
+          >
             &#9654;
           </button>
         </div>
         <div style={s.suggestions}>
-          {SUGGESTIONS.map((sug) => (
+          {config.suggestions.map((sug) => (
             <button
               key={sug}
               style={s.sugBtn}
               onClick={() => handleSend(sug)}
             >
-              "{sug}"
+              {sug}
             </button>
           ))}
         </div>
@@ -114,19 +153,14 @@ export function LLMChat() {
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({ message, bubbleColor }: { message: ChatMessage; bubbleColor: string }) {
   const isUser = message.role === 'user';
 
   return (
     <div style={{ ...s.msgRow, justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
-      <div style={isUser ? s.userBubble : s.systemBubble}>
-        {/* Level 1: User message */}
-        {isUser && (
-          <div style={s.levelLabel}>User:</div>
-        )}
+      <div style={isUser ? { ...s.userBubble, backgroundColor: bubbleColor } : s.systemBubble}>
         <div style={s.msgText}>{message.text}</div>
 
-        {/* Level 2: Parsed intent */}
         {message.parsedIntent && (
           <div style={s.intentBlock}>
             <div style={s.intentTitle}>AI Interpreter</div>
@@ -152,7 +186,6 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           </div>
         )}
 
-        {/* Level 3: System result */}
         {message.systemResult && (
           <div style={s.resultBlock}>
             <div style={s.resultTitle}>Solver Response:</div>
@@ -173,19 +206,31 @@ const s: Record<string, CSSProperties> = {
   root: {
     display: 'flex',
     flexDirection: 'column',
-    width: 300,
-    minWidth: 300,
-    borderLeft: '1px solid #e5e7eb',
+    flex: 1,
+    minWidth: 260,
     height: '100%',
     backgroundColor: '#fafafa',
   },
   header: {
-    padding: '10px 12px',
-    backgroundColor: '#1a1a2e',
-    color: '#fff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '8px 12px',
+    borderBottom: '2px solid',
+    flexShrink: 0,
+  },
+  headerLabel: {
     fontWeight: 700,
     fontSize: 13,
-    flexShrink: 0,
+  },
+  clearBtn: {
+    padding: '2px 8px',
+    fontSize: 9,
+    color: '#6b7280',
+    backgroundColor: 'transparent',
+    border: '1px solid #d1d5db',
+    borderRadius: 3,
+    cursor: 'pointer',
   },
   messages: {
     flex: 1,
@@ -198,7 +243,7 @@ const s: Record<string, CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     height: '100%',
-    minHeight: 100,
+    minHeight: 80,
   },
   emptyText: {
     fontSize: 11,
@@ -213,7 +258,6 @@ const s: Record<string, CSSProperties> = {
   userBubble: {
     maxWidth: '85%',
     padding: '8px 10px',
-    backgroundColor: '#4A90D9',
     color: '#fff',
     borderRadius: '12px 12px 4px 12px',
     fontSize: 12,
@@ -226,12 +270,6 @@ const s: Record<string, CSSProperties> = {
     borderRadius: '12px 12px 12px 4px',
     border: '1px solid #e5e7eb',
     fontSize: 12,
-  },
-  levelLabel: {
-    fontSize: 9,
-    fontWeight: 600,
-    color: 'rgba(255,255,255,0.7)',
-    marginBottom: 2,
   },
   msgText: {
     lineHeight: '16px',
@@ -310,7 +348,6 @@ const s: Record<string, CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#4A90D9',
     color: '#fff',
     border: 'none',
     borderRadius: 8,

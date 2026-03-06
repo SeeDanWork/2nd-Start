@@ -151,10 +151,11 @@ interface ScenarioState {
   addEvent: (e: EventLogEntry) => void;
   clearLog: () => void;
 
-  // Chat
-  chatMessages: ChatMessage[];
-  addChatMessage: (m: ChatMessage) => void;
-  clearChat: () => void;
+  // Chat (per-parent)
+  chatMessagesA: ChatMessage[];
+  chatMessagesB: ChatMessage[];
+  addChatMessage: (parent: 'a' | 'b', m: ChatMessage) => void;
+  clearChat: (parent: 'a' | 'b') => void;
 
   // Time
   currentDate: string;
@@ -275,11 +276,16 @@ export const useScenarioStore = create<ScenarioState>((set, get) => ({
   addEvent: (e) => set((s) => ({ eventLog: [...s.eventLog, e] })),
   clearLog: () => set({ eventLog: [] }),
 
-  chatMessages: [],
-  addChatMessage: (m) => set((s) => ({
-    chatMessages: [...s.chatMessages, m],
-  })),
-  clearChat: () => set({ chatMessages: [] }),
+  chatMessagesA: [],
+  chatMessagesB: [],
+  addChatMessage: (parent, m) => set((s) => (
+    parent === 'a'
+      ? { chatMessagesA: [...s.chatMessagesA, m] }
+      : { chatMessagesB: [...s.chatMessagesB, m] }
+  )),
+  clearChat: (parent) => set(
+    parent === 'a' ? { chatMessagesA: [] } : { chatMessagesB: [] }
+  ),
 
   currentDate: todayStr(),
   setCurrentDate: (d) => set({ currentDate: d }),
@@ -314,7 +320,8 @@ export const useScenarioStore = create<ScenarioState>((set, get) => ({
       category: 'system',
       message: `Loaded scenario: ${p.name}`,
     }],
-    chatMessages: [],
+    chatMessagesA: [],
+    chatMessagesB: [],
     scenarioName: p.name,
     currentDate: todayStr(),
   }),
@@ -328,7 +335,8 @@ export const useScenarioStore = create<ScenarioState>((set, get) => ({
     solverRunCount: 0,
     metrics: { ...DEFAULT_METRICS },
     eventLog: [],
-    chatMessages: [],
+    chatMessagesA: [],
+    chatMessagesB: [],
     scenarioName: 'Untitled Scenario',
     currentDate: todayStr(),
     isRunning: false,
