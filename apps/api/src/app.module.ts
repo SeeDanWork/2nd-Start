@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AuthModule } from './auth/auth.module';
 import { FamiliesModule } from './families/families.module';
 import { ChildrenModule } from './children/children.module';
@@ -21,6 +22,7 @@ import { CalendarSyncModule } from './calendar-sync/calendar-sync.module';
 
 @Module({
   imports: [
+    EventEmitterModule.forRoot(),
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DATABASE_HOST || 'localhost',

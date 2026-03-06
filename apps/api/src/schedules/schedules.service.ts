@@ -30,6 +30,7 @@ import {
   DEFAULT_MAX_TRANSITIONS_PER_WEEK,
   DEFAULT_SCHEDULE_HORIZON_WEEKS,
 } from '@adcp/shared';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { FamilyContextService } from '../family-context/family-context.service';
 
 @Injectable()
@@ -53,6 +54,7 @@ export class SchedulesService {
     private readonly constraintRepo: Repository<Constraint>,
     private readonly httpService: HttpService,
     private readonly familyContextService: FamilyContextService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async getActiveSchedule(familyId: string): Promise<BaseScheduleVersion | null> {
@@ -380,6 +382,8 @@ export class SchedulesService {
       `Generated schedule v${nextVersion} for family ${familyId}: ${solverResponse.status} in ${solverResponse.solve_time_ms}ms`,
     );
 
+    this.eventEmitter.emit('schedule.activated', { familyId });
+
     return version;
   }
 
@@ -459,6 +463,8 @@ export class SchedulesService {
         metadata: { source: 'manual', assignmentCount: assignments.length },
       }),
     );
+
+    this.eventEmitter.emit('schedule.activated', { familyId });
 
     return version;
   }
