@@ -78,6 +78,53 @@ export class MessagingService {
     private readonly messageLogRepo: Repository<MessageLog>,
   ) {}
 
+  async initiateConversation(
+    phoneNumber: string,
+    channel: string,
+  ): Promise<string> {
+    try {
+      // Check if user already exists
+      let user = await this.userRepo.findOne({ where: { phoneNumber } });
+
+      if (user) {
+        // Existing user — get their schedule context via LLM
+        return this.handleInbound(phoneNumber, '[connected]', channel);
+      }
+
+      // New user — create account and get onboarding greeting
+      user = await this.userRepo.save(
+        this.userRepo.create({
+          email: `sms-${Date.now()}@placeholder.adcp`,
+          displayName: 'Parent',
+          phoneNumber,
+          messagingChannel: channel,
+          onboardingCompleted: false,
+        }),
+      );
+
+      const session = await this.conversationService.getOrCreateSession(
+        user.id,
+        null as any,
+        phoneNumber,
+        channel,
+      );
+
+      await this.conversationService.updateState(session.id, 'onboarding', {
+        onboardingStep: 'llm',
+        conversationHistory: [],
+      });
+      session.state = 'onboarding';
+
+      // Call LLM with no user message — just the system prompt triggers the greeting
+      const response = await this.handleLlmOnboarding(session, user, '[new user connected — greet them and start onboarding]');
+      await this.logMessages(session.id, channel, phoneNumber, '', response);
+      return response;
+    } catch (err: any) {
+      this.logger.error(`Error initiating conversation: ${err?.message || err}`);
+      return "Welcome to ADCP! I'll help you set up your co-parenting schedule. How many children do you have?";
+    }
+  }
+
   async handleInbound(
     phoneNumber: string,
     body: string,

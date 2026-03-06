@@ -19,6 +19,17 @@ export class MessagingController {
     return `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${reply}</Message></Response>`;
   }
 
+  @Post('connect')
+  async handleConnect(
+    @Body() body: { phone: string },
+  ): Promise<{ message: string }> {
+    const greeting = await this.messagingService.initiateConversation(
+      body.phone,
+      'sms',
+    );
+    return { message: greeting };
+  }
+
   @Post('status')
   async handleStatus(
     @Body() body: { MessageSid: string; MessageStatus: string },

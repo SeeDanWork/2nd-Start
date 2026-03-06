@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, CSSProperties, ReactNode, useMemo } from 'react';
+import { useState, useRef, useEffect, CSSProperties, ReactNode } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -37,24 +37,40 @@ export function SmsSimulator() {
     }
   }, [messages]);
 
-  const hasAutoSent = useRef(false);
-
-  // Auto-send greeting on connect to trigger the LLM's first response
-  useEffect(() => {
-    if (isConnected && !hasAutoSent.current) {
-      hasAutoSent.current = true;
-      handleSend('Hi');
-    }
-  }, [isConnected]);
-
   function handleConnect() {
     const cleaned = phoneNumber.trim();
     if (!cleaned) return;
     const formatted = cleaned.startsWith('+') ? cleaned : `+1${cleaned.replace(/\D/g, '')}`;
     setPhoneNumber(formatted);
-    hasAutoSent.current = false;
     setIsConnected(true);
     setMessages([]);
+    setSending(true);
+
+    // Call connect endpoint to get LLM's opening message
+    fetch(`${API_BASE}/messaging/connect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: formatted }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        const text = data.data?.message || data.message || 'Welcome!';
+        setMessages([{
+          id: `sys-${Date.now()}`,
+          from: 'system',
+          text,
+          timestamp: new Date().toLocaleTimeString(),
+        }]);
+      })
+      .catch(() => {
+        setMessages([{
+          id: `err-${Date.now()}`,
+          from: 'system',
+          text: `Could not reach API at ${API_BASE}`,
+          timestamp: new Date().toLocaleTimeString(),
+        }]);
+      })
+      .finally(() => setSending(false));
   }
 
   function handleDisconnect() {
