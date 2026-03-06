@@ -19,7 +19,10 @@ import { ConstraintType, ConstraintHardness, ConstraintOwner } from '@adcp/share
 import { ConversationService } from './conversation.service';
 import { MessageSenderService } from './message-sender.service';
 import { ViewerTokenService } from './viewer-token.service';
+import { ScheduleImageService, CalendarDay } from './schedule-image.service';
 import { LlmTool, ToolResult } from './llm.service';
+
+const API_BASE = process.env.APP_URL || `http://localhost:${process.env.APP_PORT || 3000}`;
 
 @Injectable()
 export class LlmToolsService {
@@ -29,6 +32,7 @@ export class LlmToolsService {
     private readonly conversationService: ConversationService,
     private readonly messageSenderService: MessageSenderService,
     private readonly viewerTokenService: ViewerTokenService,
+    private readonly scheduleImageService: ScheduleImageService,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     @InjectRepository(Family)
@@ -96,6 +100,26 @@ export class LlmToolsService {
             },
           },
           required: [],
+        },
+      },
+      {
+        name: 'generate_schedule_preview',
+        description:
+          'Generate a visual preview image showing what the schedule pattern will look like. Call this after collecting arrangement and locked_days to show the parent a preview before confirming. Returns an image URL to include in your response.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            arrangement: {
+              type: 'string',
+              enum: ['shared', 'primary', 'undecided'],
+            },
+            locked_days: {
+              type: 'array',
+              items: { type: 'number' },
+              description: 'Days locked to parent A (0=Sun...6=Sat)',
+            },
+          },
+          required: ['arrangement'],
         },
       },
       {
@@ -221,6 +245,40 @@ export class LlmToolsService {
           required: [],
         },
       },
+      {
+        name: 'generate_week_image',
+        description:
+          'Generate a visual image of the weekly schedule. Returns an image URL to include in your response. Use this when showing schedule info to make it visual.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            start_date: {
+              type: 'string',
+              description: 'Start date (YYYY-MM-DD). Defaults to current week.',
+            },
+          },
+          required: [],
+        },
+      },
+      {
+        name: 'generate_month_image',
+        description:
+          'Generate a visual image of the full month calendar. Returns an image URL. Use after onboarding completes or when user asks to see the full calendar.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            month: {
+              type: 'number',
+              description: 'Month number (1-12). Defaults to current month.',
+            },
+            year: {
+              type: 'number',
+              description: 'Year. Defaults to current year.',
+            },
+          },
+          required: [],
+        },
+      },
     ];
   }
 
@@ -235,6 +293,8 @@ export class LlmToolsService {
     switch (name) {
       case 'save_onboarding_data':
         return this.saveOnboardingData(input, session);
+      case 'generate_schedule_preview':
+        return this.generateSchedulePreview(input);
       case 'complete_onboarding':
         return this.completeOnboarding(session, user);
       default:
@@ -261,6 +321,10 @@ export class LlmToolsService {
         return this.reportDisruption(input, session, user);
       case 'get_family_info':
         return this.getFamilyInfo(session);
+      case 'generate_week_image':
+        return this.generateWeekImage(input, session);
+      case 'generate_month_image':
+        return this.generateMonthImage(input, session);
       default:
         return { text: `Unknown tool: ${name}` };
     }
@@ -511,6 +575,129 @@ export class LlmToolsService {
     this.logger.log(
       `Generated default ${arrangement} schedule for family ${familyId}: ${assignments.length} days`,
     );
+  }
+
+  // ── Image Generation Tools ───────────────────────────────────
+
+  private async generateSchedulePreview(
+    input: Record<string, any>,
+  ): Promise<ToolResult> {
+    const arrangement = input.arrangement || 'shared';
+    const lockedDays = input.locked_days || [];
+
+    const filename = await this.scheduleImageService.generateArrangementPreview(
+      arrangement,
+      lockedDays,
+      'You',
+    );
+
+    const imageUrl = `${API_BASE}/messaging/media/${filename}`;
+    return {
+      text: `Schedule preview generated. Image URL: ${imageUrl}`,
+    };
+  }
+
+  private async generateWeekImage(
+    input: Record<string, any>,
+    session: ConversationSession,
+  ): Promise<ToolResult> {
+    const familyId = session.familyId;
+    if (!familyId) return { text: 'No family associated.' };
+
+    const activeVersion = await this.scheduleVersionRepo.findOne({
+      where: { familyId, isActive: true },
+    });
+    if (!activeVersion) return { text: 'No schedule found.' };
+
+    const today = new Date();
+    const startDate = input.start_date || this.dateToStr(today);
+    const endStr = input.start_date
+      ? this.dateToStr(new Date(new Date(input.start_date + 'T12:00:00').getTime() + 6 * 86400000))
+      : this.dateToStr(this.endOfWeek(today));
+
+    const assignments = await this.assignmentRepo.find({
+      where: {
+        scheduleVersionId: activeVersion.id,
+        date: Between(startDate, endStr),
+      },
+      order: { date: 'ASC' },
+    });
+
+    if (assignments.length === 0) return { text: 'No assignments for this week.' };
+
+    const members = await this.membershipRepo.find({ where: { familyId } });
+    const parentA = members.find((m) => m.role === 'parent_a');
+    const parentB = members.find((m) => m.role === 'parent_b');
+
+    const days: CalendarDay[] = assignments.map((a) => ({
+      date: a.date,
+      assignedTo: a.assignedTo as 'parent_a' | 'parent_b',
+      isTransition: a.isTransition,
+    }));
+
+    const filename = await this.scheduleImageService.generateWeekCard(
+      days,
+      parentA?.label || 'Parent A',
+      parentB?.label || 'Parent B',
+    );
+
+    const imageUrl = `${API_BASE}/messaging/media/${filename}`;
+    return { text: `Week schedule image generated. Image URL: ${imageUrl}` };
+  }
+
+  private async generateMonthImage(
+    input: Record<string, any>,
+    session: ConversationSession,
+  ): Promise<ToolResult> {
+    const familyId = session.familyId;
+    if (!familyId) return { text: 'No family associated.' };
+
+    const activeVersion = await this.scheduleVersionRepo.findOne({
+      where: { familyId, isActive: true },
+    });
+    if (!activeVersion) return { text: 'No schedule found.' };
+
+    const now = new Date();
+    const month = (input.month || now.getMonth() + 1) - 1;
+    const year = input.year || now.getFullYear();
+    const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const endDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    const assignments = await this.assignmentRepo.find({
+      where: {
+        scheduleVersionId: activeVersion.id,
+        date: Between(startDate, endDate),
+      },
+      order: { date: 'ASC' },
+    });
+
+    if (assignments.length === 0) return { text: 'No assignments for this month.' };
+
+    const members = await this.membershipRepo.find({ where: { familyId } });
+    const parentA = members.find((m) => m.role === 'parent_a');
+    const parentB = members.find((m) => m.role === 'parent_b');
+
+    const days: CalendarDay[] = assignments.map((a) => ({
+      date: a.date,
+      assignedTo: a.assignedTo as 'parent_a' | 'parent_b',
+      isTransition: a.isTransition,
+    }));
+
+    const monthLabel = new Date(year, month, 1).toLocaleString('en-US', {
+      month: 'long',
+      year: 'numeric',
+    });
+
+    const filename = await this.scheduleImageService.generateMonthCalendar(
+      days,
+      parentA?.label || 'Parent A',
+      parentB?.label || 'Parent B',
+      monthLabel,
+    );
+
+    const imageUrl = `${API_BASE}/messaging/media/${filename}`;
+    return { text: `Month calendar image generated. Image URL: ${imageUrl}` };
   }
 
   // ── Conversation Tool Implementations ────────────────────────

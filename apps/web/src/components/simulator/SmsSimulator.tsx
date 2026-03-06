@@ -12,15 +12,27 @@ interface Message {
 function linkifyText(text: string): ReactNode[] {
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const parts = text.split(urlRegex);
-  return parts.map((part, i) =>
-    urlRegex.test(part) ? (
-      <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>
-        {part}
-      </a>
-    ) : (
-      part
-    )
-  );
+  return parts.map((part, i) => {
+    if (urlRegex.test(part)) {
+      // Check if it's an image URL
+      if (/\/messaging\/media\/.*\.png$/i.test(part) || /\.(png|jpg|jpeg|gif)$/i.test(part)) {
+        return (
+          <img
+            key={i}
+            src={part}
+            alt="Schedule"
+            style={{ maxWidth: '100%', borderRadius: 8, marginTop: 6, display: 'block' }}
+          />
+        );
+      }
+      return (
+        <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
 }
 
 export function SmsSimulator() {

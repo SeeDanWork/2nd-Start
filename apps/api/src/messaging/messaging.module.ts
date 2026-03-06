@@ -25,6 +25,7 @@ import { OnboardingFlowService } from './onboarding-flow.service';
 import { ViewerTokenService } from './viewer-token.service';
 import { LlmService } from './llm.service';
 import { LlmToolsService } from './llm-tools.service';
+import { ScheduleImageService } from './schedule-image.service';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { LlmToolsService } from './llm-tools.service';
     ViewerTokenService,
     LlmService,
     LlmToolsService,
+    ScheduleImageService,
   ],
   exports: [MessagingService, MessageSenderService],
 })
