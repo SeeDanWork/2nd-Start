@@ -16,6 +16,7 @@ import { OnboardingModule } from './onboarding/onboarding.module';
 import { NotificationModule } from './notifications/notification.module';
 import { EmailModule } from './email/email.module';
 import { FamilyContextModule } from './family-context/family-context.module';
+import { MessagingModule } from './messaging/messaging.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { FamilyContextModule } from './family-context/family-context.module';
     SharingModule,
     OnboardingModule,
     NotificationModule,
+    MessagingModule,
   ],
 })
 export class AppModule {}
