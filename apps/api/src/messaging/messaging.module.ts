@@ -7,6 +7,9 @@ import {
   User,
   Family,
   FamilyMembership,
+  Child,
+  ConstraintSet,
+  Constraint,
   BaseScheduleVersion,
   OvernightAssignment,
   DisruptionEvent,
@@ -20,6 +23,7 @@ import { ConversationService } from './conversation.service';
 import { MessageParserService } from './message-parser.service';
 import { MessageSenderService } from './message-sender.service';
 import { SwapFlowService } from './swap-flow.service';
+import { OnboardingFlowService } from './onboarding-flow.service';
 import { ViewerTokenService } from './viewer-token.service';
 
 @Module({
@@ -30,6 +34,9 @@ import { ViewerTokenService } from './viewer-token.service';
       User,
       Family,
       FamilyMembership,
+      Child,
+      ConstraintSet,
+      Constraint,
       BaseScheduleVersion,
       OvernightAssignment,
       DisruptionEvent,
@@ -48,6 +55,7 @@ import { ViewerTokenService } from './viewer-token.service';
     MessageParserService,
     MessageSenderService,
     SwapFlowService,
+    OnboardingFlowService,
     ViewerTokenService,
   ],
   exports: [MessagingService, MessageSenderService],

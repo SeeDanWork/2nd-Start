@@ -60,7 +60,7 @@ export class SwapFlowService {
 
     // Find active schedule for family
     const activeSchedule = await this.scheduleVersionRepo.findOne({
-      where: { familyId: session.familyId, isActive: true },
+      where: { familyId: session.familyId!, isActive: true },
     });
 
     if (!activeSchedule) {
@@ -121,7 +121,7 @@ export class SwapFlowService {
 
     // Create a Request record
     const request = this.requestRepo.create({
-      familyId: session.familyId,
+      familyId: session.familyId!,
       requestedBy: user.id,
       type: 'swap_date',
       status: 'pending',
@@ -136,7 +136,7 @@ export class SwapFlowService {
 
     // Find the other parent in the family
     const memberships = await this.membershipRepo.find({
-      where: { familyId: session.familyId },
+      where: { familyId: session.familyId! },
     });
     const otherMembership = memberships.find(
       (m) => m.userId && m.userId !== user.id,
@@ -144,7 +144,7 @@ export class SwapFlowService {
 
     if (!otherMembership || !otherMembership.userId) {
       this.logger.warn(
-        `No other parent found in family ${session.familyId} for swap request`,
+        `No other parent found in family ${session.familyId!} for swap request`,
       );
       return 'Request created, but no other parent found to notify.';
     }
@@ -169,7 +169,7 @@ export class SwapFlowService {
       const otherSession =
         await this.conversationService.getOrCreateSession(
           otherUser.id,
-          session.familyId,
+          session.familyId!,
           otherUser.phoneNumber,
           session.channel,
         );

@@ -19,6 +19,7 @@ import { helpMessage } from './templates/help';
 import { unknownMessage } from './templates/unknown';
 import { errorMessage } from './templates/error';
 import { SwapFlowService } from './swap-flow.service';
+import { OnboardingFlowService } from './onboarding-flow.service';
 import { ViewerTokenService } from './viewer-token.service';
 import { formatWeekSchedule, formatDaySchedule } from './schedule-formatter';
 
@@ -31,6 +32,7 @@ export class MessagingService {
     private readonly messageParserService: MessageParserService,
     private readonly messageSenderService: MessageSenderService,
     private readonly swapFlowService: SwapFlowService,
+    private readonly onboardingFlowService: OnboardingFlowService,
     private readonly viewerTokenService: ViewerTokenService,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
@@ -56,21 +58,127 @@ export class MessagingService {
   ): Promise<string> {
     try {
       // Find user by phone number
-      const user = await this.userRepo.findOne({
+      let user = await this.userRepo.findOne({
         where: { phoneNumber },
       });
 
+      // ── New user: create account and start onboarding ──────────
       if (!user) {
-        return 'This number is not registered with ADCP. Visit our website to set up your account.';
+        user = await this.userRepo.save(
+          this.userRepo.create({
+            email: `sms-${Date.now()}@placeholder.adcp`,
+            displayName: 'Parent',
+            phoneNumber,
+            messagingChannel: channel,
+            onboardingCompleted: false,
+          }),
+        );
+
+        const session = await this.conversationService.getOrCreateSession(
+          user.id,
+          null as any, // no family yet
+          phoneNumber,
+          channel,
+        );
+
+        // Set session to onboarding state
+        await this.conversationService.updateState(session.id, 'onboarding', {
+          onboardingStep: 'welcome',
+        });
+        session.state = 'onboarding';
+        session.context = { onboardingStep: 'welcome' };
+
+        const response = await this.onboardingFlowService.handleStep(
+          session,
+          body,
+        );
+
+        await this.logMessages(session.id, channel, phoneNumber, body, null, response, providerMessageId);
+
+        return response;
       }
 
-      // Find user's family via membership
+      // ── Invited partner: hasn't completed onboarding ───────────
+      if (!user.onboardingCompleted) {
+        // Check for a pending membership (partner invite)
+        const pendingMembership = await this.membershipRepo.findOne({
+          where: { userId: user.id, inviteStatus: 'pending' },
+        });
+
+        if (pendingMembership) {
+          // Check for existing onboarding session
+          const existingSession = await this.findActiveSession(user.id);
+
+          if (existingSession && existingSession.state === 'onboarding') {
+            // Continue onboarding (shouldn't normally reach here for partner)
+            const response = await this.onboardingFlowService.handleStep(
+              existingSession,
+              body,
+            );
+            await this.logMessages(existingSession.id, channel, phoneNumber, body, null, response, providerMessageId);
+            return response;
+          }
+
+          const lower = body.trim().toLowerCase();
+          if (lower === 'start') {
+            const session = await this.conversationService.getOrCreateSession(
+              user.id,
+              pendingMembership.familyId,
+              phoneNumber,
+              channel,
+            );
+
+            const response = await this.onboardingFlowService.handlePartnerStart(
+              session,
+              user,
+            );
+
+            await this.logMessages(session.id, channel, phoneNumber, body, null, response, providerMessageId);
+            return response;
+          }
+
+          return 'Reply START to begin setting up your account.';
+        }
+      }
+
+      // ── Existing user with active onboarding session ───────────
+      const existingSession = await this.findActiveSession(user.id);
+      if (existingSession && existingSession.state === 'onboarding') {
+        const response = await this.onboardingFlowService.handleStep(
+          existingSession,
+          body,
+        );
+        await this.logMessages(existingSession.id, channel, phoneNumber, body, null, response, providerMessageId);
+        return response;
+      }
+
+      // ── Normal flow: user has a family ─────────────────────────
       const membership = await this.membershipRepo.findOne({
         where: { userId: user.id },
       });
 
       if (!membership) {
-        return 'Your account is not associated with a family yet. Please complete setup on our website.';
+        // User exists but no family — start onboarding
+        const session = await this.conversationService.getOrCreateSession(
+          user.id,
+          null as any,
+          phoneNumber,
+          channel,
+        );
+
+        await this.conversationService.updateState(session.id, 'onboarding', {
+          onboardingStep: 'welcome',
+        });
+        session.state = 'onboarding';
+        session.context = { onboardingStep: 'welcome' };
+
+        const response = await this.onboardingFlowService.handleStep(
+          session,
+          body,
+        );
+
+        await this.logMessages(session.id, channel, phoneNumber, body, null, response, providerMessageId);
+        return response;
       }
 
       // Get or create conversation session
@@ -128,6 +236,67 @@ export class MessagingService {
       this.logger.error(`Error handling inbound message: ${err}`);
       return errorMessage();
     }
+  }
+
+  /**
+   * Find the most recent active (non-expired) session for a user.
+   */
+  private async findActiveSession(
+    userId: string,
+  ): Promise<ConversationSession | null> {
+    const session = await this.userRepo.manager
+      .getRepository(ConversationSession)
+      .findOne({
+        where: { userId },
+        order: { createdAt: 'DESC' },
+      });
+
+    if (!session) return null;
+    if (session.expiresAt && session.expiresAt < new Date()) return null;
+    return session;
+  }
+
+  /**
+   * Log inbound and outbound messages for a conversation.
+   */
+  private async logMessages(
+    sessionId: string,
+    channel: string,
+    phoneNumber: string,
+    inboundBody: string,
+    parsedIntent: any,
+    outboundBody: string,
+    providerMessageId?: string,
+  ): Promise<void> {
+    await this.messageLogRepo.save(
+      this.messageLogRepo.create({
+        conversationSessionId: sessionId,
+        direction: MessageDirection.INBOUND,
+        channel,
+        fromNumber: phoneNumber,
+        toNumber: '',
+        body: inboundBody,
+        parsedIntent: parsedIntent,
+        confidence: null,
+        providerMessageId: providerMessageId || null,
+        deliveryStatus: 'delivered',
+      }),
+    );
+
+    await this.messageLogRepo.save(
+      this.messageLogRepo.create({
+        conversationSessionId: sessionId,
+        direction: MessageDirection.OUTBOUND,
+        channel,
+        fromNumber: '',
+        toNumber: phoneNumber,
+        body: outboundBody,
+        parsedIntent: null,
+        confidence: null,
+        providerMessageId: null,
+        deliveryStatus: 'sent',
+      }),
+    );
   }
 
   async updateDeliveryStatus(
@@ -231,7 +400,7 @@ export class MessagingService {
     entities: Record<string, string>,
     session: ConversationSession,
   ): Promise<string> {
-    const familyId = session.familyId;
+    const familyId = session.familyId!;
 
     // Look up the user's role via membership
     const membership = await this.membershipRepo.findOne({
@@ -292,7 +461,7 @@ export class MessagingService {
 
     const disruption = await this.disruptionRepo.save(
       this.disruptionRepo.create({
-        familyId: session.familyId,
+        familyId: session.familyId!,
         reportedBy: user.id,
         type: disruptionType,
         date,
@@ -304,7 +473,7 @@ export class MessagingService {
 
     await this.auditLogRepo.save(
       this.auditLogRepo.create({
-        familyId: session.familyId,
+        familyId: session.familyId!,
         actorId: user.id,
         action: 'disruption_reported',
         entityType: 'disruption_event',
@@ -314,7 +483,7 @@ export class MessagingService {
     );
 
     const otherParentName = await this.notifyOtherParent(
-      session.familyId,
+      session.familyId!,
       user.id,
       `${user.displayName} reported a disruption: ${this.formatDisruptionLabel(disruptionType)} on ${date}. Check your schedule for updates.`,
     );
@@ -338,7 +507,7 @@ export class MessagingService {
 
     const disruption = await this.disruptionRepo.save(
       this.disruptionRepo.create({
-        familyId: session.familyId,
+        familyId: session.familyId!,
         reportedBy: user.id,
         type: 'illness',
         date,
@@ -350,7 +519,7 @@ export class MessagingService {
 
     await this.auditLogRepo.save(
       this.auditLogRepo.create({
-        familyId: session.familyId,
+        familyId: session.familyId!,
         actorId: user.id,
         action: 'illness_reported',
         entityType: 'disruption_event',
@@ -361,7 +530,7 @@ export class MessagingService {
 
     const subject = childName || 'your child';
     const otherParentName = await this.notifyOtherParent(
-      session.familyId,
+      session.familyId!,
       user.id,
       `${user.displayName} reported an illness for ${subject} on ${date}. Please coordinate as needed.`,
     );
@@ -378,7 +547,7 @@ export class MessagingService {
 
   private handleViewSchedule(session: ConversationSession): string {
     const { url } = this.viewerTokenService.generateViewerToken(
-      session.familyId,
+      session.familyId!,
       session.userId,
     );
     return `Here's your schedule:\n${url}\n\nThis link expires in 7 days.`;

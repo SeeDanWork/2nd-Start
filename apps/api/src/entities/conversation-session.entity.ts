@@ -17,8 +17,8 @@ export class ConversationSession {
   @Column({ type: 'uuid', name: 'user_id' })
   userId!: string;
 
-  @Column({ type: 'uuid', name: 'family_id' })
-  familyId!: string;
+  @Column({ type: 'uuid', name: 'family_id', nullable: true })
+  familyId!: string | null;
 
   @Column({ type: 'text', default: 'idle' })
   state!: string;

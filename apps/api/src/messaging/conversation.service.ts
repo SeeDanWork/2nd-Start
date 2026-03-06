@@ -12,7 +12,7 @@ export class ConversationService {
 
   async getOrCreateSession(
     userId: string,
-    familyId: string,
+    familyId: string | null,
     phoneNumber: string,
     channel: string,
   ): Promise<ConversationSession> {
