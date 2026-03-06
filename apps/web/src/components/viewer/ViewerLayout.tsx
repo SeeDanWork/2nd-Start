@@ -24,12 +24,11 @@ export function ViewerLayout() {
       return;
     }
     fetch(`${API_BASE}/viewer/validate/${token}`)
-      .then((res) => {
-        if (res.ok) {
-          setStatus('valid');
-        } else {
-          setStatus('invalid');
-        }
+      .then((res) => res.json())
+      .then((resp) => {
+        // Handle both raw { valid } and NestJS wrapped { data: { valid } }
+        const payload = resp.data ?? resp;
+        setStatus(payload.valid ? 'valid' : 'invalid');
       })
       .catch(() => {
         setStatus('invalid');

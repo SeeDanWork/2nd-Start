@@ -7,20 +7,20 @@ const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 interface Assignment {
   date: string;
-  parentId: string;
-  isExchange?: boolean;
+  assignedTo: string;
+  isTransition: boolean;
 }
 
 interface ScheduleData {
-  parentAId?: string;
-  parentBId?: string;
-  parentAName?: string;
-  parentBName?: string;
-  assignments?: Assignment[];
+  version: number;
+  solverStatus: string;
+  assignments: Assignment[];
+  parentALabel: string;
+  parentBLabel: string;
 }
 
 export function ScheduleViewer() {
-  const { familyId, token } = useViewer();
+  const { token } = useViewer();
   const [schedule, setSchedule] = useState<ScheduleData | null>(null);
   const [error, setError] = useState(false);
   const [currentDate, setCurrentDate] = useState(() => new Date());
@@ -29,16 +29,18 @@ export function ScheduleViewer() {
   const month = currentDate.getMonth();
 
   useEffect(() => {
-    fetch(`${API_BASE}/families/${familyId}/schedules/active`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    const start = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const end = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    fetch(`${API_BASE}/viewer/${token}/schedule?start=${start}&end=${end}`)
       .then((res) => {
         if (!res.ok) throw new Error('Failed');
         return res.json();
       })
-      .then((data) => setSchedule(data))
+      .then((resp) => setSchedule(resp.data ?? resp))
       .catch(() => setError(true));
-  }, [familyId, token]);
+  }, [token, year, month]);
 
   function prevMonth() {
     setCurrentDate(new Date(year, month - 1, 1));
@@ -56,20 +58,22 @@ export function ScheduleViewer() {
     return <p style={styles.loading}>Loading schedule...</p>;
   }
 
+  if (schedule.assignments.length === 0) {
+    return <p style={styles.noData}>No schedule data for this period.</p>;
+  }
+
   // Build the calendar grid
   const firstDayOfMonth = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-  // Build a map of date string -> assignment
   const assignmentMap = new Map<string, Assignment>();
-  if (schedule.assignments) {
-    for (const a of schedule.assignments) {
-      assignmentMap.set(a.date, a);
-    }
+  for (const a of schedule.assignments) {
+    // Handle both "2026-03-01" and "2026-03-01T..." formats
+    const dateStr = typeof a.date === 'string' ? a.date.slice(0, 10) : a.date;
+    assignmentMap.set(dateStr, a);
   }
 
   const cells: Array<{ day: number; assignment?: Assignment } | null> = [];
-  // Leading empty cells
   for (let i = 0; i < firstDayOfMonth; i++) {
     cells.push(null);
   }
@@ -82,45 +86,47 @@ export function ScheduleViewer() {
 
   return (
     <div>
-      {/* Legend */}
       <div style={styles.legend}>
         <span style={styles.legendItem}>
           <span style={{ ...styles.legendSwatch, backgroundColor: '#ffedd0' }} />
-          {schedule.parentAName || 'Parent A'}
+          {schedule.parentALabel}
         </span>
         <span style={styles.legendItem}>
           <span style={{ ...styles.legendSwatch, backgroundColor: '#dcfee5' }} />
-          {schedule.parentBName || 'Parent B'}
+          {schedule.parentBLabel}
         </span>
       </div>
 
-      {/* Month nav */}
       <div style={styles.monthNav}>
         <button style={styles.navButton} onClick={prevMonth}>&larr;</button>
         <span style={styles.monthLabel}>{monthName} {year}</span>
         <button style={styles.navButton} onClick={nextMonth}>&rarr;</button>
       </div>
 
-      {/* Day headers */}
       <div style={styles.grid}>
         {DAY_LABELS.map((label) => (
           <div key={label} style={styles.dayHeader}>{label}</div>
         ))}
 
-        {/* Calendar cells */}
         {cells.map((cell, idx) => {
           if (!cell) {
             return <div key={`empty-${idx}`} style={styles.emptyCell} />;
           }
-          const isA = cell.assignment && cell.assignment.parentId === schedule.parentAId;
-          const isB = cell.assignment && cell.assignment.parentId === schedule.parentBId;
-          const bg = isA ? '#ffedd0' : isB ? '#dcfee5' : '#ffffff';
+          const a = cell.assignment;
+          const bg = a
+            ? a.assignedTo === 'parent_a' ? '#ffedd0' : '#dcfee5'
+            : '#ffffff';
 
           return (
             <div key={cell.day} style={{ ...styles.cell, backgroundColor: bg }}>
               <span style={styles.dayNumber}>{cell.day}</span>
-              {cell.assignment?.isExchange && (
-                <span style={styles.exchangeMarker} title="Exchange day">&#x21C4;</span>
+              {a && (
+                <span style={styles.parentLabel}>
+                  {a.assignedTo === 'parent_a' ? 'A' : 'B'}
+                </span>
+              )}
+              {a?.isTransition && (
+                <span style={styles.exchangeMarker} title="Transition day">&#x21C4;</span>
               )}
             </div>
           );
@@ -199,19 +205,28 @@ const styles: Record<string, CSSProperties> = {
     textTransform: 'uppercase',
   },
   emptyCell: {
-    minHeight: 52,
+    minHeight: 56,
   },
   cell: {
-    minHeight: 52,
+    minHeight: 56,
     border: '1px solid #e5e7eb',
-    borderRadius: 4,
-    padding: 4,
+    borderRadius: 6,
+    padding: 5,
     position: 'relative',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
   },
   dayNumber: {
     fontSize: 13,
-    fontWeight: 500,
+    fontWeight: 600,
     color: '#1f2937',
+  },
+  parentLabel: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: '#6b7280',
+    marginTop: 2,
   },
   exchangeMarker: {
     position: 'absolute',

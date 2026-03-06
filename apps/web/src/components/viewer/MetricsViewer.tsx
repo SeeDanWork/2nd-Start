@@ -4,32 +4,30 @@ import { useViewer } from './ViewerLayout';
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 interface MetricsData {
-  fairnessSplit?: { parentA: number; parentB: number };
-  transitionsPerWeek?: number;
-  stabilityScore?: number;
-  weekendBalance?: { parentA: number; parentB: number };
-  maxConsecutiveA?: number;
-  maxConsecutiveB?: number;
-  parentAName?: string;
-  parentBName?: string;
+  parentANights: number;
+  parentBNights: number;
+  parentAPercent: number;
+  parentBPercent: number;
+  transitionsPerWeek: number;
+  maxConsecutiveA: number;
+  maxConsecutiveB: number;
+  totalDays: number;
 }
 
 export function MetricsViewer() {
-  const { familyId, token } = useViewer();
+  const { token } = useViewer();
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    fetch(`${API_BASE}/families/${familyId}/today`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    fetch(`${API_BASE}/viewer/${token}/metrics`)
       .then((res) => {
         if (!res.ok) throw new Error('Failed');
         return res.json();
       })
-      .then((data) => setMetrics(data))
+      .then((resp) => setMetrics(resp.data ?? resp))
       .catch(() => setError(true));
-  }, [familyId, token]);
+  }, [token]);
 
   if (error) {
     return <p style={styles.noData}>Metrics not available.</p>;
@@ -39,37 +37,30 @@ export function MetricsViewer() {
     return <p style={styles.loading}>Loading metrics...</p>;
   }
 
-  const parentALabel = metrics.parentAName || 'Parent A';
-  const parentBLabel = metrics.parentBName || 'Parent B';
-
   const cards = [
     {
       label: 'Fairness Split',
-      value: metrics.fairnessSplit
-        ? `${metrics.fairnessSplit.parentA}% / ${metrics.fairnessSplit.parentB}%`
-        : '--',
+      value: `${metrics.parentAPercent}% / ${metrics.parentBPercent}%`,
     },
     {
-      label: 'Transitions per Week',
-      value: metrics.transitionsPerWeek ?? '--',
+      label: 'Parent A Nights',
+      value: metrics.parentANights,
     },
     {
-      label: 'Stability Score',
-      value: metrics.stabilityScore ?? '--',
+      label: 'Parent B Nights',
+      value: metrics.parentBNights,
     },
     {
-      label: 'Weekend Balance',
-      value: metrics.weekendBalance
-        ? `${metrics.weekendBalance.parentA}% / ${metrics.weekendBalance.parentB}%`
-        : '--',
+      label: 'Transitions / Week',
+      value: metrics.transitionsPerWeek,
     },
     {
-      label: `Max Consecutive (${parentALabel})`,
-      value: metrics.maxConsecutiveA != null ? `${metrics.maxConsecutiveA} days` : '--',
+      label: 'Max Consecutive (A)',
+      value: `${metrics.maxConsecutiveA} days`,
     },
     {
-      label: `Max Consecutive (${parentBLabel})`,
-      value: metrics.maxConsecutiveB != null ? `${metrics.maxConsecutiveB} days` : '--',
+      label: 'Max Consecutive (B)',
+      value: `${metrics.maxConsecutiveB} days`,
     },
   ];
 

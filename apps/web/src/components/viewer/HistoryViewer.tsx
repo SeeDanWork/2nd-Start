@@ -18,14 +18,13 @@ export function HistoryViewer() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    fetch(`${API_BASE}/families/${familyId}/audit-log`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    fetch(`${API_BASE}/viewer/${token}/history`)
       .then((res) => {
         if (!res.ok) throw new Error('Failed');
         return res.json();
       })
-      .then((data) => {
+      .then((resp) => {
+        const data = resp.data ?? resp;
         setEntries(Array.isArray(data) ? data : data.entries ?? []);
         setLoaded(true);
       })
