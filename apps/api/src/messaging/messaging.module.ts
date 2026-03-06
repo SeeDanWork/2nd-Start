@@ -20,11 +20,11 @@ import { MessagingController } from './messaging.controller';
 import { ViewerController } from './viewer.controller';
 import { MessagingService } from './messaging.service';
 import { ConversationService } from './conversation.service';
-import { MessageParserService } from './message-parser.service';
 import { MessageSenderService } from './message-sender.service';
-import { SwapFlowService } from './swap-flow.service';
 import { OnboardingFlowService } from './onboarding-flow.service';
 import { ViewerTokenService } from './viewer-token.service';
+import { LlmService } from './llm.service';
+import { LlmToolsService } from './llm-tools.service';
 
 @Module({
   imports: [
@@ -52,11 +52,11 @@ import { ViewerTokenService } from './viewer-token.service';
   providers: [
     MessagingService,
     ConversationService,
-    MessageParserService,
     MessageSenderService,
-    SwapFlowService,
     OnboardingFlowService,
     ViewerTokenService,
+    LlmService,
+    LlmToolsService,
   ],
   exports: [MessagingService, MessageSenderService],
 })

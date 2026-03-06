@@ -118,12 +118,11 @@ export function SmsSimulator() {
   }
 
   const quickActions = isConnected ? [
-    'Help',
     'Who has the kids this week?',
     'Can we swap Friday?',
     'School is closed tomorrow',
-    'Kai is sick today',
-    'Show me the schedule',
+    'My son is sick today',
+    'Show me the calendar',
     'Yes',
     'No',
   ] : [];

@@ -1,27 +1,64 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository } from 'typeorm';
 import {
   User,
   FamilyMembership,
   MessageLog,
   ConversationSession,
-  BaseScheduleVersion,
-  OvernightAssignment,
-  DisruptionEvent,
-  AuditLog,
 } from '../entities';
-import { MessageDirection, MessageIntent, ParsedIntent } from '@adcp/shared';
+import { MessageDirection } from '@adcp/shared';
 import { ConversationService } from './conversation.service';
-import { MessageParserService } from './message-parser.service';
 import { MessageSenderService } from './message-sender.service';
-import { helpMessage } from './templates/help';
-import { unknownMessage } from './templates/unknown';
-import { errorMessage } from './templates/error';
-import { SwapFlowService } from './swap-flow.service';
+import { LlmService, LlmMessage } from './llm.service';
+import { LlmToolsService } from './llm-tools.service';
 import { OnboardingFlowService } from './onboarding-flow.service';
-import { ViewerTokenService } from './viewer-token.service';
-import { formatWeekSchedule, formatDaySchedule } from './schedule-formatter';
+
+const SYSTEM_PROMPT_ONBOARDING = `You are ADCP (Anti-Drama Co-Parenting), a friendly and empathetic co-parenting scheduling assistant. You communicate via text message, so keep responses concise (under 300 chars when possible).
+
+You are onboarding a new parent. You need to collect:
+1. Number of children (1-10)
+2. Ages of each child
+3. Custody arrangement (shared, primary, or undecided)
+4. Distance between parents (in miles)
+5. Any locked days (specific days always with this parent, e.g. "Wednesdays are always mine")
+6. The other parent's phone number
+
+Collect this information conversationally. You don't need to ask one question at a time -- if the parent volunteers multiple pieces of info, accept them all. Use save_onboarding_data to store info as you collect it.
+
+Once you have ALL required information, summarize what you've collected and ask for confirmation. Only call complete_onboarding after the parent confirms.
+
+Be warm but efficient. This is a co-parenting context so be sensitive -- avoid assumptions about why they're co-parenting. Use "the other parent" or "co-parent" rather than "ex."
+
+Today's date: ${new Date().toISOString().slice(0, 10)}`;
+
+const SYSTEM_PROMPT_CONVERSATION = `You are ADCP (Anti-Drama Co-Parenting), a friendly co-parenting scheduling assistant communicating via text message. Keep responses concise and helpful (under 300 chars when possible, but can be longer when sharing schedule data).
+
+You help parents with:
+- Checking their custody schedule (use get_schedule tool)
+- Viewing the full calendar online (use get_viewer_link tool)
+- Requesting day swaps with the other parent (use request_swap tool)
+- Responding to swap requests (use respond_to_swap tool)
+- Reporting disruptions like school closures, illness, weather (use report_disruption tool)
+- General family info (use get_family_info tool)
+
+Important rules:
+- Always use tools to look up real data -- never make up schedule info
+- For schedule queries, convert relative dates ("tomorrow", "this Friday") to YYYY-MM-DD format before calling get_schedule
+- Be empathetic but neutral -- you serve both parents equally
+- If a parent is frustrated, acknowledge their feelings but stay focused on practical help
+- Never take sides in parenting disputes
+- If asked something outside co-parenting scheduling, gently redirect
+
+Today's date: ${new Date().toISOString().slice(0, 10)}`;
+
+const SYSTEM_PROMPT_PARTNER = `You are ADCP (Anti-Drama Co-Parenting), a friendly co-parenting scheduling assistant. A parent has been invited by their co-parent and is joining the platform. Welcome them warmly, explain that their co-parent has set up a shared schedule, and let them know they can start using commands right away.
+
+Keep it brief -- this is text messaging.
+
+Today's date: ${new Date().toISOString().slice(0, 10)}`;
+
+const MAX_HISTORY_MESSAGES = 20;
 
 @Injectable()
 export class MessagingService {
@@ -29,25 +66,16 @@ export class MessagingService {
 
   constructor(
     private readonly conversationService: ConversationService,
-    private readonly messageParserService: MessageParserService,
     private readonly messageSenderService: MessageSenderService,
-    private readonly swapFlowService: SwapFlowService,
+    private readonly llmService: LlmService,
+    private readonly llmToolsService: LlmToolsService,
     private readonly onboardingFlowService: OnboardingFlowService,
-    private readonly viewerTokenService: ViewerTokenService,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     @InjectRepository(FamilyMembership)
     private readonly membershipRepo: Repository<FamilyMembership>,
     @InjectRepository(MessageLog)
     private readonly messageLogRepo: Repository<MessageLog>,
-    @InjectRepository(BaseScheduleVersion)
-    private readonly scheduleVersionRepo: Repository<BaseScheduleVersion>,
-    @InjectRepository(OvernightAssignment)
-    private readonly assignmentRepo: Repository<OvernightAssignment>,
-    @InjectRepository(DisruptionEvent)
-    private readonly disruptionRepo: Repository<DisruptionEvent>,
-    @InjectRepository(AuditLog)
-    private readonly auditLogRepo: Repository<AuditLog>,
   ) {}
 
   async handleInbound(
@@ -62,7 +90,7 @@ export class MessagingService {
         where: { phoneNumber },
       });
 
-      // ── New user: create account and start onboarding ──────────
+      // ── New user: create account and start onboarding ──────
       if (!user) {
         user = await this.userRepo.save(
           this.userRepo.create({
@@ -76,46 +104,34 @@ export class MessagingService {
 
         const session = await this.conversationService.getOrCreateSession(
           user.id,
-          null as any, // no family yet
+          null as any,
           phoneNumber,
           channel,
         );
 
-        // Set session to onboarding state
         await this.conversationService.updateState(session.id, 'onboarding', {
-          onboardingStep: 'welcome',
+          onboardingStep: 'llm',
+          conversationHistory: [],
         });
         session.state = 'onboarding';
-        session.context = { onboardingStep: 'welcome' };
 
-        const response = await this.onboardingFlowService.handleStep(
-          session,
-          body,
-        );
-
-        await this.logMessages(session.id, channel, phoneNumber, body, null, response, providerMessageId);
-
+        const response = await this.handleLlmOnboarding(session, user, body);
+        await this.logMessages(session.id, channel, phoneNumber, body, response, providerMessageId);
         return response;
       }
 
-      // ── Invited partner: hasn't completed onboarding ───────────
+      // ── Invited partner: hasn't completed onboarding ───────
       if (!user.onboardingCompleted) {
-        // Check for a pending membership (partner invite)
         const pendingMembership = await this.membershipRepo.findOne({
           where: { userId: user.id, inviteStatus: 'pending' },
         });
 
         if (pendingMembership) {
-          // Check for existing onboarding session
           const existingSession = await this.findActiveSession(user.id);
 
           if (existingSession && existingSession.state === 'onboarding') {
-            // Continue onboarding (shouldn't normally reach here for partner)
-            const response = await this.onboardingFlowService.handleStep(
-              existingSession,
-              body,
-            );
-            await this.logMessages(existingSession.id, channel, phoneNumber, body, null, response, providerMessageId);
+            const response = await this.handleLlmOnboarding(existingSession, user, body);
+            await this.logMessages(existingSession.id, channel, phoneNumber, body, response, providerMessageId);
             return response;
           }
 
@@ -133,7 +149,7 @@ export class MessagingService {
               user,
             );
 
-            await this.logMessages(session.id, channel, phoneNumber, body, null, response, providerMessageId);
+            await this.logMessages(session.id, channel, phoneNumber, body, response, providerMessageId);
             return response;
           }
 
@@ -141,24 +157,20 @@ export class MessagingService {
         }
       }
 
-      // ── Existing user with active onboarding session ───────────
+      // ── Existing user with active onboarding session ───────
       const existingSession = await this.findActiveSession(user.id);
       if (existingSession && existingSession.state === 'onboarding') {
-        const response = await this.onboardingFlowService.handleStep(
-          existingSession,
-          body,
-        );
-        await this.logMessages(existingSession.id, channel, phoneNumber, body, null, response, providerMessageId);
+        const response = await this.handleLlmOnboarding(existingSession, user, body);
+        await this.logMessages(existingSession.id, channel, phoneNumber, body, response, providerMessageId);
         return response;
       }
 
-      // ── Normal flow: user has a family ─────────────────────────
+      // ── Normal flow: user has a family ─────────────────────
       const membership = await this.membershipRepo.findOne({
         where: { userId: user.id },
       });
 
       if (!membership) {
-        // User exists but no family — start onboarding
         const session = await this.conversationService.getOrCreateSession(
           user.id,
           null as any,
@@ -167,21 +179,17 @@ export class MessagingService {
         );
 
         await this.conversationService.updateState(session.id, 'onboarding', {
-          onboardingStep: 'welcome',
+          onboardingStep: 'llm',
+          conversationHistory: [],
         });
         session.state = 'onboarding';
-        session.context = { onboardingStep: 'welcome' };
 
-        const response = await this.onboardingFlowService.handleStep(
-          session,
-          body,
-        );
-
-        await this.logMessages(session.id, channel, phoneNumber, body, null, response, providerMessageId);
+        const response = await this.handleLlmOnboarding(session, user, body);
+        await this.logMessages(session.id, channel, phoneNumber, body, response, providerMessageId);
         return response;
       }
 
-      // Get or create conversation session
+      // Active conversation with LLM
       const session = await this.conversationService.getOrCreateSession(
         user.id,
         membership.familyId,
@@ -189,58 +197,96 @@ export class MessagingService {
         channel,
       );
 
-      // Parse intent
-      const parsed = this.messageParserService.parse(body, session);
-
-      // Log inbound message
-      await this.messageLogRepo.save(
-        this.messageLogRepo.create({
-          conversationSessionId: session.id,
-          direction: MessageDirection.INBOUND,
-          channel,
-          fromNumber: phoneNumber,
-          toNumber: '',
-          body,
-          parsedIntent: parsed as any,
-          confidence: parsed.confidence,
-          providerMessageId: providerMessageId || null,
-          deliveryStatus: 'delivered',
-        }),
-      );
-
-      // Route by intent
-      const response = await this.routeIntent(
-        parsed,
-        session,
-        user,
-      );
-
-      // Log outbound message
-      await this.messageLogRepo.save(
-        this.messageLogRepo.create({
-          conversationSessionId: session.id,
-          direction: MessageDirection.OUTBOUND,
-          channel,
-          fromNumber: '',
-          toNumber: phoneNumber,
-          body: response,
-          parsedIntent: null,
-          confidence: null,
-          providerMessageId: null,
-          deliveryStatus: 'sent',
-        }),
-      );
-
+      const response = await this.handleLlmConversation(session, user, body);
+      await this.logMessages(session.id, channel, phoneNumber, body, response, providerMessageId);
       return response;
     } catch (err) {
       this.logger.error(`Error handling inbound message: ${err}`);
-      return errorMessage();
+      return "Sorry, something went wrong. Please try again in a moment.";
     }
   }
 
-  /**
-   * Find the most recent active (non-expired) session for a user.
-   */
+  // ── LLM-Powered Onboarding ────────────────────────────────
+
+  private async handleLlmOnboarding(
+    session: ConversationSession,
+    user: User,
+    messageText: string,
+  ): Promise<string> {
+    const ctx = await this.getSessionContext(session.id);
+    let history: LlmMessage[] = ctx.conversationHistory || [];
+
+    // Add user message
+    history.push({ role: 'user', content: messageText });
+
+    // Trim history to prevent context overflow
+    if (history.length > MAX_HISTORY_MESSAGES) {
+      history = history.slice(-MAX_HISTORY_MESSAGES);
+    }
+
+    const tools = this.llmToolsService.getOnboardingTools();
+
+    const result = await this.llmService.chat(
+      SYSTEM_PROMPT_ONBOARDING,
+      history,
+      tools,
+      async (name, input) =>
+        this.llmToolsService.handleOnboardingTool(name, input, session, user),
+    );
+
+    // Save updated history
+    await this.updateSessionContext(session.id, {
+      ...ctx,
+      conversationHistory: result.updatedHistory,
+    });
+
+    return result.response;
+  }
+
+  // ── LLM-Powered Conversation ──────────────────────────────
+
+  private async handleLlmConversation(
+    session: ConversationSession,
+    user: User,
+    messageText: string,
+  ): Promise<string> {
+    const ctx = await this.getSessionContext(session.id);
+    let history: LlmMessage[] = ctx.conversationHistory || [];
+
+    // Add user message
+    history.push({ role: 'user', content: messageText });
+
+    if (history.length > MAX_HISTORY_MESSAGES) {
+      history = history.slice(-MAX_HISTORY_MESSAGES);
+    }
+
+    // Check for pending swap review — add context
+    let systemPrompt = SYSTEM_PROMPT_CONVERSATION;
+    const pending = await this.conversationService.getPendingAction(session.id);
+    if (pending?.type === 'swap_review') {
+      systemPrompt += `\n\nIMPORTANT: This parent has a pending swap request to review from ${pending.data.requestingUserName} for ${pending.data.date}. If they seem to be responding to it (yes/no/approve/decline), use the respond_to_swap tool.`;
+    }
+
+    const tools = this.llmToolsService.getConversationTools();
+
+    const result = await this.llmService.chat(
+      systemPrompt,
+      history,
+      tools,
+      async (name, input) =>
+        this.llmToolsService.handleConversationTool(name, input, session, user),
+    );
+
+    await this.updateSessionContext(session.id, {
+      ...ctx,
+      conversationHistory: result.updatedHistory,
+    });
+
+    return result.response;
+  }
+
+  // ── Helpers ───────────────────────────────────────────────
+
   private async findActiveSession(
     userId: string,
   ): Promise<ConversationSession | null> {
@@ -256,15 +302,27 @@ export class MessagingService {
     return session;
   }
 
-  /**
-   * Log inbound and outbound messages for a conversation.
-   */
+  private async getSessionContext(sessionId: string): Promise<Record<string, any>> {
+    const session = await this.userRepo.manager
+      .getRepository(ConversationSession)
+      .findOne({ where: { id: sessionId } });
+    return (session?.context || {}) as Record<string, any>;
+  }
+
+  private async updateSessionContext(
+    sessionId: string,
+    context: Record<string, any>,
+  ): Promise<void> {
+    await this.userRepo.manager
+      .getRepository(ConversationSession)
+      .update(sessionId, { context } as any);
+  }
+
   private async logMessages(
     sessionId: string,
     channel: string,
     phoneNumber: string,
     inboundBody: string,
-    parsedIntent: any,
     outboundBody: string,
     providerMessageId?: string,
   ): Promise<void> {
@@ -276,7 +334,7 @@ export class MessagingService {
         fromNumber: phoneNumber,
         toNumber: '',
         body: inboundBody,
-        parsedIntent: parsedIntent,
+        parsedIntent: null,
         confidence: null,
         providerMessageId: providerMessageId || null,
         deliveryStatus: 'delivered',
@@ -312,383 +370,5 @@ export class MessagingService {
         deliveryStatus: status,
       } as any);
     }
-  }
-
-  /**
-   * Route a parsed intent to the appropriate handler.
-   * New intents are added here as conversation flows are built.
-   */
-  private async routeIntent(
-    parsed: ParsedIntent,
-    session: ConversationSession,
-    user: User,
-  ): Promise<string> {
-    // Check for context-dependent intents first (APPROVE / DECLINE)
-    if (
-      parsed.intent === MessageIntent.APPROVE ||
-      parsed.intent === MessageIntent.DECLINE
-    ) {
-      return this.handleApproveDecline(
-        parsed.intent === MessageIntent.APPROVE,
-        session,
-        user,
-      );
-    }
-
-    switch (parsed.intent) {
-      case MessageIntent.CONFIRM_SCHEDULE:
-        return this.handleConfirmSchedule(parsed.entities, session);
-
-      case MessageIntent.REPORT_DISRUPTION:
-        return this.handleReportDisruption(parsed.entities, parsed.rawText, user, session);
-
-      case MessageIntent.REPORT_ILLNESS:
-        return this.handleReportIllness(parsed.entities, parsed.rawText, user, session);
-
-      case MessageIntent.REQUEST_SWAP:
-        return this.swapFlowService.initiateSwap(session, parsed, user);
-
-      case MessageIntent.HELP:
-        return helpMessage();
-
-      case MessageIntent.UNKNOWN:
-        return unknownMessage();
-
-      case MessageIntent.VIEW_SCHEDULE:
-        return this.handleViewSchedule(session);
-
-      default:
-        return unknownMessage();
-    }
-  }
-
-  /**
-   * Handle APPROVE or DECLINE based on the pending action in the session.
-   */
-  private async handleApproveDecline(
-    approved: boolean,
-    session: ConversationSession,
-    user: User,
-  ): Promise<string> {
-    const pending = await this.conversationService.getPendingAction(session.id);
-
-    if (!pending) {
-      return approved
-        ? 'Nothing to approve right now.'
-        : 'Nothing to decline right now.';
-    }
-
-    switch (pending.type) {
-      case 'swap_confirm':
-        return approved
-          ? this.swapFlowService.confirmSwap(session, user)
-          : this.swapFlowService.cancelSwap(session);
-
-      case 'swap_review':
-        return this.swapFlowService.handleSwapReview(session, approved, user);
-
-      default:
-        return approved
-          ? 'Nothing to approve right now.'
-          : 'Nothing to decline right now.';
-    }
-  }
-
-  // ─── Schedule Query ──────────────────────────────────────────
-
-  private async handleConfirmSchedule(
-    entities: Record<string, string>,
-    session: ConversationSession,
-  ): Promise<string> {
-    const familyId = session.familyId!;
-
-    // Look up the user's role via membership
-    const membership = await this.membershipRepo.findOne({
-      where: { userId: session.userId, familyId },
-    });
-    const userRole = membership?.role || 'parent_a';
-
-    // Find active schedule version for this family
-    const activeVersion = await this.scheduleVersionRepo.findOne({
-      where: { familyId, isActive: true },
-    });
-
-    if (!activeVersion) {
-      return 'No schedule has been generated yet.';
-    }
-
-    // Determine if asking about a specific day or the whole week
-    const specificDate = this.resolveDate(entities);
-
-    if (specificDate) {
-      const assignment = await this.assignmentRepo.findOne({
-        where: {
-          scheduleVersionId: activeVersion.id,
-          date: specificDate,
-        },
-      });
-
-      return formatDaySchedule(assignment, specificDate, userRole);
-    }
-
-    // Week lookup: current week Mon-Sun
-    const { start, end } = this.getCurrentWeekRange();
-    const assignments = await this.assignmentRepo.find({
-      where: {
-        scheduleVersionId: activeVersion.id,
-        date: Between(start, end),
-      },
-      order: { date: 'ASC' },
-    });
-
-    if (assignments.length === 0) {
-      return 'No schedule found for this week.';
-    }
-
-    return formatWeekSchedule(assignments, userRole);
-  }
-
-  // ─── Disruption Reporting ────────────────────────────────────
-
-  private async handleReportDisruption(
-    entities: Record<string, string>,
-    rawText: string,
-    user: User,
-    session: ConversationSession,
-  ): Promise<string> {
-    const date = this.resolveDate(entities) || this.todayStr();
-    const disruptionType = this.classifyDisruptionType(rawText);
-
-    const disruption = await this.disruptionRepo.save(
-      this.disruptionRepo.create({
-        familyId: session.familyId!,
-        reportedBy: user.id,
-        type: disruptionType,
-        date,
-        description: rawText,
-        childName: entities.child_name || null,
-        status: 'active',
-      }),
-    );
-
-    await this.auditLogRepo.save(
-      this.auditLogRepo.create({
-        familyId: session.familyId!,
-        actorId: user.id,
-        action: 'disruption_reported',
-        entityType: 'disruption_event',
-        entityId: disruption.id,
-        metadata: { type: disruptionType, date },
-      }),
-    );
-
-    const otherParentName = await this.notifyOtherParent(
-      session.familyId!,
-      user.id,
-      `${user.displayName} reported a disruption: ${this.formatDisruptionLabel(disruptionType)} on ${date}. Check your schedule for updates.`,
-    );
-
-    const label = this.formatDisruptionLabel(disruptionType);
-    const notifiedMsg = otherParentName
-      ? `${otherParentName} has been notified.`
-      : 'Other parent has been notified.';
-
-    return `Got it. ${label} logged for ${date}. ${notifiedMsg}`;
-  }
-
-  private async handleReportIllness(
-    entities: Record<string, string>,
-    rawText: string,
-    user: User,
-    session: ConversationSession,
-  ): Promise<string> {
-    const date = this.resolveDate(entities) || this.todayStr();
-    const childName = entities.child_name || null;
-
-    const disruption = await this.disruptionRepo.save(
-      this.disruptionRepo.create({
-        familyId: session.familyId!,
-        reportedBy: user.id,
-        type: 'illness',
-        date,
-        description: rawText,
-        childName,
-        status: 'active',
-      }),
-    );
-
-    await this.auditLogRepo.save(
-      this.auditLogRepo.create({
-        familyId: session.familyId!,
-        actorId: user.id,
-        action: 'illness_reported',
-        entityType: 'disruption_event',
-        entityId: disruption.id,
-        metadata: { date, childName },
-      }),
-    );
-
-    const subject = childName || 'your child';
-    const otherParentName = await this.notifyOtherParent(
-      session.familyId!,
-      user.id,
-      `${user.displayName} reported an illness for ${subject} on ${date}. Please coordinate as needed.`,
-    );
-
-    const notifiedMsg = otherParentName
-      ? `${otherParentName} has been notified.`
-      : 'Other parent has been notified.';
-    const target = childName || date;
-
-    return `Got it. Illness reported for ${target}. ${notifiedMsg}`;
-  }
-
-  // ─── Viewer Link ────────────────────────────────────────────
-
-  private handleViewSchedule(session: ConversationSession): string {
-    const { url } = this.viewerTokenService.generateViewerToken(
-      session.familyId!,
-      session.userId,
-    );
-    return `Here's your schedule:\n${url}\n\nThis link expires in 7 days.`;
-  }
-
-  // ─── Helpers ─────────────────────────────────────────────────
-
-  /**
-   * Resolve parsed entities into a YYYY-MM-DD date string.
-   */
-  private resolveDate(entities: Record<string, string>): string | null {
-    const now = new Date();
-
-    if (entities.relative_date) {
-      const rel = entities.relative_date.toLowerCase();
-      if (rel === 'today' || rel === 'tonight') {
-        return this.dateToStr(now);
-      }
-      if (rel === 'tomorrow') {
-        const d = new Date(now);
-        d.setDate(d.getDate() + 1);
-        return this.dateToStr(d);
-      }
-      // "this weekend", "next week" etc. — return null to get full week
-      return null;
-    }
-
-    if (entities.day) {
-      return this.nextOccurrenceOfDay(entities.day);
-    }
-
-    if (entities.date) {
-      const [month, day] = entities.date.split('/').map(Number);
-      const year = now.getFullYear();
-      const d = new Date(year, month - 1, day);
-      return this.dateToStr(d);
-    }
-
-    return null;
-  }
-
-  private nextOccurrenceOfDay(dayName: string): string {
-    const dayMap: Record<string, number> = {
-      sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
-      thursday: 4, friday: 5, saturday: 6,
-    };
-    const target = dayMap[dayName.toLowerCase()];
-    if (target === undefined) return this.todayStr();
-
-    const now = new Date();
-    const current = now.getDay();
-    let diff = target - current;
-    if (diff < 0) diff += 7;
-    if (diff === 0) return this.dateToStr(now);
-
-    const d = new Date(now);
-    d.setDate(d.getDate() + diff);
-    return this.dateToStr(d);
-  }
-
-  private getCurrentWeekRange(): { start: string; end: string } {
-    const now = new Date();
-    const day = now.getDay(); // 0=Sun
-    const diffToMon = day === 0 ? -6 : 1 - day;
-    const monday = new Date(now);
-    monday.setDate(now.getDate() + diffToMon);
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-    return { start: this.dateToStr(monday), end: this.dateToStr(sunday) };
-  }
-
-  private dateToStr(d: Date): string {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
-  private todayStr(): string {
-    return this.dateToStr(new Date());
-  }
-
-  private classifyDisruptionType(text: string): string {
-    const lower = text.toLowerCase();
-    if (/school closed|no school|school cancel/.test(lower)) return 'school_closure';
-    if (/snow day|weather|ice|storm/.test(lower)) return 'weather_closure';
-    if (/holiday/.test(lower)) return 'holiday';
-    if (/early dismissal/.test(lower)) return 'early_dismissal';
-    if (/cancel/.test(lower)) return 'cancellation';
-    if (/closed|closure/.test(lower)) return 'closure';
-    return 'other';
-  }
-
-  private formatDisruptionLabel(type: string): string {
-    const labels: Record<string, string> = {
-      school_closure: 'School closure',
-      weather_closure: 'Weather closure',
-      holiday: 'Holiday',
-      early_dismissal: 'Early dismissal',
-      cancellation: 'Cancellation',
-      closure: 'Closure',
-      illness: 'Illness',
-      other: 'Disruption',
-    };
-    return labels[type] || 'Disruption';
-  }
-
-  /**
-   * Find the other parent in the family and send them an SMS notification.
-   * Returns the other parent's display name if found, or null.
-   */
-  private async notifyOtherParent(
-    familyId: string,
-    currentUserId: string,
-    message: string,
-  ): Promise<string | null> {
-    const allMembers = await this.membershipRepo.find({
-      where: { familyId },
-    });
-
-    const otherMember = allMembers.find(
-      (m) =>
-        m.userId !== currentUserId &&
-        (m.role === 'parent_a' || m.role === 'parent_b'),
-    );
-
-    if (!otherMember || !otherMember.userId) return null;
-
-    const otherUser = await this.userRepo.findOne({
-      where: { id: otherMember.userId },
-    });
-
-    if (!otherUser) return null;
-
-    if (otherUser.phoneNumber) {
-      await this.messageSenderService.sendMessage(
-        otherUser.phoneNumber,
-        message,
-      );
-    }
-
-    return otherUser.displayName;
   }
 }
