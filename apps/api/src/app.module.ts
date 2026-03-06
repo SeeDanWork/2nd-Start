@@ -17,6 +17,7 @@ import { NotificationModule } from './notifications/notification.module';
 import { EmailModule } from './email/email.module';
 import { FamilyContextModule } from './family-context/family-context.module';
 import { MessagingModule } from './messaging/messaging.module';
+import { CalendarSyncModule } from './calendar-sync/calendar-sync.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { MessagingModule } from './messaging/messaging.module';
     OnboardingModule,
     NotificationModule,
     MessagingModule,
+    CalendarSyncModule,
   ],
 })
 export class AppModule {}

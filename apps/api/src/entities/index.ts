@@ -24,3 +24,5 @@ export { NotificationRecord } from './notification-record.entity';
 export { ConversationSession } from './conversation-session.entity';
 export { MessageLog } from './message-log.entity';
 export { DisruptionEvent } from './disruption-event.entity';
+export { CalendarConnection } from './calendar-connection.entity';
+export { CalendarEvent } from './calendar-event.entity';
