@@ -21,3 +21,5 @@ export { StabilitySnapshot } from './stability-snapshot.entity';
 export { AuditLog } from './audit-log.entity';
 export { ShareLink } from './share-link.entity';
 export { NotificationRecord } from './notification-record.entity';
+export { ConversationSession } from './conversation-session.entity';
+export { MessageLog } from './message-log.entity';
