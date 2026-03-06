@@ -399,29 +399,118 @@ export class LlmToolsService {
       );
     }
 
-    // 7. Update session
+    // 7. Generate default schedule immediately
+    await this.generateDefaultSchedule(family.id, arrangement, lockedDays);
+
+    // 8. Set family active right away
+    await this.familyRepo.update(family.id, { status: 'active' } as any);
+
+    // 9. Update session
     await this.sessionRepo.update(session.id, { familyId: family.id } as any);
     await this.conversationService.updateState(session.id, 'idle', {});
 
-    // 8. Mark user onboarded
+    // 10. Mark user onboarded
     await this.userRepo.update(session.userId, {
       onboardingCompleted: true,
     } as any);
 
-    // 9. Send partner invite
+    // 11. Send partner invite
     const inviterName = user.displayName || 'Your co-parent';
     await this.messageSenderService.sendMessage(
       partnerPhone,
       `You've been invited to ADCP by ${inviterName}. Reply START to begin setting up your co-parenting schedule.`,
     );
 
+    // 12. Generate viewer link for immediate use
+    const { url } = this.viewerTokenService.generateViewerToken(
+      family.id,
+      session.userId,
+    );
+
     this.logger.log(
-      `Family ${family.id} created via LLM onboarding by user ${session.userId}`,
+      `Family ${family.id} created with default schedule via LLM onboarding by user ${session.userId}`,
     );
 
     return {
-      text: `Family created successfully. Family ID: ${family.id}. Invite sent to ${partnerPhone}. The user's session is now active.`,
+      text: `Family created successfully. A default schedule has been generated based on the ${arrangement} arrangement. Invite sent to ${partnerPhone}. Viewer link: ${url} — the parent can view their schedule immediately. When the other parent joins, the schedule can be adjusted.`,
     };
+  }
+
+  // ── Default Schedule Generation ───────────────────────────────
+
+  private async generateDefaultSchedule(
+    familyId: string,
+    arrangement: string,
+    lockedDays: number[],
+  ): Promise<void> {
+    const today = new Date();
+    const horizonStart = this.dateToStr(today);
+    const endDate = new Date(today);
+    endDate.setDate(endDate.getDate() + 8 * 7); // 8 weeks
+    const horizonEnd = this.dateToStr(endDate);
+
+    // Create schedule version
+    const version = await this.scheduleVersionRepo.save(
+      this.scheduleVersionRepo.create({
+        familyId,
+        version: 1,
+        constraintSetVersion: 1,
+        horizonStart,
+        horizonEnd,
+        solverStatus: 'default',
+        solverMetadata: { source: 'onboarding_default', arrangement },
+        createdBy: 'generation',
+        isActive: true,
+      }),
+    );
+
+    // Generate assignments based on arrangement
+    const assignments: Array<Partial<OvernightAssignment>> = [];
+    const cursor = new Date(today);
+
+    while (cursor <= endDate) {
+      const dateStr = this.dateToStr(cursor);
+      const dow = cursor.getDay(); // 0=Sun...6=Sat
+      let assignedTo: string;
+
+      if (lockedDays.includes(dow)) {
+        // Locked days always go to parent_a (the onboarding parent)
+        assignedTo = 'parent_a';
+      } else if (arrangement === 'primary') {
+        // Primary: parent_a weekdays, parent_b weekends
+        assignedTo = (dow === 0 || dow === 6) ? 'parent_b' : 'parent_a';
+      } else {
+        // Shared / undecided: alternating weeks
+        const weekNum = Math.floor(
+          (cursor.getTime() - today.getTime()) / (7 * 24 * 60 * 60 * 1000),
+        );
+        assignedTo = weekNum % 2 === 0 ? 'parent_a' : 'parent_b';
+      }
+
+      const prevAssignment = assignments.length > 0
+        ? assignments[assignments.length - 1]
+        : null;
+      const isTransition = prevAssignment
+        ? prevAssignment.assignedTo !== assignedTo
+        : false;
+
+      assignments.push({
+        scheduleVersionId: version.id,
+        familyId,
+        date: dateStr,
+        assignedTo,
+        isTransition,
+        source: 'generated',
+      });
+
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    await this.assignmentRepo.save(assignments);
+
+    this.logger.log(
+      `Generated default ${arrangement} schedule for family ${familyId}: ${assignments.length} days`,
+    );
   }
 
   // ── Conversation Tool Implementations ────────────────────────

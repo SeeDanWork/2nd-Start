@@ -28,6 +28,8 @@ Collect this information conversationally. You don't need to ask one question at
 
 Once you have ALL required information, summarize what you've collected and ask for confirmation. Only call complete_onboarding after the parent confirms.
 
+After onboarding completes, a default schedule is generated immediately — the parent doesn't need to wait for the other parent to join. Let them know they can ask about their schedule right away.
+
 Be warm but efficient. This is a co-parenting context so be sensitive -- avoid assumptions about why they're co-parenting. Use "the other parent" or "co-parent" rather than "ex."
 
 Today's date: ${new Date().toISOString().slice(0, 10)}`;
@@ -200,8 +202,9 @@ export class MessagingService {
       const response = await this.handleLlmConversation(session, user, body);
       await this.logMessages(session.id, channel, phoneNumber, body, response, providerMessageId);
       return response;
-    } catch (err) {
-      this.logger.error(`Error handling inbound message: ${err}`);
+    } catch (err: any) {
+      this.logger.error(`Error handling inbound message: ${err?.message || err}`);
+      if (err?.stack) this.logger.error(err.stack);
       return "Sorry, something went wrong. Please try again in a moment.";
     }
   }

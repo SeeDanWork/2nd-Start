@@ -488,23 +488,17 @@ export class OnboardingFlowService {
       onboardingCompleted: true,
     } as any);
 
-    // Check if we can activate the family
-    const family = await this.familyRepo.findOne({
-      where: { id: membership.familyId },
-    });
-
-    if (family && family.status === 'onboarding') {
-      await this.familyRepo.update(family.id, { status: 'active' } as any);
-    }
-
     this.logger.log(
       `Partner ${user.id} completed onboarding for family ${membership.familyId}`,
     );
 
     return (
       "Welcome! You've joined the family on ADCP.\n\n" +
-      "Your co-parenting schedule is being set up. We'll notify you when it's ready.\n\n" +
-      'Type HELP for available commands.'
+      "A schedule has already been created. You can ask me things like:\n" +
+      "- \"Who has the kids this week?\"\n" +
+      "- \"Show me the calendar\"\n" +
+      "- \"Can we swap Friday?\"\n\n" +
+      "If anything needs adjusting, just let me know."
     );
   }
 
