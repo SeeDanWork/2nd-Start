@@ -37,18 +37,24 @@ export function SmsSimulator() {
     }
   }, [messages]);
 
+  const hasAutoSent = useRef(false);
+
+  // Auto-send greeting on connect to trigger the LLM's first response
+  useEffect(() => {
+    if (isConnected && !hasAutoSent.current) {
+      hasAutoSent.current = true;
+      handleSend('Hi');
+    }
+  }, [isConnected]);
+
   function handleConnect() {
     const cleaned = phoneNumber.trim();
     if (!cleaned) return;
     const formatted = cleaned.startsWith('+') ? cleaned : `+1${cleaned.replace(/\D/g, '')}`;
     setPhoneNumber(formatted);
+    hasAutoSent.current = false;
     setIsConnected(true);
-    setMessages([{
-      id: 'system-0',
-      from: 'system',
-      text: `Connected as ${formatted}. Type a message to begin.`,
-      timestamp: new Date().toLocaleTimeString(),
-    }]);
+    setMessages([]);
   }
 
   function handleDisconnect() {
