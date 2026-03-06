@@ -7,8 +7,10 @@ import {
   ChangeBudgetLedger,
   EmergencyMode,
   AuditLog,
+  FamilyMembership,
 } from '../entities';
 import { FamilyContextModule } from '../family-context/family-context.module';
+import { NotificationModule } from '../notifications/notification.module';
 
 @Module({
   imports: [
@@ -17,8 +19,10 @@ import { FamilyContextModule } from '../family-context/family-context.module';
       ChangeBudgetLedger,
       EmergencyMode,
       AuditLog,
+      FamilyMembership,
     ]),
     FamilyContextModule,
+    NotificationModule,
   ],
   controllers: [GuardrailsController],
   providers: [GuardrailsService],

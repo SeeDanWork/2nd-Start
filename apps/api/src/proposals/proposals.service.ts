@@ -18,6 +18,7 @@ import {
   AuditLog,
   ConstraintSet,
   PreConsentRule,
+  FamilyMembership,
 } from '../entities';
 import {
   RequestStatus,
@@ -31,10 +32,15 @@ import {
   SOLVER_MAX_SOLUTIONS,
   DEFAULT_PROPOSAL_HORIZON_WEEKS,
   ApplyMode,
+  NotificationType,
+  MemberRole,
 } from '@adcp/shared';
 import { SchedulesService } from '../schedules/schedules.service';
 import { FamilyContextService } from '../family-context/family-context.service';
 import { DisruptionsService } from '../disruptions/disruptions.service';
+import { NotificationService } from '../notifications/notification.service';
+import { FamilyGateway } from '../notifications/family.gateway';
+import { FeedbackService } from '../feedback/feedback.service';
 
 @Injectable()
 export class ProposalsService {
@@ -59,10 +65,15 @@ export class ProposalsService {
     private readonly constraintSetRepo: Repository<ConstraintSet>,
     @InjectRepository(PreConsentRule)
     private readonly preConsentRepo: Repository<PreConsentRule>,
+    @InjectRepository(FamilyMembership)
+    private readonly membershipRepo: Repository<FamilyMembership>,
     private readonly httpService: HttpService,
     private readonly schedulesService: SchedulesService,
     private readonly familyContextService: FamilyContextService,
     private readonly disruptionsService: DisruptionsService,
+    private readonly notificationService: NotificationService,
+    private readonly familyGateway: FamilyGateway,
+    private readonly feedbackService: FeedbackService,
   ) {}
 
   async generateProposals(
@@ -160,8 +171,12 @@ export class ProposalsService {
       currentAssignments.map((a) => ({ date: a.date, assignedTo: a.assignedTo })),
     );
 
+    // Apply feedback profile adjustments
+    const feedbackProfile = await this.feedbackService.getProfile(familyId);
+    const feedbackAdjusted = this.feedbackService.getAdjustedWeights(adjustedWeights, feedbackProfile);
+
     // Apply disruption weight adjustments
-    const finalWeights = { ...adjustedWeights };
+    const finalWeights = { ...feedbackAdjusted };
     for (const [key, multiplier] of Object.entries(disruptionOverlay.weight_adjustments)) {
       const camelKey = key as keyof typeof finalWeights;
       if (camelKey in finalWeights) {
@@ -286,7 +301,46 @@ export class ProposalsService {
     );
 
     bundle.options = options;
+
+    // Fire-and-forget: notify other parent + WebSocket
+    this.notifyProposalGenerated(familyId, request.requestedBy, requestId, bundle.id, options.length);
+
     return bundle;
+  }
+
+  private async notifyProposalGenerated(
+    familyId: string,
+    requestedBy: string,
+    requestId: string,
+    bundleId: string,
+    optionCount: number,
+  ): Promise<void> {
+    try {
+      this.familyGateway.emitProposalReceived(familyId, {
+        requestId,
+        bundleId,
+        optionCount,
+      });
+
+      const members = await this.membershipRepo.find({ where: { familyId } });
+      const otherParents = members.filter(
+        (m) =>
+          m.userId &&
+          m.userId !== requestedBy &&
+          (m.role === MemberRole.PARENT_A || m.role === MemberRole.PARENT_B),
+      );
+
+      for (const parent of otherParents) {
+        await this.notificationService.send(
+          familyId,
+          parent.userId!,
+          NotificationType.PROPOSAL_RECEIVED,
+          { referenceId: bundleId, requestId, optionCount },
+        );
+      }
+    } catch (err: any) {
+      this.logger.warn(`Proposal notification failed (non-blocking): ${err.message}`);
+    }
   }
 
   async getProposals(familyId: string, requestId: string): Promise<ProposalBundle | null> {

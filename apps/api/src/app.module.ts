@@ -19,6 +19,8 @@ import { FamilyContextModule } from './family-context/family-context.module';
 import { DisruptionsModule } from './disruptions/disruptions.module';
 import { PresetsModule } from './presets/presets.module';
 import { GoogleCalendarModule } from './google-calendar/google-calendar.module';
+import { MediationModule } from './mediation/mediation.module';
+import { FeedbackModule } from './feedback/feedback.module';
 
 @Module({
   imports: [
@@ -51,6 +53,8 @@ import { GoogleCalendarModule } from './google-calendar/google-calendar.module';
     DisruptionsModule,
     PresetsModule,
     GoogleCalendarModule,
+    FeedbackModule,
+    MediationModule,
   ],
 })
 export class AppModule {}

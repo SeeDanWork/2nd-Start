@@ -218,3 +218,10 @@ export const STABILITY_WINDOW_DAYS = 7;
 // ─── Account Deletion ───────────────────────────────────────
 
 export const ACCOUNT_DELETION_GRACE_DAYS = 30;
+
+// ─── Mediation ─────────────────────────────────────────────
+
+export const MAX_FEEDBACK_DELTA_PER_WEIGHT = 50;
+export const FAIRNESS_DRIFT_WARNING_FRACTION = 0.75;
+export const BUDGET_LOW_WARNING_FRACTION = 0.75;
+export const MAX_OBJECTION_ROUNDS = 2;

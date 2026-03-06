@@ -160,6 +160,9 @@ export enum AuditAction {
   MEMBER_INVITED = 'member_invited',
   MEMBER_ACCEPTED = 'member_accepted',
   SHARE_LINK_CREATED = 'share_link_created',
+  FEEDBACK_SUBMITTED = 'feedback_submitted',
+  OBJECTION_FILED = 'objection_filed',
+  PROPOSALS_REGENERATED = 'proposals_regenerated',
 }
 
 export enum AuditEntityType {
@@ -170,6 +173,7 @@ export enum AuditEntityType {
   EMERGENCY = 'emergency',
   MEMBER = 'member',
   SHARE_LINK = 'share_link',
+  FEEDBACK = 'feedback',
 }
 
 // ─── Sharing ────────────────────────────────────────────────
@@ -202,6 +206,9 @@ export enum NotificationType {
   EMERGENCY_RETURN = 'emergency_return',
   BUDGET_LOW = 'budget_low',
   FAIRNESS_DRIFT = 'fairness_drift',
+  OBJECTION_RECEIVED = 'objection_received',
+  PROPOSALS_REGENERATED = 'proposals_regenerated',
+  PRECONFLICT_ALERT = 'preconflict_alert',
 }
 
 // ─── Living Arrangement ────────────────────────────────────

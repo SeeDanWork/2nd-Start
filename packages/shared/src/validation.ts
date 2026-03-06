@@ -288,6 +288,31 @@ export const createManualScheduleSchema = z.object({
   assignments: z.array(manualAssignmentSchema).min(1),
 });
 
+// ─── Mediation Feedback ────────────────────────────────────
+
+export const submitFeedbackSchema = z.object({
+  feedbacks: z.array(
+    z.object({
+      category: z.enum(['fairness', 'transitions', 'inconvenience', 'routine', 'timing']),
+      severity: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+      freeText: z.string().max(500).optional(),
+    }),
+  ).min(1).max(10),
+  requestId: uuidString.optional(),
+  optionId: uuidString.optional(),
+});
+
+export const fileObjectionSchema = z.object({
+  feedbacks: z.array(
+    z.object({
+      category: z.enum(['fairness', 'transitions', 'inconvenience', 'routine', 'timing']),
+      severity: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+      freeText: z.string().max(500).optional(),
+    }),
+  ).min(1).max(10),
+  declinedOptionIds: z.array(uuidString).min(1),
+});
+
 // ─── Query Params ───────────────────────────────────────────
 
 export const dateRangeQuerySchema = z.object({
