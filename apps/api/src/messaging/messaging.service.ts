@@ -19,6 +19,7 @@ import { helpMessage } from './templates/help';
 import { unknownMessage } from './templates/unknown';
 import { errorMessage } from './templates/error';
 import { SwapFlowService } from './swap-flow.service';
+import { ViewerTokenService } from './viewer-token.service';
 import { formatWeekSchedule, formatDaySchedule } from './schedule-formatter';
 
 @Injectable()
@@ -30,6 +31,7 @@ export class MessagingService {
     private readonly messageParserService: MessageParserService,
     private readonly messageSenderService: MessageSenderService,
     private readonly swapFlowService: SwapFlowService,
+    private readonly viewerTokenService: ViewerTokenService,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     @InjectRepository(FamilyMembership)
@@ -184,7 +186,7 @@ export class MessagingService {
         return unknownMessage();
 
       case MessageIntent.VIEW_SCHEDULE:
-        return 'This feature is coming soon. Type HELP for available commands.';
+        return this.handleViewSchedule(session);
 
       default:
         return unknownMessage();
@@ -370,6 +372,16 @@ export class MessagingService {
     const target = childName || date;
 
     return `Got it. Illness reported for ${target}. ${notifiedMsg}`;
+  }
+
+  // ─── Viewer Link ────────────────────────────────────────────
+
+  private handleViewSchedule(session: ConversationSession): string {
+    const { url } = this.viewerTokenService.generateViewerToken(
+      session.familyId,
+      session.userId,
+    );
+    return `Here's your schedule:\n${url}\n\nThis link expires in 7 days.`;
   }
 
   // ─── Helpers ─────────────────────────────────────────────────

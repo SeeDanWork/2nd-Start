@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   ConversationSession,
@@ -13,11 +14,13 @@ import {
   Request,
 } from '../entities';
 import { MessagingController } from './messaging.controller';
+import { ViewerController } from './viewer.controller';
 import { MessagingService } from './messaging.service';
 import { ConversationService } from './conversation.service';
 import { MessageParserService } from './message-parser.service';
 import { MessageSenderService } from './message-sender.service';
 import { SwapFlowService } from './swap-flow.service';
+import { ViewerTokenService } from './viewer-token.service';
 
 @Module({
   imports: [
@@ -33,14 +36,19 @@ import { SwapFlowService } from './swap-flow.service';
       AuditLog,
       Request,
     ]),
+    JwtModule.register({
+      secret: process.env.JWT_SECRET || 'dev-secret-change-in-production',
+      signOptions: { expiresIn: process.env.JWT_ACCESS_TTL || '1h' },
+    }),
   ],
-  controllers: [MessagingController],
+  controllers: [MessagingController, ViewerController],
   providers: [
     MessagingService,
     ConversationService,
     MessageParserService,
     MessageSenderService,
     SwapFlowService,
+    ViewerTokenService,
   ],
   exports: [MessagingService, MessageSenderService],
 })
