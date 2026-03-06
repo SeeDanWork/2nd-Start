@@ -9,11 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@adcp/shared": "*",
+    "axios": "^1.7.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "zustand": "^5.0.0",
-    "axios": "^1.7.0",
-    "@adcp/shared": "*"
+    "react-router-dom": "^7.13.1",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
