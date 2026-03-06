@@ -218,3 +218,66 @@ export enum EmergencyModeStatus {
   RETURNED = 'returned',
   CANCELLED = 'cancelled',
 }
+
+// ─── Messaging ──────────────────────────────────────────────
+
+export enum MessagingChannel {
+  SMS = 'sms',
+  WHATSAPP = 'whatsapp',
+}
+
+export enum ConversationState {
+  IDLE = 'idle',
+  ONBOARDING = 'onboarding',
+  REQUESTING = 'requesting',
+  RESPONDING = 'responding',
+  REPORTING = 'reporting',
+  REVIEWING = 'reviewing',
+}
+
+export enum MessageDirection {
+  INBOUND = 'inbound',
+  OUTBOUND = 'outbound',
+}
+
+export enum MessageIntent {
+  REPORT_ILLNESS = 'report_illness',
+  REQUEST_SWAP = 'request_swap',
+  CONFIRM_SCHEDULE = 'confirm_schedule',
+  REPORT_DISRUPTION = 'report_disruption',
+  APPROVE = 'approve',
+  DECLINE = 'decline',
+  VIEW_SCHEDULE = 'view_schedule',
+  HELP = 'help',
+  UNKNOWN = 'unknown',
+}
+
+export enum DeliveryStatus {
+  QUEUED = 'queued',
+  SENT = 'sent',
+  DELIVERED = 'delivered',
+  FAILED = 'failed',
+  UNDELIVERED = 'undelivered',
+}
+
+// ─── Calendar Sync ──────────────────────────────────────────
+
+export enum CalendarProvider {
+  GOOGLE = 'google',
+  APPLE = 'apple',
+  OUTLOOK = 'outlook',
+}
+
+export enum CalendarEventType {
+  CUSTODY_BLOCK = 'custody_block',
+  EXCHANGE = 'exchange',
+  HOLIDAY = 'holiday',
+  DISRUPTION = 'disruption',
+}
+
+export enum CalendarSyncStatus {
+  PENDING = 'pending',
+  SYNCED = 'synced',
+  FAILED = 'failed',
+  STALE = 'stale',
+}
