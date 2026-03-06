@@ -6,12 +6,18 @@ import {
   User,
   Family,
   FamilyMembership,
+  BaseScheduleVersion,
+  OvernightAssignment,
+  DisruptionEvent,
+  AuditLog,
+  Request,
 } from '../entities';
 import { MessagingController } from './messaging.controller';
 import { MessagingService } from './messaging.service';
 import { ConversationService } from './conversation.service';
 import { MessageParserService } from './message-parser.service';
 import { MessageSenderService } from './message-sender.service';
+import { SwapFlowService } from './swap-flow.service';
 
 @Module({
   imports: [
@@ -21,6 +27,11 @@ import { MessageSenderService } from './message-sender.service';
       User,
       Family,
       FamilyMembership,
+      BaseScheduleVersion,
+      OvernightAssignment,
+      DisruptionEvent,
+      AuditLog,
+      Request,
     ]),
   ],
   controllers: [MessagingController],
@@ -29,6 +40,7 @@ import { MessageSenderService } from './message-sender.service';
     ConversationService,
     MessageParserService,
     MessageSenderService,
+    SwapFlowService,
   ],
   exports: [MessagingService, MessageSenderService],
 })

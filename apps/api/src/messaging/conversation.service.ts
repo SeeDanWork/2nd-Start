@@ -64,6 +64,41 @@ export class ConversationService {
     await this.sessionRepo.update(sessionId, update as any);
   }
 
+  async setPendingAction(
+    sessionId: string,
+    action: { type: string; requestId?: string; data?: Record<string, any> },
+  ): Promise<void> {
+    const session = await this.sessionRepo.findOne({
+      where: { id: sessionId },
+    });
+    if (!session) return;
+
+    const context = { ...session.context, pendingAction: action };
+    await this.sessionRepo.update(sessionId, { context } as any);
+  }
+
+  async getPendingAction(
+    sessionId: string,
+  ): Promise<{ type: string; requestId?: string; data?: any } | null> {
+    const session = await this.sessionRepo.findOne({
+      where: { id: sessionId },
+    });
+    if (!session || !session.context) return null;
+
+    const pending = (session.context as any).pendingAction;
+    return pending || null;
+  }
+
+  async clearPendingAction(sessionId: string): Promise<void> {
+    const session = await this.sessionRepo.findOne({
+      where: { id: sessionId },
+    });
+    if (!session) return;
+
+    const { pendingAction, ...rest } = session.context as any;
+    await this.sessionRepo.update(sessionId, { context: rest } as any);
+  }
+
   async expireStale(): Promise<number> {
     const cutoff = new Date(Date.now() - 30 * 60 * 1000);
 
