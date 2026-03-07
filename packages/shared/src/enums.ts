@@ -41,6 +41,8 @@ export enum ConstraintType {
   DAYCARE_EXCHANGE_ONLY = 'daycare_exchange_only',
   NO_SCHOOL_NIGHT_TRANSITION = 'no_school_night_transition',
   HANDOFF_LOCATION_PREFERENCE = 'handoff_location_preference',
+  FAIRNESS_TARGET = 'fairness_target',
+  UNAVAILABLE_DAY = 'unavailable_day',
 }
 
 export enum ConstraintHardness {

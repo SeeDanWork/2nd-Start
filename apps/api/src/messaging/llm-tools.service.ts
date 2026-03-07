@@ -20,9 +20,12 @@ import {
   ConstraintHardness,
   ScheduleTemplate,
   OnboardingStage,
+  SiblingCohesionPolicy,
   BootstrapFacts,
   createEmptyBootstrapFacts,
   getRequiredMissingFields,
+  getCompletionMissingFields,
+  validateCoherence,
 } from '@adcp/shared';
 import { ConversationService } from './conversation.service';
 import { MessageSenderService } from './message-sender.service';
@@ -119,6 +122,43 @@ export class LlmToolsService {
               type: 'string',
               description: 'Other parent phone number in E.164 format (e.g. +15551234567)',
             },
+            // ─── Children profiles ───
+            children: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  age: { type: 'number' },
+                  school_days: {
+                    type: 'array',
+                    items: { type: 'number' },
+                    description: 'Days of week child attends school (0=Sun...6=Sat)',
+                  },
+                  anchor_notes: { type: 'string', description: 'Child-specific schedule anchors' },
+                  preference_signals: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Expressed preferences for this child',
+                  },
+                },
+                required: ['age'],
+              },
+              description: 'Per-child profiles with optional school/anchor info',
+            },
+            // ─── Current pattern details ───
+            current_observed_split_pct: {
+              type: 'number',
+              description: 'Current observed split percentage for parent A (0-100)',
+            },
+            responsibility_model: {
+              type: 'string',
+              enum: ['overnight_primary', 'school_night_primary', 'pickup_dropoff_primary', 'mixed'],
+              description: 'Which responsibility defines the primary parent',
+            },
+            current_stretch_length: {
+              type: 'number',
+              description: 'Typical consecutive nights in current arrangement',
+            },
             exchange_modality: {
               type: 'string',
               enum: [
@@ -130,12 +170,37 @@ export class LlmToolsService {
               ],
               description: 'How exchanges happen',
             },
+            exchange_timing: {
+              type: 'object',
+              properties: {
+                type: {
+                  type: 'string',
+                  enum: ['after_school', 'evening', 'morning_dropoff', 'pickup', 'custom'],
+                },
+                details: { type: 'string' },
+              },
+              description: 'When exchanges happen',
+            },
+            // ─── School/daycare ───
             school_daycare_schedule: {
               type: 'array',
               items: { type: 'number' },
               description:
                 'Days of week children attend school/daycare (0=Sun...6=Sat)',
             },
+            school_exchange_allowed: {
+              type: 'boolean',
+              description: 'Can school serve as exchange point?',
+            },
+            school_exchange_preferred: {
+              type: 'boolean',
+              description: 'Is school the preferred exchange point?',
+            },
+            children_share_school_rhythm: {
+              type: 'boolean',
+              description: 'Do all children share the same school schedule?',
+            },
+            // ─── Weekly rhythm ───
             midweek_pattern: {
               type: 'string',
               enum: ['none', 'dinner_visit', 'overnight', 'afternoon'],
@@ -147,7 +212,40 @@ export class LlmToolsService {
               enum: ['alternating', 'split', 'fixed_one_parent', 'flexible'],
               description: 'How weekends are handled',
             },
+            // ─── Temporal ───
+            seasonal_pattern_mode: {
+              type: 'string',
+              enum: ['single_pattern', 'school_year_vs_summer', 'multiple_recurring_patterns'],
+              description: 'Whether the schedule varies by season',
+            },
+            seasonal_notes: {
+              type: 'string',
+              description: 'Description of how schedule changes seasonally',
+            },
+            effective_start_date: {
+              type: 'string',
+              description: 'When this schedule should start (YYYY-MM-DD)',
+            },
+            baseline_window_mode: {
+              type: 'string',
+              enum: ['starting_now', 'this_week', 'next_week', 'custom'],
+              description: 'When the baseline schedule should begin',
+            },
+            participation_mode: {
+              type: 'string',
+              enum: ['single_parent_estimate', 'single_parent_confirmed_history', 'both_parents_participating'],
+              description: 'Whether one or both parents are providing info',
+            },
             // ─── Parent Constraints (Bucket B) ───
+            target_split_pct: {
+              type: 'number',
+              description: 'Desired custody split percentage for parent A (0-100, e.g. 50 for 50/50)',
+            },
+            target_split_strictness: {
+              type: 'string',
+              enum: ['soft', 'firm', 'hard'],
+              description: 'How strictly the split must be enforced',
+            },
             locked_nights: {
               type: 'array',
               items: {
@@ -180,6 +278,31 @@ export class LlmToolsService {
             no_direct_contact: {
               type: 'boolean',
               description: 'Whether parents have a no-contact order',
+            },
+            unavailable_days: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  parent: { type: 'string', enum: ['parent_a', 'parent_b'] },
+                  days_of_week: { type: 'array', items: { type: 'number' } },
+                },
+              },
+              description: 'Days a parent cannot have the children (0=Sun...6=Sat)',
+            },
+            sibling_cohesion_policy: {
+              type: 'string',
+              enum: [
+                'KEEP_SIBLINGS_TOGETHER',
+                'ALLOW_LIMITED_SPLIT_FOR_LOGISTICS',
+                'ALLOW_CHILD_SPECIFIC_PATTERN',
+                'FULLY_INDEPENDENT_CHILD_SCHEDULES',
+              ],
+              description: 'Policy for whether siblings stay together or can have different schedules',
+            },
+            no_locked_nights: {
+              type: 'boolean',
+              description: 'Set to true if the parent explicitly says there are NO locked/fixed nights. This is different from not having asked yet.',
             },
             // ─── Optimization Goals (Bucket C) ───
             pain_points: {
@@ -481,7 +604,7 @@ export class LlmToolsService {
     const obs = facts.observedFacts;
     const con = facts.constraints;
 
-    // Stage 1: Need children + arrangement description
+    // Stage 1: Baseline — children + arrangement + seasonal awareness
     if (obs.childrenCount == null || obs.childrenAges == null || obs.childrenAges.length === 0) {
       return OnboardingStage.BASELINE_EXTRACTION;
     }
@@ -489,21 +612,29 @@ export class LlmToolsService {
       return OnboardingStage.BASELINE_EXTRACTION;
     }
 
-    // Stage 2: Need BOTH locked nights AND weekend pattern AND what happens on non-locked days
-    // This stage ensures we understand the full weekly picture, not just anchors
-    const hasAnchorInfo = con.lockedNights.length > 0 || obs.weekendPattern != null;
+    // Stage 2: Anchor reconstruction — full weekly rhythm
+    // Requires: weekend pattern + target split + locked nights or explicit absence
+    //           + exchange timing or modality
     const hasWeekendClarity = obs.weekendPattern != null;
-    const hasFullPicture = hasAnchorInfo && hasWeekendClarity;
-    if (!hasFullPicture) {
+    const hasTargetSplit = con.targetSplitPct != null;
+    const hasAnchorClarity = con.lockedNights.length > 0 ||
+      (facts.confidence['constraints.lockedNights.none'] === 1.0);
+    const hasExchangeInfo = obs.exchangeModality != null || obs.exchangeTiming != null;
+    if (!hasWeekendClarity || !hasTargetSplit || !hasAnchorClarity || !hasExchangeInfo) {
       return OnboardingStage.ANCHOR_EXTRACTION;
     }
 
-    // Stage 3: Need distance + partner phone + exchange modality
-    if (obs.distanceMiles == null || obs.partnerPhone == null) {
+    // Stage 3: Stability/logistics — distance, constraints, sibling policy
+    // partnerPhone collected here but does NOT gate advancement
+    const hasDistance = obs.distanceMiles != null;
+    const hasLogistics = hasDistance && (
+      obs.exchangeModality != null || obs.exchangeTiming != null
+    );
+    if (!hasLogistics) {
       return OnboardingStage.STABILITY_CONSTRAINTS;
     }
 
-    // Stage 4: Need at least one optimization goal
+    // Stage 4: Optimization target — at least one classified goal
     if (facts.optimizationGoals.classifiedGoals.length === 0) {
       return OnboardingStage.OPTIMIZATION_TARGET;
     }
@@ -574,13 +705,50 @@ export class LlmToolsService {
       facts.observedFacts.partnerPhone = input.partner_phone;
       facts.confidence['observedFacts.partnerPhone'] = 1.0;
     }
+    if (input.children != null) {
+      facts.observedFacts.children = input.children.map((c: any) => ({
+        age: c.age,
+        schoolDays: c.school_days,
+        anchorNotes: c.anchor_notes,
+        preferenceSignals: c.preference_signals,
+      }));
+      facts.confidence['observedFacts.children'] = 1.0;
+    }
+    if (input.current_observed_split_pct != null) {
+      facts.observedFacts.currentObservedSplitPct = input.current_observed_split_pct;
+      facts.confidence['observedFacts.currentObservedSplitPct'] = 0.8;
+    }
+    if (input.responsibility_model != null) {
+      facts.observedFacts.responsibilityModel = input.responsibility_model;
+      facts.confidence['observedFacts.responsibilityModel'] = 0.8;
+    }
+    if (input.current_stretch_length != null) {
+      facts.observedFacts.currentStretchLength = input.current_stretch_length;
+      facts.confidence['observedFacts.currentStretchLength'] = 0.8;
+    }
     if (input.exchange_modality != null) {
       facts.observedFacts.exchangeModality = input.exchange_modality;
       facts.confidence['observedFacts.exchangeModality'] = 0.9;
     }
+    if (input.exchange_timing != null) {
+      facts.observedFacts.exchangeTiming = input.exchange_timing;
+      facts.confidence['observedFacts.exchangeTiming'] = 0.9;
+    }
     if (input.school_daycare_schedule != null) {
       facts.observedFacts.schoolDaycareSchedule = input.school_daycare_schedule;
       facts.confidence['observedFacts.schoolDaycareSchedule'] = 1.0;
+    }
+    if (input.school_exchange_allowed != null) {
+      facts.observedFacts.schoolExchangeAllowed = input.school_exchange_allowed;
+      facts.confidence['observedFacts.schoolExchangeAllowed'] = 1.0;
+    }
+    if (input.school_exchange_preferred != null) {
+      facts.observedFacts.schoolExchangePreferred = input.school_exchange_preferred;
+      facts.confidence['observedFacts.schoolExchangePreferred'] = 1.0;
+    }
+    if (input.children_share_school_rhythm != null) {
+      facts.observedFacts.childrenShareSchoolRhythm = input.children_share_school_rhythm;
+      facts.confidence['observedFacts.childrenShareSchoolRhythm'] = 1.0;
     }
     if (input.midweek_pattern != null) {
       facts.observedFacts.midweekPattern = input.midweek_pattern;
@@ -590,8 +758,36 @@ export class LlmToolsService {
       facts.observedFacts.weekendPattern = input.weekend_pattern;
       facts.confidence['observedFacts.weekendPattern'] = 0.8;
     }
+    if (input.seasonal_pattern_mode != null) {
+      facts.observedFacts.seasonalPatternMode = input.seasonal_pattern_mode;
+      facts.confidence['observedFacts.seasonalPatternMode'] = 0.9;
+    }
+    if (input.seasonal_notes != null) {
+      facts.observedFacts.seasonalNotes = input.seasonal_notes;
+      facts.confidence['observedFacts.seasonalNotes'] = 0.9;
+    }
+    if (input.effective_start_date != null) {
+      facts.observedFacts.effectiveStartDate = input.effective_start_date;
+      facts.confidence['observedFacts.effectiveStartDate'] = 1.0;
+    }
+    if (input.baseline_window_mode != null) {
+      facts.observedFacts.baselineWindowMode = input.baseline_window_mode;
+      facts.confidence['observedFacts.baselineWindowMode'] = 1.0;
+    }
+    if (input.participation_mode != null) {
+      facts.observedFacts.participationMode = input.participation_mode;
+      facts.confidence['observedFacts.participationMode'] = 1.0;
+    }
 
     // ─── Bucket B: Constraints ───
+    if (input.target_split_pct != null) {
+      facts.constraints.targetSplitPct = input.target_split_pct;
+      facts.confidence['constraints.targetSplitPct'] = 1.0;
+    }
+    if (input.target_split_strictness != null) {
+      facts.constraints.targetSplitStrictness = input.target_split_strictness;
+      facts.confidence['constraints.targetSplitStrictness'] = 1.0;
+    }
     if (input.locked_nights != null) {
       facts.constraints.lockedNights = input.locked_nights.map((ln: any) => ({
         parent: ln.parent,
@@ -610,6 +806,26 @@ export class LlmToolsService {
     if (input.no_direct_contact != null) {
       facts.constraints.noDirectContact = input.no_direct_contact;
       facts.confidence['constraints.noDirectContact'] = 1.0;
+    }
+    if (input.unavailable_days != null) {
+      facts.constraints.unavailableDays = input.unavailable_days.map((ud: any) => ({
+        parent: ud.parent,
+        daysOfWeek: ud.days_of_week,
+      }));
+      facts.confidence['constraints.unavailableDays'] = 1.0;
+    }
+    if (input.sibling_cohesion_policy != null) {
+      const policyMap: Record<string, SiblingCohesionPolicy> = {
+        KEEP_SIBLINGS_TOGETHER: SiblingCohesionPolicy.KEEP_TOGETHER,
+        ALLOW_LIMITED_SPLIT_FOR_LOGISTICS: SiblingCohesionPolicy.ALLOW_LIMITED_SPLIT,
+        ALLOW_CHILD_SPECIFIC_PATTERN: SiblingCohesionPolicy.ALLOW_CHILD_SPECIFIC,
+        FULLY_INDEPENDENT_CHILD_SCHEDULES: SiblingCohesionPolicy.FULLY_INDEPENDENT,
+      };
+      facts.constraints.siblingCohesionPolicy = policyMap[input.sibling_cohesion_policy] || null;
+      facts.confidence['constraints.siblingCohesionPolicy'] = 1.0;
+    }
+    if (input.no_locked_nights === true) {
+      facts.confidence['constraints.lockedNights.none'] = 1.0;
     }
 
     // ─── Bucket C: Optimization Goals ───
@@ -651,17 +867,28 @@ export class LlmToolsService {
 
     const collected: string[] = [];
     const obs = facts.observedFacts;
+    const con = facts.constraints;
     if (obs.childrenCount != null) collected.push(`${obs.childrenCount} children`);
     if (obs.childrenAges?.length) collected.push(`ages: ${obs.childrenAges.join(', ')}`);
     if (obs.currentArrangement) collected.push(`arrangement: "${obs.currentArrangement}"`);
     if (obs.candidateTemplate) collected.push(`template: ${obs.candidateTemplate} (conf: ${obs.templateConfidence})`);
+    if (obs.currentObservedSplitPct != null) collected.push(`current split: ${obs.currentObservedSplitPct}%`);
+    if (obs.responsibilityModel) collected.push(`responsibility: ${obs.responsibilityModel}`);
     if (obs.distanceMiles != null) collected.push(`distance: ${obs.distanceMiles}mi`);
     if (obs.partnerPhone) collected.push(`partner: ${obs.partnerPhone}`);
     if (obs.weekendPattern) collected.push(`weekend: ${obs.weekendPattern}`);
     if (obs.midweekPattern) collected.push(`midweek: ${obs.midweekPattern}`);
-    if (obs.exchangeModality) collected.push(`exchange: ${obs.exchangeModality}`);
-    if (facts.constraints.lockedNights.length > 0) collected.push(`locked nights: ${facts.constraints.lockedNights.length} rules`);
-    if (facts.constraints.maxConsecutiveNights != null) collected.push(`max consecutive: ${facts.constraints.maxConsecutiveNights}`);
+    if (obs.exchangeModality) collected.push(`exchange modality: ${obs.exchangeModality}`);
+    if (obs.exchangeTiming) collected.push(`exchange timing: ${obs.exchangeTiming.type}`);
+    if (obs.schoolExchangeAllowed != null) collected.push(`school exchange: ${obs.schoolExchangeAllowed ? 'yes' : 'no'}`);
+    if (obs.seasonalPatternMode) collected.push(`seasonal: ${obs.seasonalPatternMode}`);
+    if (con.targetSplitPct != null) collected.push(`target split: ${con.targetSplitPct}/${100 - con.targetSplitPct}`);
+    if (con.targetSplitStrictness) collected.push(`split strictness: ${con.targetSplitStrictness}`);
+    if (con.lockedNights.length > 0) collected.push(`locked nights: ${con.lockedNights.length} rules`);
+    if (facts.confidence['constraints.lockedNights.none'] === 1.0) collected.push('locked nights: confirmed none');
+    if (con.maxConsecutiveNights != null) collected.push(`max consecutive: ${con.maxConsecutiveNights}`);
+    if (con.siblingCohesionPolicy) collected.push(`sibling policy: ${con.siblingCohesionPolicy}`);
+    if (con.noDirectContact) collected.push('no-contact order');
     if (facts.optimizationGoals.painPoints.length > 0) collected.push(`pain points: ${facts.optimizationGoals.painPoints.length}`);
     if (facts.optimizationGoals.classifiedGoals.length > 0) collected.push(`goals: ${facts.optimizationGoals.classifiedGoals.join(', ')}`);
 
@@ -674,17 +901,32 @@ export class LlmToolsService {
       .reduce((sum, ln) => sum + ln.daysOfWeek.length, 0);
     const unassigned = 7 - totalLockedA - totalLockedB;
 
+    // Run coherence validation for preview stage
+    const coherenceIssues = validateCoherence(facts);
+    const highSeverityIssues = coherenceIssues.filter(i => i.severity === 'high');
+
     const stageGuidance: Record<string, string> = {
       [OnboardingStage.BASELINE_EXTRACTION]:
-        'Ask about: number of children, their ages, and how custody currently works. Let them describe naturally. Save their description AND classify the template if recognizable.',
+        'Ask about: number of children, their ages, and how custody currently works. Let them describe naturally. Save their description AND classify the template if recognizable. If they mention seasonal differences (summer vs school year), note that too.',
       [OnboardingStage.ANCHOR_EXTRACTION]:
-        `Currently ${totalLockedA} nights locked to parent A, ${totalLockedB} to parent B, ${unassigned} unassigned. You MUST ask: (1) What happens on the remaining ${unassigned} days? (2) How do weekends work — alternating, split, or always one parent? (3) Does the other parent have any midweek time? (4) What overall split do they want (50/50, 60/40, 70/30)? Do NOT move on until weekend_pattern is set and the full week is accounted for.`,
+        `Currently ${totalLockedA} nights locked to parent A, ${totalLockedB} to parent B, ${unassigned} unassigned. ` +
+        `You MUST collect ALL of: (1) Which specific days are always with them — locked nights. If none, explicitly save no_locked_nights=true. ` +
+        `(2) What happens on the remaining ${unassigned} days? (3) How do weekends work — alternating, split, or always one parent? ` +
+        `(4) Does the other parent have any midweek time? (5) What overall split do they want (50/50, 60/40, 70/30)? Save as target_split_pct. ` +
+        `(6) How/when do exchanges happen (school drop-off, evening pickup, etc.)? Save exchange_modality or exchange_timing. ` +
+        `Do NOT move on until weekend_pattern AND target_split_pct are set AND the full week is accounted for.` +
+        (con.targetSplitPct != null ? ` Target split: ${con.targetSplitPct}/${100 - con.targetSplitPct}.` : ''),
       [OnboardingStage.STABILITY_CONSTRAINTS]:
-        'Ask about: distance between homes (miles), how exchanges happen (school drop-off, curbside, etc.), and co-parent phone number. For young children (under 5), also ask about max consecutive nights.',
+        'Ask about: distance between homes (miles), co-parent phone number. For young children (under 5), ask about max consecutive nights. ' +
+        'If multiple children, ask about sibling policy (keep together or allow different schedules). ' +
+        'partnerPhone does NOT gate advancement — if they hesitate, move on.',
       [OnboardingStage.OPTIMIZATION_TARGET]:
         'Ask: "What frustrates you most about the current arrangement?" and "What would make it better?" Map answers to goals. Must get at least one classified goal before moving on.',
       [OnboardingStage.PREVIEW_CONFIRMATION]:
-        'Call generate_schedule_preview to show a 3-week pattern. Summarize the full arrangement and ask for explicit confirmation before calling complete_onboarding.',
+        'Call generate_schedule_preview to show a 3-week pattern. Summarize the full arrangement and ask for explicit confirmation before calling complete_onboarding.' +
+        (highSeverityIssues.length > 0
+          ? ` WARNING: ${highSeverityIssues.length} coherence issue(s) found: ${highSeverityIssues.map(i => i.description).join('; ')}. Address these with the parent before completing.`
+          : ''),
     };
 
     return {
@@ -694,6 +936,7 @@ export class LlmToolsService {
         collected,
         missingRequired: missing,
         confidence: facts.confidence,
+        coherenceIssues: coherenceIssues.length > 0 ? coherenceIssues : undefined,
       }),
     };
   }
@@ -718,10 +961,34 @@ export class LlmToolsService {
       }
     }
 
-    if (!partnerPhone || childAges.length === 0) {
-      const missing = getRequiredMissingFields(facts);
+    // Check schedule-quality readiness (partnerPhone optional for schedule)
+    const scheduleMissing = getRequiredMissingFields(facts);
+    if (scheduleMissing.length > 0) {
       return {
-        text: `Cannot complete: missing required data (${missing.join(', ')}). Continue collecting information.`,
+        text: `Cannot complete: missing required data for schedule quality (${scheduleMissing.join(', ')}). Continue collecting information.`,
+      };
+    }
+
+    // Check coherence
+    const coherenceIssues = validateCoherence(facts);
+    const highIssues = coherenceIssues.filter(i => i.severity === 'high');
+    if (highIssues.length > 0) {
+      return {
+        text: `Cannot complete: ${highIssues.length} high-severity coherence issue(s): ${highIssues.map(i => i.description).join('; ')}. Address these before completing.`,
+      };
+    }
+
+    // Completion requires partner phone
+    if (!partnerPhone) {
+      const completionMissing = getCompletionMissingFields(facts);
+      return {
+        text: `Cannot complete: missing partner phone number. Schedule data is ready but we need the co-parent's phone to send the invite. Missing: ${completionMissing.join(', ')}.`,
+      };
+    }
+
+    if (childAges.length === 0) {
+      return {
+        text: 'Cannot complete: no children ages collected.',
       };
     }
 
@@ -835,6 +1102,43 @@ export class LlmToolsService {
           owner: 'family',
           parameters: {
             maxNights: facts.constraints.maxConsecutiveNights,
+          },
+        }),
+      );
+    }
+
+    // Target split constraint
+    if (facts.constraints.targetSplitPct != null) {
+      await this.constraintRepo.save(
+        this.constraintRepo.create({
+          constraintSetId: constraintSet.id,
+          type: ConstraintType.FAIRNESS_TARGET,
+          hardness: facts.constraints.targetSplitStrictness === 'hard'
+            ? ConstraintHardness.HARD
+            : ConstraintHardness.SOFT,
+          weight: facts.constraints.targetSplitStrictness === 'hard' ? 100
+            : facts.constraints.targetSplitStrictness === 'firm' ? 90 : 70,
+          owner: 'family',
+          parameters: {
+            targetPctA: facts.constraints.targetSplitPct,
+            strictness: facts.constraints.targetSplitStrictness || 'soft',
+          },
+        }),
+      );
+    }
+
+    // Unavailable days
+    for (const ud of facts.constraints.unavailableDays) {
+      await this.constraintRepo.save(
+        this.constraintRepo.create({
+          constraintSetId: constraintSet.id,
+          type: ConstraintType.UNAVAILABLE_DAY,
+          hardness: ConstraintHardness.HARD,
+          weight: 100,
+          owner: ud.parent,
+          parameters: {
+            parent: ud.parent,
+            daysOfWeek: ud.daysOfWeek,
           },
         }),
       );

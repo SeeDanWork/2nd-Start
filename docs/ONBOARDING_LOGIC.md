@@ -1,12 +1,12 @@
 # ADCP Onboarding Logic
 
-How the SMS/WhatsApp onboarding process collects information, determines the schedule template, and generates the initial custody schedule.
+How the SMS/WhatsApp onboarding process recovers the current operating schedule, validates coherence, and generates a continuity-first baseline.
 
 ---
 
 ## Architecture Overview
 
-The onboarding is a **deterministic 5-stage interview** controlled by an LLM (Claude) that operates within strict guardrails. The LLM is conversational but the data model and stage progression are deterministic — the system always knows exactly what stage it's in and what's missing.
+The onboarding is a **deterministic 5-stage interview** controlled by an LLM (Claude) that operates within strict guardrails. The LLM is conversational but the data model and stage progression are deterministic — the system always knows exactly what stage it's in and what's missing. The goal is to recover the current operating pattern with enough fidelity to generate a continuity-first baseline — not merely classify into a template.
 
 ```
 User SMS ──> MessagingService.handleLlmOnboarding()
@@ -16,7 +16,8 @@ User SMS ──> MessagingService.handleLlmOnboarding()
                 ├── LLM asks the right question for the current stage
                 ├── User responds
                 ├── LLM calls save_onboarding_data tool (structured extraction)
-                │     └── computeStage() auto-advances if criteria met
+                │     ├── computeStage() auto-advances if criteria met
+                │     └── validateCoherence() checks cross-field consistency
                 └── Loop until complete_onboarding is called
 ```
 
@@ -30,7 +31,7 @@ User SMS ──> MessagingService.handleLlmOnboarding()
 
 ## The BootstrapFacts Schema
 
-All onboarding data is stored in a single `BootstrapFacts` object persisted in the session's JSONB `context` column. It has three buckets:
+All onboarding data is stored in a single `BootstrapFacts` object persisted in the session's JSONB `context` column. It has three data buckets plus coherence/provenance tracking:
 
 ### Bucket A: Observed Facts
 What the family is currently doing. The LLM extracts these from natural conversation.
@@ -39,18 +40,32 @@ What the family is currently doing. The LLM extracts these from natural conversa
 |-------|------|-------------|
 | `childrenCount` | number | Number of children (1-10) |
 | `childrenAges` | number[] | Ages of each child |
+| `children` | ChildProfile[] | Per-child profiles (age, school days, anchors, preferences) |
 | `currentArrangement` | string | Free-text description ("we alternate weeks") |
 | `candidateTemplate` | ScheduleTemplate | Classified template if recognizable |
 | `templateConfidence` | number (0-1) | How sure the LLM is about the template |
-| `distanceMiles` | number | Distance between parents' homes |
-| `partnerPhone` | string | Co-parent's phone (E.164 format) |
-| `exchangeModality` | enum | How handoffs work (school, curbside, etc.) |
-| `schoolDaycareSchedule` | number[] | Days of week children attend school |
+| `currentObservedSplitPct` | number | Current actual split percentage for parent A |
+| `responsibilityModel` | enum | Which responsibility defines primary (overnight, school night, etc.) |
+| `currentStretchLength` | number | Typical consecutive nights in current arrangement |
 | `midweekPattern` | enum | Non-custodial parent's midweek contact |
 | `weekendPattern` | enum | How weekends are handled |
+| `exchangeModality` | enum | How handoffs work (school, curbside, etc.) |
+| `exchangeTiming` | ExchangeTiming | When handoffs happen (after school, evening, etc.) |
+| `handoffTiming` | string | Legacy free-text handoff timing |
+| `schoolDaycareSchedule` | number[] | Days of week children attend school |
+| `schoolExchangeAllowed` | boolean | Can school serve as exchange point? |
+| `schoolExchangePreferred` | boolean | Is school the preferred exchange point? |
+| `childrenShareSchoolRhythm` | boolean | Do all children share the same school schedule? |
+| `seasonalPatternMode` | enum | Whether schedule varies by season |
+| `seasonalNotes` | string | Description of seasonal variation |
+| `effectiveStartDate` | string | When this schedule should start |
+| `baselineWindowMode` | enum | When the baseline begins (now, this week, next week, custom) |
+| `distanceMiles` | number | Distance between parents' homes |
+| `partnerPhone` | string | Co-parent's phone (E.164 format) |
+| `participationMode` | enum | Whether one or both parents are providing info |
 
 ### Bucket B: Parent Constraints
-Hard boundaries the schedule must respect. These become solver constraints.
+Hard boundaries and policies the schedule must respect. These become solver constraints.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -59,6 +74,10 @@ Hard boundaries the schedule must respect. These become solver constraints.
 | `maxConsecutiveNights` | number | Max nights in a row (age-dependent) |
 | `schoolNightRestrictions` | boolean | Whether school nights have special rules |
 | `noDirectContact` | boolean | Whether parents have a no-contact order |
+| `targetSplitPct` | number | Desired custody split percentage for parent A (0-100) |
+| `targetSplitStrictness` | enum | How strictly the split must be enforced (soft/firm/hard) |
+| `siblingCohesionPolicy` | enum | Whether siblings stay together or can have different schedules |
+| `childSpecificExceptionPolicy` | object | Policy for child-specific schedule exceptions |
 
 ### Bucket C: Optimization Goals
 What to optimize for, derived from expressed pain points.
@@ -79,6 +98,17 @@ What to optimize for, derived from expressed pain points.
 - `more_stability` — Predictable recurring pattern
 - `more_flexibility` — Ability to adjust week-to-week
 
+### Bucket D: Coherence / Provenance
+Cross-field validation results tracked automatically.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `score` | number | Overall coherence score (0-1) |
+| `issues` | CoherenceIssue[] | Specific conflicts found |
+| `confirmedFields` | string[] | Fields explicitly confirmed by parent |
+| `inferredFields` | string[] | Fields inferred by LLM |
+| `assumptions` | string[] | Assumptions made during extraction |
+
 ### Confidence Tracking
 Every field has a confidence score (0.0 to 1.0) stored in `facts.confidence`. Fields extracted from explicit user statements get 1.0. Fields inferred by the LLM (like template classification) get lower confidence. Fields below 0.8 trigger clarifying questions before the system moves on.
 
@@ -91,7 +121,7 @@ Stage advancement is **deterministic** — computed by `computeStage()` based on
 ### Stage 1: Baseline Extraction
 **Goal:** Understand who the family is and how custody roughly works.
 
-**Collects:** `childrenCount`, `childrenAges`, `currentArrangement`, `candidateTemplate`
+**Collects:** `childrenCount`, `childrenAges`, `currentArrangement`, `candidateTemplate`, `seasonalPatternMode`
 
 **Advances when:** Children count + ages are set AND either `currentArrangement` or `candidateTemplate` is set.
 
@@ -106,31 +136,34 @@ User: 2 kids, ages 4 and 7. We alternate weeks.
 ```
 
 ### Stage 2: Anchor Extraction
-**Goal:** Understand the full weekly picture — every day accounted for.
+**Goal:** Reconstruct the full weekly rhythm — every day accounted for.
 
-This is the **most important stage**. The system will not advance until it has:
-- At least one source of anchor info (locked nights OR weekend pattern)
+This is the **most important stage**. The system will not advance until it has ALL of:
 - Weekend pattern explicitly set
+- Target split percentage set
+- Anchor clarity (locked nights exist OR explicitly confirmed none)
+- Exchange timing or modality
 
-**Collects:** `lockedNights`, `weekendPattern`, `midweekPattern`
+**Collects:** `lockedNights`, `weekendPattern`, `midweekPattern`, `targetSplitPct`, `exchangeModality`/`exchangeTiming`
 
-**Advances when:** `weekendPattern` is set AND (locked nights exist OR weekend pattern exists).
+**Advances when:** `weekendPattern` is set AND `targetSplitPct` is set AND anchor clarity is established AND exchange info is provided.
 
 **The LLM is instructed to ask:**
-1. Which days are ALWAYS with you? (locked nights)
+1. Which days are ALWAYS with you? (locked nights). If none, explicitly confirm.
 2. What happens on the OTHER days?
 3. How do weekends work? (alternating, split, fixed)
 4. Does co-parent have midweek visits?
 5. What overall time split do you want? (50/50, 60/40, 70/30)
+6. How and when do exchanges happen? (school drop-off, evening pickup, etc.)
 
 **Dynamic guidance:** The `get_onboarding_status` tool returns exactly how many nights are locked to each parent and how many are unassigned, so the LLM can say: *"So you have Mon-Wed (3 nights). That leaves 4 nights unaccounted for — what happens Thu-Sun?"*
 
 ### Stage 3: Stability Constraints
-**Goal:** Logistics and the co-parent connection.
+**Goal:** Logistics, sibling policy, and the co-parent connection.
 
-**Collects:** `distanceMiles`, `partnerPhone`, `exchangeModality`, `maxConsecutiveNights` (if kids < 5)
+**Collects:** `distanceMiles`, `partnerPhone`, `maxConsecutiveNights` (if kids < 5), `siblingCohesionPolicy` (if multiple children)
 
-**Advances when:** Both `distanceMiles` and `partnerPhone` are set.
+**Advances when:** `distanceMiles` is set AND exchange info exists. `partnerPhone` is collected here but does **NOT** gate advancement — if the parent hesitates, the system moves on.
 
 ### Stage 4: Optimization Target
 **Goal:** Understand what's not working and what to optimize for.
@@ -146,13 +179,22 @@ This is the **most important stage**. The system will not advance until it has:
 - "too much driving" → `reduce_driving`
 
 ### Stage 5: Preview + Confirmation
-**Goal:** Show the schedule and get explicit confirmation.
+**Goal:** Show the schedule, validate coherence, and get explicit confirmation.
 
 **Actions:**
-1. LLM calls `generate_schedule_preview` → generates a 3-week PNG image
-2. Image shows the template pattern with split percentage
-3. LLM summarizes: template, locked nights, split, goals
-4. User confirms → LLM calls `complete_onboarding`
+1. `validateCoherence()` runs automatically — high-severity issues are surfaced in guidance
+2. LLM calls `generate_schedule_preview` → generates a 3-week PNG image
+3. Image shows the template pattern with split percentage
+4. LLM summarizes: template, locked nights, split, goals
+5. If coherence issues exist, the LLM addresses them with the parent
+6. User confirms → LLM calls `complete_onboarding`
+
+**Coherence checks include:**
+- Target split vs locked nights feasibility (>15% deviation)
+- Template vs locked night structural conflict
+- No-contact + no school exchange = limited exchange options
+- Seasonal divergence noted but not described
+- Sibling cohesion policy vs child-specific anchors
 
 ---
 
@@ -171,7 +213,7 @@ When a parent describes their arrangement, the LLM classifies it into one of 6 k
 
 **Classification is LLM-driven with confidence scoring.** If the LLM isn't sure (confidence < 0.8), it asks a clarifying question rather than guessing.
 
-The template also maps to an arrangement type for legacy compatibility:
+The template also maps to an arrangement type for schedule generation:
 - `every_other_weekend`, `5-2` → `primary`
 - Everything else → `shared`
 
@@ -187,20 +229,20 @@ Each template defines TWO week patterns (week A and week B) that alternate. Lock
 
 **2-2-3 example** (index 0=Sun, 1=Mon ... 6=Sat):
 ```
-Week A: [A, A, B, B, A, A, A]   ← Mon-Tue=A, Wed-Thu=B, Fri-Sat-Sun=A
-Week B: [B, B, A, A, B, B, B]   ← Mon-Tue=B, Wed-Thu=A, Fri-Sat-Sun=B
+Week A: [A, A, B, B, A, A, A]   <- Mon-Tue=A, Wed-Thu=B, Fri-Sat-Sun=A
+Week B: [B, B, A, A, B, B, B]   <- Mon-Tue=B, Wed-Thu=A, Fri-Sat-Sun=B
 ```
 
 **3-4-4-3 example:**
 ```
-Week A: [B, A, A, A, B, B, B]   ← A: Mon-Wed, B: Thu-Sun
-Week B: [A, B, B, B, B, A, A]   ← B: Mon-Thu, A: Fri-Sun
+Week A: [B, A, A, A, B, B, B]   <- A: Mon-Wed, B: Thu-Sun
+Week B: [A, B, B, B, B, A, A]   <- B: Mon-Thu, A: Fri-Sun
 ```
 
 **Alternating weeks:**
 ```
-Week A: [A, A, A, A, A, A, A]   ← All parent A
-Week B: [B, B, B, B, B, B, B]   ← All parent B
+Week A: [A, A, A, A, A, A, A]   <- All parent A
+Week B: [B, B, B, B, B, B, B]   <- All parent B
 ```
 
 ### Locked night override
@@ -216,7 +258,11 @@ If a parent has locked nights (e.g., "Tuesdays are always mine"), those days are
    - Even weeks use pattern A, odd weeks use pattern B
    - Mark transition days (parent changes from previous day)
 4. Save all OvernightAssignment rows
-5. Create constraint records (locked nights, max consecutive)
+5. Create constraint records:
+   - LOCKED_NIGHT per parent's locked nights
+   - MAX_CONSECUTIVE if maxConsecutiveNights was set
+   - FAIRNESS_TARGET from targetSplitPct + strictness
+   - UNAVAILABLE_DAY from unavailableDays
 6. Set family status to 'active'
 7. Send partner invite via SMS
 8. Return viewer link URL
@@ -226,7 +272,12 @@ If a parent has locked nights (e.g., "Tuesdays are always mine"), those days are
 
 ## What Gets Created on Completion
 
-When `complete_onboarding` runs, it creates the following database records:
+When `complete_onboarding` runs, it validates two things:
+1. **Schedule-quality readiness** (`getRequiredMissingFields`) — children, arrangement, weekend pattern, target split, exchange info
+2. **Coherence validation** (`validateCoherence`) — blocks completion if high-severity issues exist
+3. **Completion readiness** (`getCompletionMissingFields`) — requires partner phone for the invite
+
+Then it creates:
 
 1. **Family** — with `onboardingInput` containing the full `BootstrapFacts`
 2. **FamilyMembership** (parent A) — role `parent_a`, status `accepted`
@@ -234,8 +285,10 @@ When `complete_onboarding` runs, it creates the following database records:
 4. **User** (partner) — created if doesn't exist, with `onboardingCompleted: false`
 5. **Child** records — one per age, with estimated date of birth
 6. **ConstraintSet** + **Constraint** records:
-   - One `LOCKED_NIGHT` constraint per parent's locked nights
-   - One `MAX_CONSECUTIVE` constraint if `maxConsecutiveNights` was set
+   - `LOCKED_NIGHT` per parent's locked nights
+   - `MAX_CONSECUTIVE` if set (age-dependent)
+   - `FAIRNESS_TARGET` from `targetSplitPct` + `targetSplitStrictness`
+   - `UNAVAILABLE_DAY` from `unavailableDays`
 7. **BaseScheduleVersion** — version 1, 8-week horizon, status `default`
 8. **OvernightAssignment** rows — one per day (~56 rows for 8 weeks)
 
@@ -290,52 +343,58 @@ Images are saved to the `media/` directory and served via `GET /messaging/media/
 
 ```
 New user texts in (or connects via simulator)
-          │
-          ▼
+          |
+          v
     Create User record
     Create ConversationSession (state: 'onboarding')
     Initialize empty BootstrapFacts
-          │
-          ▼
-    ┌─────────────────────────┐
-    │  STAGE 1: BASELINE      │ ← How many kids? Ages? How does custody work?
-    │  Need: children + arrangement │
-    └────────────┬────────────┘
-                 │ childrenCount + childrenAges + currentArrangement set
-                 ▼
-    ┌─────────────────────────┐
-    │  STAGE 2: ANCHORS       │ ← Which days are always yours? Weekends?
-    │  Need: weekendPattern   │    What happens on the other days?
-    │  + locked nights clarity │    What split do you want?
-    └────────────┬────────────┘
-                 │ weekendPattern set + anchor info exists
-                 ▼
-    ┌─────────────────────────┐
-    │  STAGE 3: STABILITY     │ ← How far apart? How do handoffs work?
-    │  Need: distance + phone │    Co-parent's phone number?
-    └────────────┬────────────┘
-                 │ distanceMiles + partnerPhone set
-                 ▼
-    ┌─────────────────────────┐
-    │  STAGE 4: OPTIMIZATION  │ ← What frustrates you? What would you change?
-    │  Need: ≥1 classified goal│
-    └────────────┬────────────┘
-                 │ classifiedGoals.length > 0
-                 ▼
-    ┌─────────────────────────┐
-    │  STAGE 5: PREVIEW       │ ← Here's your 3-week schedule preview.
-    │  Show image + confirm   │    Does this look right?
-    └────────────┬────────────┘
-                 │ User confirms
-                 ▼
+          |
+          v
+    +-----------------------------+
+    |  STAGE 1: BASELINE          | <- How many kids? Ages? How does custody work?
+    |  Need: children + arrangement|
+    +-------------+---------------+
+                  | childrenCount + childrenAges + arrangement set
+                  v
+    +-----------------------------+
+    |  STAGE 2: ANCHORS           | <- Which days are always yours? Weekends?
+    |  Need: weekendPattern       |    What happens on the other days?
+    |  + targetSplitPct           |    What split do you want?
+    |  + anchor clarity           |    How do exchanges happen?
+    |  + exchange info            |
+    +-------------+---------------+
+                  | All criteria met
+                  v
+    +-----------------------------+
+    |  STAGE 3: STABILITY         | <- How far apart? Max consecutive nights?
+    |  Need: distance + exchange  |    Co-parent's phone? Sibling policy?
+    |  (phone NOT required)       |
+    +-------------+---------------+
+                  | distanceMiles set
+                  v
+    +-----------------------------+
+    |  STAGE 4: OPTIMIZATION      | <- What frustrates you? What would you change?
+    |  Need: >=1 classified goal  |
+    +-------------+---------------+
+                  | classifiedGoals.length > 0
+                  v
+    +-----------------------------+
+    |  STAGE 5: PREVIEW           | <- Coherence check + 3-week preview image
+    |  Validate + confirm         |    Does this look right?
+    +-------------+---------------+
+                  | User confirms + no high-severity coherence issues
+                  v
     complete_onboarding()
-    ├── Create Family + memberships
-    ├── Create children
-    ├── Create constraints from BootstrapFacts
-    ├── Generate 8-week schedule from template
-    ├── Set family active
-    ├── Send partner SMS invite
-    └── Return viewer link
+    +-- Validate schedule readiness
+    +-- Validate coherence (block on high-severity)
+    +-- Validate completion readiness (partner phone)
+    +-- Create Family + memberships
+    +-- Create children
+    +-- Create constraints from BootstrapFacts
+    +-- Generate 8-week schedule from template
+    +-- Set family active
+    +-- Send partner SMS invite
+    +-- Return viewer link
 ```
 
 ---
@@ -346,26 +405,35 @@ New user texts in (or connects via simulator)
 |----------|----------|
 | User volunteers everything at once | LLM saves all fields in one `save_onboarding_data` call; stages may skip ahead if all criteria met |
 | Template confidence < 0.8 | LLM asks clarifying question before committing template |
-| No locked nights | Stage 2 can still advance if `weekendPattern` is set (some families have no fixed days) |
+| No locked nights | Parent explicitly confirms none → `no_locked_nights=true` set in confidence; Stage 2 can advance |
 | Young children (< 5) | Stage 3 asks about max consecutive nights |
-| No-contact order | Sets `noDirectContact` flag; exchanges should use school or third-party |
+| Multiple children | Stage 3 asks about sibling cohesion policy |
+| No-contact order | Sets `noDirectContact` flag; if school exchange also not allowed, coherence issue flagged |
 | Partner already has an account | Existing user gets a membership; no new user created |
+| Partner phone not provided | Schedule can still be generated; completion blocked until phone provided |
+| Seasonal variation | `seasonalPatternMode` noted in Stage 1; `seasonalNotes` collected for summer pattern |
+| Target split conflicts with locked nights | Coherence issue flagged (high severity if >15% deviation) |
 | User says "start over" | Session context can be reset (not yet implemented as a tool) |
 
 ---
 
-## Mapping to Solver (Future)
+## Mapping to Solver
 
-Currently the schedule is generated by `buildWeeklyPatterns()` with deterministic template patterns. In the future, the BootstrapFacts will map directly to the CP-SAT solver:
+Currently the schedule is generated by `buildWeeklyPatterns()` with deterministic template patterns. The BootstrapFacts map to solver inputs as follows:
 
 | BootstrapFacts field | Solver input |
 |---------------------|--------------|
 | `candidateTemplate` | Initial solution hint / warm start |
 | `lockedNights` | Hard constraints (LOCKED_NIGHT) |
+| `unavailableDays` | Hard constraints (UNAVAILABLE_DAY) |
 | `maxConsecutiveNights` | Soft constraint (MAX_CONSECUTIVE) |
+| `targetSplitPct` + `targetSplitStrictness` | Fairness target constraint (FAIRNESS_TARGET) |
 | `classifiedGoals` | Weight profile adjustments |
 | `distanceMiles` | Non-daycare handoff penalty scaling |
 | `schoolDaycareSchedule` | School night identification |
 | `weekendPattern` | Weekend fragmentation penalty tuning |
+| `siblingCohesionPolicy` | Sibling cohesion constraints |
+| `currentObservedSplitPct` | Continuity bonus baseline |
+| `currentStretchLength` | Stretch length penalty calibration |
 
 The solver endpoint is at `POST /solve/base-schedule` in the Python optimizer service.
