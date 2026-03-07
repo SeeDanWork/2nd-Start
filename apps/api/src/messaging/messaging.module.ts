@@ -15,8 +15,10 @@ import {
   DisruptionEvent,
   AuditLog,
   Request,
+  ShareLink,
 } from '../entities';
 import { MessagingController } from './messaging.controller';
+import { ShortLinkController } from './short-link.controller';
 import { ViewerController } from './viewer.controller';
 import { MessagingService } from './messaging.service';
 import { ConversationService } from './conversation.service';
@@ -43,13 +45,14 @@ import { ScheduleImageService } from './schedule-image.service';
       DisruptionEvent,
       AuditLog,
       Request,
+      ShareLink,
     ]),
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'dev-secret-change-in-production',
       signOptions: { expiresIn: process.env.JWT_ACCESS_TTL || '1h' },
     }),
   ],
-  controllers: [MessagingController, ViewerController],
+  controllers: [MessagingController, ShortLinkController, ViewerController],
   providers: [
     MessagingService,
     ConversationService,

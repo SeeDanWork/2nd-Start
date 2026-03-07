@@ -1166,11 +1166,49 @@ export class LlmToolsService {
       `You've been invited to ADCP by ${inviterName}. Reply START to begin setting up your co-parenting schedule.`,
     );
 
-    // 12. Viewer link
-    const { url } = this.viewerTokenService.generateViewerToken(
+    // 12. Short viewer link
+    const { url: shortUrl } = await this.viewerTokenService.generateShortLink(
       family.id,
       session.userId,
     );
+
+    // 13. Generate month calendar image of the full schedule
+    const now2 = new Date();
+    const activeVersion = await this.scheduleVersionRepo.findOne({
+      where: { familyId: family.id, isActive: true },
+    });
+    let scheduleImageUrl = '';
+    if (activeVersion) {
+      // Get assignments for current and next month
+      const month1Start = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, '0')}-01`;
+      const month2End = new Date(now2.getFullYear(), now2.getMonth() + 2, 0);
+      const month2EndStr = `${month2End.getFullYear()}-${String(month2End.getMonth() + 1).padStart(2, '0')}-${String(month2End.getDate()).padStart(2, '0')}`;
+
+      const scheduleAssignments = await this.assignmentRepo.find({
+        where: {
+          scheduleVersionId: activeVersion.id,
+          date: Between(month1Start, month2EndStr),
+        },
+        order: { date: 'ASC' },
+      });
+
+      if (scheduleAssignments.length > 0) {
+        const calDays: CalendarDay[] = scheduleAssignments.map(a => ({
+          date: a.date,
+          assignedTo: a.assignedTo as 'parent_a' | 'parent_b',
+          isTransition: a.isTransition,
+        }));
+
+        const monthLabel = now2.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+        const filename = await this.scheduleImageService.generateMonthCalendar(
+          calDays,
+          user.displayName || 'You',
+          'Co-Parent',
+          monthLabel,
+        );
+        scheduleImageUrl = `${API_BASE}/messaging/media/${filename}`;
+      }
+    }
 
     // Mark facts complete
     facts.stage = OnboardingStage.COMPLETE;
@@ -1180,8 +1218,11 @@ export class LlmToolsService {
       `Family ${family.id} created via deterministic onboarding (template: ${template || 'none'}) by user ${session.userId}`,
     );
 
+    const horizonWeeks = 8;
+    const imageInfo = scheduleImageUrl ? ` Schedule image: ${scheduleImageUrl}` : '';
+
     return {
-      text: `Family created successfully. Schedule generated using ${template || arrangement} pattern. Invite sent to ${partnerPhone}. Viewer link: ${url} — the parent can view their schedule immediately.`,
+      text: `Family created successfully. Schedule generated using ${template || arrangement} pattern for the next ${horizonWeeks} weeks. Invite sent to ${partnerPhone}. View your full schedule: ${shortUrl}${imageInfo}`,
     };
   }
 
