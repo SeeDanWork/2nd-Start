@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-lab-50 text-lab-900;
+}
+
+/* Phone simulator scrollbar */
+.phone-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.phone-scroll::-webkit-scrollbar-thumb {
+  @apply bg-lab-300 rounded-full;
+}
