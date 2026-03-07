@@ -10,29 +10,58 @@ interface Message {
 }
 
 function linkifyText(text: string): ReactNode[] {
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const parts = text.split(urlRegex);
-  return parts.map((part, i) => {
-    if (urlRegex.test(part)) {
-      // Check if it's an image URL
-      if (/\/messaging\/media\/.*\.png$/i.test(part) || /\.(png|jpg|jpeg|gif)$/i.test(part)) {
-        return (
+  // Match markdown images ![alt](url), raw image URLs, and regular URLs
+  const pattern = /!\[([^\]]*)\]\((https?:\/\/[^)]+)\)|(https?:\/\/[^\s)]+)/g;
+  const result: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    // Add text before this match
+    if (match.index > lastIndex) {
+      result.push(text.slice(lastIndex, match.index));
+    }
+
+    if (match[2]) {
+      // Markdown image: ![alt](url)
+      result.push(
+        <img
+          key={match.index}
+          src={match[2]}
+          alt={match[1] || 'Schedule'}
+          style={{ maxWidth: '100%', borderRadius: 8, marginTop: 6, display: 'block' }}
+        />
+      );
+    } else {
+      const url = match[3];
+      // Raw URL — check if image
+      if (/\/messaging\/media\/.*\.png/i.test(url) || /\.(png|jpg|jpeg|gif)(\?|$)/i.test(url)) {
+        result.push(
           <img
-            key={i}
-            src={part}
+            key={match.index}
+            src={url}
             alt="Schedule"
             style={{ maxWidth: '100%', borderRadius: 8, marginTop: 6, display: 'block' }}
           />
         );
+      } else {
+        result.push(
+          <a key={match.index} href={url} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>
+            {url}
+          </a>
+        );
       }
-      return (
-        <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>
-          {part}
-        </a>
-      );
     }
-    return part;
-  });
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining text
+  if (lastIndex < text.length) {
+    result.push(text.slice(lastIndex));
+  }
+
+  return result.length > 0 ? result : [text];
 }
 
 export function SmsSimulator() {
@@ -151,15 +180,74 @@ export function SmsSimulator() {
     }
   }
 
-  const quickActions = isConnected ? [
-    'Who has the kids this week?',
-    'Can we swap Friday?',
-    'School is closed tomorrow',
-    'My son is sick today',
-    'Show me the calendar',
-    'Yes',
-    'No',
-  ] : [];
+  // Dynamic quick actions based on the last system message
+  const quickActions = (() => {
+    if (!isConnected) return [];
+
+    const lastSys = [...messages].reverse().find(m => m.from === 'system');
+    if (!lastSys) return ['Yes', 'No'];
+
+    const t = lastSys.text.toLowerCase();
+
+    // Onboarding: asking about kids
+    if (t.includes('how many') && (t.includes('kid') || t.includes('child'))) {
+      return ['1 kid', '2 kids', '3 kids'];
+    }
+    // Asking about ages
+    if (t.includes('age') && !t.includes('stage')) {
+      return ['Ages 2 and 5', 'Age 7', 'Ages 3, 6, and 10'];
+    }
+    // Asking about current arrangement / custody
+    if (t.includes('custody') || t.includes('arrangement') || t.includes('how does') && t.includes('work')) {
+      return ['We alternate weeks', 'I have them weekdays, co-parent gets weekends', 'We do a 2-2-3', "It's pretty informal right now"];
+    }
+    // Asking about weekends
+    if (t.includes('weekend')) {
+      return ['We alternate weekends', 'I always have weekends', 'We split Saturday/Sunday', 'Weekends are flexible'];
+    }
+    // Asking about locked/specific days
+    if (t.includes('always') && (t.includes('night') || t.includes('day'))) {
+      return ['Mondays and Tuesdays are mine', 'Wednesday nights are always mine', 'No specific locked days', 'Weekends are always mine'];
+    }
+    // Asking about remaining days or full week picture
+    if (t.includes('remaining') || t.includes('other days') || t.includes('rest of')) {
+      return ['Co-parent has them', 'We alternate those days', "It varies week to week"];
+    }
+    // Asking about split
+    if (t.includes('split') || t.includes('50/50') || t.includes('overall time')) {
+      return ['50/50', '60/40 — I have more', '70/30 — mostly me', "I'm flexible"];
+    }
+    // Asking about distance
+    if (t.includes('far apart') || t.includes('distance') || t.includes('how far')) {
+      return ['About 10 miles', '20-30 minutes', 'Same neighborhood', 'Over an hour'];
+    }
+    // Asking about handoffs/exchanges
+    if (t.includes('handoff') || t.includes('exchange') || t.includes('drop')) {
+      return ['At school/daycare', 'Curbside at their house', 'At a public place', 'We meet halfway'];
+    }
+    // Asking about phone number
+    if (t.includes('phone') && (t.includes('co-parent') || t.includes('other parent') || t.includes('partner'))) {
+      return ['+15559876543', "I'll add them later"];
+    }
+    // Asking about frustrations / pain points
+    if (t.includes('frustrat') || t.includes('pain') || t.includes('wish') || t.includes('bother') || t.includes('what would')) {
+      return ['Too many transitions', 'Weekends are unpredictable', 'Too much driving', 'Schedule changes last minute', "It's working okay"];
+    }
+    // Asking about max consecutive nights
+    if (t.includes('consecutive') || t.includes('stretch') || t.includes('in a row')) {
+      return ['3 nights max', '4-5 nights is fine', 'No limit', 'Shorter is better for the kids'];
+    }
+    // Preview / confirmation
+    if (t.includes('look good') || t.includes('confirm') || t.includes('does this') || t.includes('go with')) {
+      return ['Yes, looks great!', "Can we adjust it?", 'Show me other options', 'No, start over'];
+    }
+    // Post-onboarding / general conversation
+    if (t.includes('schedule') && (t.includes('created') || t.includes('generated') || t.includes('ready'))) {
+      return ['Show me the calendar', 'Who has the kids this week?', 'Can we swap a day?'];
+    }
+    // Default conversation actions
+    return ['Who has the kids this week?', 'Show me the calendar', 'Yes', 'No'];
+  })();
 
   if (!isConnected) {
     return (

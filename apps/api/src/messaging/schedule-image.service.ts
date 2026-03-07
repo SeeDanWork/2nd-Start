@@ -211,50 +211,125 @@ export class ScheduleImageService {
   }
 
   /**
-   * Generate an onboarding preview showing how schedule changes with an arrangement.
+   * Build a 2-week repeating pattern for a given template, respecting locked days.
+   * Returns [week1, week2] where each week is 7 strings ('parent_a' | 'parent_b').
+   * Week indices: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+   */
+  private buildTemplatePattern(
+    template: string,
+    lockedA: number[],
+    lockedB: number[],
+  ): [string[], string[]] {
+    // Start with nulls for unlocked days
+    const w1: (string | null)[] = new Array(7).fill(null);
+    const w2: (string | null)[] = new Array(7).fill(null);
+
+    // Apply locked days first (these override everything)
+    for (const d of lockedA) { w1[d] = 'parent_a'; w2[d] = 'parent_a'; }
+    for (const d of lockedB) { w1[d] = 'parent_b'; w2[d] = 'parent_b'; }
+
+    // Template patterns for unlocked days
+    // Convention: A=parent_a, B=parent_b
+    switch (template) {
+      case '2-2-3': {
+        // Week 1: AA BB AAA  (Mon-Tue A, Wed-Thu B, Fri-Sat-Sun A)
+        // Week 2: BB AA BBB  (Mon-Tue B, Wed-Thu A, Fri-Sat-Sun B)
+        const w1Pattern = ['parent_a', 'parent_a', 'parent_b', 'parent_b', 'parent_a', 'parent_a', 'parent_a'];
+        const w2Pattern = ['parent_b', 'parent_b', 'parent_a', 'parent_a', 'parent_b', 'parent_b', 'parent_b'];
+        //                  Sun         Mon         Tue         Wed         Thu         Fri         Sat
+        for (let d = 0; d < 7; d++) {
+          if (w1[d] === null) w1[d] = w1Pattern[d];
+          if (w2[d] === null) w2[d] = w2Pattern[d];
+        }
+        break;
+      }
+      case '3-4-4-3': {
+        // Week 1: A has Mon-Wed (3), B has Thu-Sun (4)
+        // Week 2: B has Mon-Thu (4), A has Fri-Sun (3)
+        const w1Pattern = ['parent_b', 'parent_a', 'parent_a', 'parent_a', 'parent_b', 'parent_b', 'parent_b'];
+        const w2Pattern = ['parent_a', 'parent_b', 'parent_b', 'parent_b', 'parent_b', 'parent_a', 'parent_a'];
+        for (let d = 0; d < 7; d++) {
+          if (w1[d] === null) w1[d] = w1Pattern[d];
+          if (w2[d] === null) w2[d] = w2Pattern[d];
+        }
+        break;
+      }
+      case '5-2': {
+        // A has Mon-Fri, B has Sat-Sun (same every week)
+        const pattern = ['parent_b', 'parent_a', 'parent_a', 'parent_a', 'parent_a', 'parent_a', 'parent_b'];
+        for (let d = 0; d < 7; d++) {
+          if (w1[d] === null) w1[d] = pattern[d];
+          if (w2[d] === null) w2[d] = pattern[d];
+        }
+        break;
+      }
+      case 'every_other_weekend': {
+        // A has Mon-Fri every week, weekends alternate
+        const w1p = ['parent_b', 'parent_a', 'parent_a', 'parent_a', 'parent_a', 'parent_a', 'parent_b'];
+        const w2p = ['parent_a', 'parent_a', 'parent_a', 'parent_a', 'parent_a', 'parent_a', 'parent_a'];
+        for (let d = 0; d < 7; d++) {
+          if (w1[d] === null) w1[d] = w1p[d];
+          if (w2[d] === null) w2[d] = w2p[d];
+        }
+        break;
+      }
+      case 'alternating_weeks':
+      default: {
+        // Full week alternation
+        for (let d = 0; d < 7; d++) {
+          if (w1[d] === null) w1[d] = 'parent_a';
+          if (w2[d] === null) w2[d] = 'parent_b';
+        }
+        break;
+      }
+    }
+
+    return [w1 as string[], w2 as string[]];
+  }
+
+  /**
+   * Generate an onboarding preview showing 3 weeks of the schedule pattern.
+   * Accepts a template name to render the correct day-level pattern.
    */
   async generateArrangementPreview(
     arrangement: 'shared' | 'primary' | 'undecided',
     lockedDays: number[],
     parentALabel: string,
+    template?: string,
   ): Promise<string> {
     const width = 600;
-    const height = 200;
+    const height = 250;
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const dayWidth = 74;
     const startX = 26;
     const startY = 70;
     const gap = 6;
+    const rowHeight = 44;
 
-    // Generate a sample 2-week pattern
-    const week1: string[] = [];
-    const week2: string[] = [];
+    // Build 2-week repeating pattern from template
+    const effectiveTemplate = template || (arrangement === 'primary' ? '5-2' : 'alternating_weeks');
+    const [w1, w2] = this.buildTemplatePattern(effectiveTemplate, lockedDays, []);
 
-    for (let dow = 0; dow < 7; dow++) {
-      let w1Parent: string;
-      let w2Parent: string;
+    // Week 3 = same as week 1 (repeating 2-week cycle)
+    const weeks = [w1, w2, [...w1]];
 
-      if (lockedDays.includes(dow)) {
-        w1Parent = 'parent_a';
-        w2Parent = 'parent_a';
-      } else if (arrangement === 'primary') {
-        w1Parent = (dow === 0 || dow === 6) ? 'parent_b' : 'parent_a';
-        w2Parent = w1Parent;
-      } else {
-        w1Parent = 'parent_a';
-        w2Parent = 'parent_b';
-      }
-      week1.push(w1Parent);
-      week2.push(w2Parent);
-    }
+    // Template display names
+    const templateNames: Record<string, string> = {
+      '2-2-3': '2-2-3 Pattern',
+      '3-4-4-3': '3-4-4-3 Pattern',
+      '5-2': '5-2 Pattern',
+      'every_other_weekend': 'Every Other Weekend',
+      'alternating_weeks': 'Alternating Weeks',
+      'custom': 'Custom Pattern',
+    };
+    const title = `${templateNames[effectiveTemplate] || 'Schedule Preview'} (3 weeks)`;
 
-    const title = arrangement === 'shared'
-      ? 'Alternating Weeks Preview'
-      : arrangement === 'primary'
-        ? 'Primary Custody Preview'
-        : 'Default Schedule Preview';
+    // Count nights per parent across 3 weeks
+    const countA = weeks.flat().filter(p => p === 'parent_a').length;
+    const countB = weeks.flat().filter(p => p === 'parent_b').length;
+    const splitPct = Math.round((countA / (countA + countB)) * 100);
 
-    const renderWeek = (week: string[], label: string, yOffset: number) => {
+    const renderWeek = (week: string[], yOffset: number) => {
       return week.map((parent, i) => {
         const x = startX + i * (dayWidth + gap);
         const y = startY + yOffset;
@@ -278,15 +353,17 @@ export class ScheduleImageService {
         </defs>
         <rect width="${width}" height="${height}" rx="16" fill="url(#bgGrad)" />
         <text x="30" y="30" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#fff">${title}</text>
-        <text x="30" y="50" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">Week 1 &amp; Week 2 pattern</text>
+        <text x="30" y="50" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">Split: ${splitPct}/${100 - splitPct} over 3 weeks (${countA} nights A, ${countB} nights B)</text>
         <text x="10" y="${startY + 22}" font-family="Arial, sans-serif" font-size="9" fill="#6b7280">W1</text>
-        ${renderWeek(week1, 'Week 1', 0)}
-        <text x="10" y="${startY + 66}" font-family="Arial, sans-serif" font-size="9" fill="#6b7280">W2</text>
-        ${renderWeek(week2, 'Week 2', 44)}
-        <rect x="30" y="${height - 30}" width="10" height="10" rx="2" fill="#FFA54C" />
-        <text x="46" y="${height - 21}" font-family="Arial, sans-serif" font-size="10" fill="#9ca3af">${parentALabel}</text>
-        <rect x="140" y="${height - 30}" width="10" height="10" rx="2" fill="#4CAF7C" />
-        <text x="156" y="${height - 21}" font-family="Arial, sans-serif" font-size="10" fill="#9ca3af">Co-parent</text>
+        ${renderWeek(weeks[0], 0)}
+        <text x="10" y="${startY + 22 + rowHeight}" font-family="Arial, sans-serif" font-size="9" fill="#6b7280">W2</text>
+        ${renderWeek(weeks[1], rowHeight)}
+        <text x="10" y="${startY + 22 + rowHeight * 2}" font-family="Arial, sans-serif" font-size="9" fill="#6b7280">W3</text>
+        ${renderWeek(weeks[2], rowHeight * 2)}
+        <rect x="30" y="${height - 25}" width="10" height="10" rx="2" fill="#FFA54C" />
+        <text x="46" y="${height - 16}" font-family="Arial, sans-serif" font-size="10" fill="#9ca3af">${parentALabel}</text>
+        <rect x="140" y="${height - 25}" width="10" height="10" rx="2" fill="#4CAF7C" />
+        <text x="156" y="${height - 16}" font-family="Arial, sans-serif" font-size="10" fill="#9ca3af">Co-parent</text>
       </svg>
     `;
 
