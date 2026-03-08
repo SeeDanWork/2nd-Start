@@ -22,6 +22,7 @@ import {
   handleInjectDisruption,
   DuplicateDisruptionError,
 } from './handlers';
+import { getSession } from './session-store';
 
 export type ActionType =
   | 'connect'
@@ -62,7 +63,13 @@ export async function orchestrate(req: OrchestratorRequest): Promise<Orchestrato
 
       case 'send': {
         const result = await handleSend(scenario, phone, body as string);
-        return { status: 200, data: result };
+        const session = getSession(scenarioId);
+        return { status: 200, data: {
+          ...result,
+          sessionMode: session?.mode,
+          sessionEventCount: session?.events.length,
+          activeCaseCount: session?.cases.getActiveCases(session.id).length,
+        } };
       }
 
       case 'auto_respond': {
