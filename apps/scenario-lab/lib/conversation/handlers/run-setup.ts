@@ -178,6 +178,22 @@ function runParentBOnboarding(
     }
   }
 
+  // Ensure Parent B always gets the schedule-created confirmation
+  const lastBMsg = scenario.messagesB[scenario.messagesB.length - 1];
+  const hasCompletion = lastBMsg && lastBMsg.text.includes('schedule is now created');
+  if (!hasCompletion) {
+    scenario.messagesB.push({
+      id: crypto.randomUUID(), from: 'system',
+      text: "Your family schedule is now created! You can view your upcoming exchanges by typing 'schedule'. Type 'help' for available commands.",
+      timestamp: now(), phone: scenario.config.parentB.phone,
+    });
+    scenario.messagesB.push({
+      id: crypto.randomUUID(), from: 'system',
+      text: `${scenario.config.parentA.label} has invited you to ADCP to co-manage your family's custody schedule. Everything is set up and ready to go.`,
+      timestamp: now(), phone: scenario.config.parentB.phone,
+    });
+  }
+
   addLog(scenario.id, 'info', scenario.config.parentB.phone, {
     action: 'setup_parent_b_done', answeredTopics: [...bAnswered],
   });

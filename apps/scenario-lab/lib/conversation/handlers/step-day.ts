@@ -65,14 +65,17 @@ export function handleStepDay(
     const isSilent = opMsgA.type === 'SILENT' && !fairnessAlert && !frictionAlert;
 
     if (isSilent) {
-      const statusText = buildDaySummaryExplanation(scenario.config, scenario.schedule, simDay);
-      if (statusText) {
+      const statusTextA = buildDaySummaryExplanation(scenario.config, scenario.schedule, simDay, 'parent_a');
+      const statusTextB = buildDaySummaryExplanation(scenario.config, scenario.schedule, simDay, 'parent_b');
+      if (statusTextA) {
         scenario.messagesA.push({
-          id: crypto.randomUUID(), from: 'system', text: statusText,
+          id: crypto.randomUUID(), from: 'system', text: statusTextA,
           timestamp: ts, phone: scenario.config.parentA.phone,
         });
+      }
+      if (statusTextB) {
         scenario.messagesB.push({
-          id: crypto.randomUUID(), from: 'system', text: statusText,
+          id: crypto.randomUUID(), from: 'system', text: statusTextB,
           timestamp: ts, phone: scenario.config.parentB.phone,
         });
       }

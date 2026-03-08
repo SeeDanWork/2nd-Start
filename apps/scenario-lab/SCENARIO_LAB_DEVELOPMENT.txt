@@ -1,0 +1,791 @@
+================================================================================
+  ADCP SCENARIO LAB — DEVELOPMENT DOCUMENTATION
+================================================================================
+
+Last updated: 2026-03-07
+Codebase location: apps/scenario-lab/
+Branch: Deterministic-Model-Refinement (parent: Brain-and-Onboarding)
+
+
+TABLE OF CONTENTS
+-----------------
+1. What is Scenario Lab?
+2. Tech Stack
+3. Project Structure
+4. Core Modules (27 files)
+5. UI Components (3 + 5 pages)
+6. API Routes (5 endpoints)
+7. Test Suite (11 files, 210 tests)
+8. Data Model
+9. Personas (6 archetypes)
+10. Scenario Catalog (40+ scenarios)
+11. Schedule Templates (5 patterns)
+12. Scenario Presets (15 configurations)
+13. Monte Carlo Simulation
+14. Development Workflow
+15. Known Limitations
+16. Key Design Decisions
+
+
+================================================================================
+1. WHAT IS SCENARIO LAB?
+================================================================================
+
+Scenario Lab is a standalone Next.js application for testing and validating
+ADCP's custody scheduling system. It simulates realistic co-parenting
+conversations, disruptions, and schedule negotiations without requiring
+the full backend infrastructure (NestJS API, PostgreSQL, Python optimizer).
+
+PURPOSE:
+  - Test the conversation flow end-to-end
+  - Validate persona behavior under different scenarios
+  - Stress-test the disruption/mediation pipeline
+  - Generate deterministic schedule outputs
+  - Produce diagnostic data for system tuning
+
+Scenario Lab runs entirely in-browser + Next.js server. State is held
+in-memory (no database). Each scenario is isolated and disposable.
+
+
+================================================================================
+2. TECH STACK
+================================================================================
+
+Framework:      Next.js 15.5 (App Router)
+Language:       TypeScript (strict)
+UI:             React 19 + Tailwind CSS
+State:          In-memory Map (server-side, globalThis for HMR persistence)
+Testing:        Vitest 2.1.9 with path aliases
+LLM:            Optional external router (http://localhost:3100)
+Port:           4000 (default)
+
+
+================================================================================
+3. PROJECT STRUCTURE
+================================================================================
+
+apps/scenario-lab/
+  app/                          # Next.js App Router
+    layout.tsx                  # Root layout with Tailwind
+    page.tsx                    # Home page — scenario list
+    api/
+      simulate/route.ts         # POST — main simulation endpoint
+      scenarios/route.ts        # GET/POST — CRUD scenarios
+      scenarios/[id]/route.ts   # GET/PATCH/DELETE single scenario
+      export/route.ts           # POST — export scenario data
+      monte-carlo/route.ts      # POST — run Monte Carlo simulations
+    scenarios/
+      new/page.tsx              # Create new scenario form
+      [id]/simulate/page.tsx    # Main simulation UI (788 lines)
+    monte-carlo/
+      page.tsx                  # Monte Carlo dashboard
+
+  components/
+    PhoneSimulator.tsx          # Dual phone chat interface (428 lines)
+    ScheduleCalendar.tsx        # Full calendar view
+    DiagnosticsPanel.tsx        # Logs and metrics viewer
+
+  lib/                          # Core logic (all deterministic)
+    types.ts                    # All interfaces and type definitions
+    store.ts                    # In-memory scenario store
+    api.ts                      # Client-side API helpers
+
+    behavior-engine.ts          # Persona decision logic (800+ lines)
+    disruption-engine.ts        # Disruption state machine
+    explanation-engine.ts       # Deterministic explanation traces
+    message-router.ts           # Asymmetric message routing
+    operational-messages.ts     # Day-to-day operational messages
+    personas.ts                 # 6 parent persona definitions
+    proposal-generator.ts       # Coverage option generation
+    scenarios.ts                # 40+ scenario catalog definitions
+    schedule-generator.ts       # Template-based schedule generation
+
+    conversation/               # Layered conversation architecture
+      orchestrator.ts           # Single entry point, action routing
+      state.ts                  # Phase detection, topic tracking
+      handlers/
+        index.ts                # Barrel export
+        connect.ts              # First-time connection
+        send.ts                 # User message processing
+        auto-respond.ts         # Single parent auto-response
+        simulate-pair.ts        # Both parents respond
+        run-setup.ts            # Full automated onboarding
+        step-day.ts             # Day advancement
+        inject-disruption.ts    # Disruption injection
+
+    llm/
+      client.ts                 # Isolated LLM API calls
+
+    monte-carlo/
+      index.ts                  # Monte Carlo exports
+      runner.ts                 # Simulation runner
+      stress-model.ts           # Stress scoring model
+      types.ts                  # Monte Carlo types
+
+  tests/                        # Vitest test files
+    behavior-engine.test.ts     # 40 tests
+    conversation-state.test.ts  # 18 tests
+    disruption-engine.test.ts   # 33 tests
+    explanation-engine.test.ts  # 21 tests
+    llm-client.test.ts          # 4 tests
+    message-router.test.ts      # 19 tests
+    operational-messages.test.ts # 21 tests
+    orchestrator.test.ts        # 15 tests
+    proposal-generator.test.ts  # 14 tests
+    schedule-generator.test.ts  # 14 tests
+    store.test.ts               # 11 tests
+
+  vitest.config.ts              # Vitest config with @/ path alias
+  package.json                  # Scripts: dev, build, test, test:watch
+  tsconfig.json                 # TypeScript config
+  tailwind.config.ts            # Tailwind config
+  next.config.ts                # Next.js config
+
+
+================================================================================
+4. CORE MODULES (27 files)
+================================================================================
+
+--- types.ts (344 lines) ---
+All core interfaces: ScenarioConfig, Scenario, Message, ScheduleDay,
+SimulationLog, ChildConfig, ParentConfig, ScenarioStatus.
+Also contains TEMPLATE_OPTIONS, SCENARIO_PRESETS (15), and DAY_NAMES.
+
+--- store.ts (71 lines) ---
+In-memory scenario store backed by Map<string, Scenario>.
+Uses globalThis for HMR persistence in development.
+Functions: createScenario, getScenario, listScenarios, updateScenario,
+deleteScenario, addLog.
+IDs: 16-character hex strings from crypto.randomBytes(8).
+
+--- behavior-engine.ts (800+ lines) ---
+The brain of persona behavior. Contains:
+  - Decision engine (evaluateProposal, evaluateDisruption)
+  - Archetype-aware evaluation
+  - Persona message generation (template library)
+  - System message classification (keyword matching)
+  - Topic classification (compound + single)
+  - Reactive answer generation
+  - Compound answer generation
+  - Synthetic onboarding system (8-step flow)
+  - Simulation metrics computation
+  - Response timing calculations
+
+--- disruption-engine.ts ---
+Immutable state machine for disruption lifecycle.
+8 states, pure transition functions.
+Duplicate detection, event classification.
+See CONVERSATION_LOGIC.txt Section 8.
+
+--- explanation-engine.ts (355 lines) ---
+Deterministic explanation traces. Three detail levels.
+Score computation: fairness, transition, routine, fragmentation penalties.
+Factor analysis: improved/unchanged/degraded per metric.
+Personalized day summaries with recipient-aware pronouns.
+
+--- message-router.ts (308 lines) ---
+Asymmetric message routing. 10 message types.
+Each parent gets contextually appropriate messages.
+See CONVERSATION_LOGIC.txt Section 9.
+
+--- operational-messages.ts ---
+Day-to-day operational message generation.
+11 message types from SILENT to FRICTION_DETECTION.
+Schedule metrics computation (fairness, transitions, stability).
+See CONVERSATION_LOGIC.txt Section 10.
+
+--- personas.ts ---
+6 parent persona definitions with behavior parameters.
+Interaction archetypes for persona pairs.
+See Section 9 below.
+
+--- proposal-generator.ts ---
+Generates coverage options for disruptions.
+Options: full transfer, partial day, shortened coverage.
+Fairness impact calculation, compensation day scheduling.
+
+--- scenarios.ts ---
+40+ scenario catalog entries across 11 categories.
+5 difficulty levels. Response patterns for archetype-specific behavior.
+
+--- schedule-generator.ts ---
+Template-based schedule generation with locked night overrides.
+5 patterns: alternating_weeks, 2-2-3, 3-4-4-3, 5-2, every_other_weekend.
+Starts from next Monday, generates N weeks of daily assignments.
+
+--- conversation/orchestrator.ts ---
+Single entry point. 7 actions. Error normalization.
+See CONVERSATION_LOGIC.txt Section 2.
+
+--- conversation/state.ts ---
+Pure state tracking functions.
+See CONVERSATION_LOGIC.txt Section 4.
+
+--- conversation/handlers/ (7 files) ---
+One handler per action. Typed inputs/outputs.
+See CONVERSATION_LOGIC.txt Section 3.
+
+--- llm/client.ts ---
+3 functions, all return null on failure.
+See CONVERSATION_LOGIC.txt Section 7.
+
+--- monte-carlo/ (4 files) ---
+Statistical simulation runner. Runs N iterations of a scenario
+with randomized persona decisions. Produces distribution of outcomes:
+acceptance rates, conflict escalations, fairness drift.
+
+
+================================================================================
+5. UI COMPONENTS
+================================================================================
+
+--- PhoneSimulator.tsx (428 lines) ---
+Dual phone chat interface. Each phone represents one parent.
+Features:
+  - Message bubbles (user = right/colored, system = left/white)
+  - Special renderers for:
+    - Calculation traces (expandable technical details)
+    - Disruption alerts (red-bordered)
+    - Day summaries (compact format)
+  - Inline schedule preview triggered by "schedule is now created" messages
+    - 2-week calendar grid with color coding
+    - Parent A = orange, Parent B = green
+    - Transition days have ring indicator
+  - Connect button (first-time connection)
+  - Quick action buttons (context-dependent)
+  - Auto-scroll on new messages
+  - Typing indicator animation
+  - Markdown link detection and image rendering
+
+Props:
+  label, phone, color, messages, onSend, onConnect, connected, sending,
+  quickActions, schedule, parentALabel, parentBLabel, onViewSchedule
+
+--- ScheduleCalendar.tsx ---
+Full calendar view showing all scheduled days.
+Monthly grid with parent color coding.
+Transition day indicators. Legend.
+
+--- DiagnosticsPanel.tsx ---
+Logs viewer with filtering and JSON detail expansion.
+Shows all simulation events, API calls, errors.
+
+--- Pages ---
+
+  page.tsx (Home):
+    Scenario list with cards. Create from preset or custom.
+    Shows status badges, message counts, tags.
+
+  scenarios/new/page.tsx:
+    Form for creating custom scenarios.
+    Template picker, child editor, parent config,
+    persona selector, scenario catalog picker.
+
+  scenarios/[id]/simulate/page.tsx (788 lines):
+    Main simulation interface. The most complex page.
+    Features:
+      - Tab navigation: Phones | Calendar | Diagnostics
+      - Dual PhoneSimulator side by side
+      - Control panel: Run Setup, Step Day (1/7/14/28), Inject Disruption
+      - Persona selectors for both parents (dropdown)
+      - Simulate Pair button (both respond at once)
+      - Export buttons (summary, conversation, schedule, diagnostics)
+      - Behavior trait radar display for persona pairs
+      - Quick action buttons context-aware per parent
+
+  monte-carlo/page.tsx:
+    Monte Carlo dashboard. Select scenario preset, run N iterations,
+    view distribution charts for outcomes.
+
+
+================================================================================
+6. API ROUTES
+================================================================================
+
+POST /api/simulate
+  Body: { scenarioId, phone, action, body? }
+  Actions: connect, send, auto_respond, simulate_pair, run_setup,
+           step_day, inject_disruption
+  Routes through orchestrator. Returns action-specific data.
+
+GET /api/scenarios
+  Returns all scenarios sorted by creation date (newest first).
+
+POST /api/scenarios
+  Body: ScenarioConfig
+  Creates new scenario with 'draft' status. Returns full Scenario.
+
+GET /api/scenarios/[id]
+  Returns single scenario by ID.
+
+PATCH /api/scenarios/[id]
+  Body: Partial<Scenario>
+  Updates scenario fields. Returns updated Scenario.
+
+DELETE /api/scenarios/[id]
+  Deletes scenario. Returns { success: true }.
+
+POST /api/export
+  Body: { scenarioId, type }
+  Types: summary, conversation, schedule, diagnostics
+  Returns formatted text export.
+
+POST /api/monte-carlo
+  Body: { config, iterations, seed? }
+  Runs Monte Carlo simulation. Returns statistical results.
+
+
+================================================================================
+7. TEST SUITE
+================================================================================
+
+Framework: Vitest 2.1.9
+Config: vitest.config.ts (path alias @/ → .)
+Scripts: npm test (vitest run), npm run test:watch (vitest)
+
+TOTAL: 11 test files, 210 tests, all passing
+
+--- store.test.ts (11 tests) ---
+  createScenario: defaults, unique IDs
+  getScenario: found, not found
+  listScenarios: returns all
+  updateScenario: updates fields, unknown ID
+  deleteScenario: removes, unknown ID
+  addLog: appends entry, unknown scenario
+
+--- behavior-engine.test.ts (40 tests) ---
+  evaluateProposal: cooperative accepts, valid results, fairness impact,
+    disruption bonus
+  evaluateDisruption: flexible accepts, all personas valid
+  generatePersonaMessage: all personas greet, different situations,
+    disruption report includes event, high-conflict resistant
+  classifySystemMessage: greeting, children_count, arrangement, distance,
+    phone, confirmed, confirm, locked_days, unknown, empty
+  classifyAllTopics: compound questions, terminal states
+  generateReactiveAnswer: children_count, arrangement, already-answered, confirm
+  generateCompoundAnswer: multiple topics, skip answered, return confirm
+  isOnboardingComplete: completion message, mid-onboarding
+  generateSyntheticSystemResponse: welcome, progression, completion
+  getArchetype: known pair, unknown pair
+  computeMetrics: empty, rates, escalations, gaming
+
+--- disruption-engine.test.ts (33 tests) ---
+  createDisruption: correct defaults, otherParent
+  setDuration: today_only, 2_3_days, week, unknown
+  classifyDisruptionType: child_sick, parent_sick, work_emergency, etc.
+  isDuplicateDisruption: same parent+type+day, different combos
+  State transitions: full chain, immutable returns
+
+--- explanation-engine.test.ts (21 tests) ---
+  snapshotMetrics: correct counts
+  buildExplanation: full object, factors, scores
+  formatLevel1/2/3: formatting, improved/degraded/mixed
+  buildDaySummaryExplanation: date format, transition day, next exchange,
+    recipient personalization ("you" vs label)
+  formatCalculationTrace: before/after comparison
+
+--- message-router.test.ts (19 tests) ---
+  disruptionReportConfirmation: text, recipient
+  durationQuestion: options text
+  coverageRequest: reporter label, duration text
+  proposalBundleMessage: formatted options
+  proposalSelectedMessage: both parents get different text
+  declineConfirmation: both parents get different text
+  manageSelfConfirmation: reporter only
+  followupCheck: event label, options
+
+--- operational-messages.test.ts (21 tests) ---
+  computeScheduleMetrics: empty, balanced, unbalanced
+  getOperationalMessage: silent days, transition days, weekly overview,
+    fairness alerts, long stretch alerts
+  checkFairnessAlert: balanced OK, unbalanced triggers
+  checkFrictionAhead: upcoming transitions detected
+
+--- schedule-generator.test.ts (14 tests) ---
+  generateSchedule: correct length, starts Monday, alternating weeks,
+    2-2-3 pattern, locked nights override, transition marking
+
+--- proposal-generator.test.ts (14 tests) ---
+  generateProposalBundle: has disruptionId, empty options, today_only options,
+    3-day options, fairness impact, partial coverage, shortened coverage,
+    compensation window, unique IDs
+  formatProposalBundle: empty, with options, fairness info
+  formatProposalOption: label, no fairness impact
+
+--- conversation-state.test.ts (18 tests) ---
+  getConversationPhase: all 6 phases
+  buildAnsweredTopics: empty, system-user pairs, skips unknown
+  resolveParentContext: parent A, parent B
+  getLastSystemMessage: found, empty
+  isOnboardingDone: complete, incomplete
+
+--- orchestrator.test.ts (15 tests) ---
+  Routing: 404 for unknown, 400 for invalid action
+  connect: returns welcome
+  send: processes message, returns response
+  auto_respond: generates persona response, 400 without persona
+  simulate_pair: both parents respond, 400 without personas
+  run_setup: completes onboarding, generates schedule
+  step_day: advances by 1, by 7, auto-generates schedule
+  inject_disruption: full flow, unknown scenario, duplicate 409
+
+--- llm-client.test.ts (4 tests) ---
+  classifyIntent: returns null when unavailable
+  extractEntities: returns null when unavailable
+  generateExplanation: returns null when unavailable
+  classifyIntent: accepts context parameter
+
+
+================================================================================
+8. DATA MODEL
+================================================================================
+
+SCENARIO (root entity):
+  id: string (16-char hex)
+  config: ScenarioConfig
+  status: draft | configuring | simulating | completed | error
+  messagesA: Message[]       (Parent A's conversation)
+  messagesB: Message[]       (Parent B's conversation)
+  logs: SimulationLog[]      (all events, append-only)
+  schedule: ScheduleDay[]    (generated schedule)
+  currentDay: number         (simulation progress)
+  activeDisruptions: ActiveDisruption[]
+  bootstrapFacts: Record | null
+  familyId: string | null
+  createdAt: string (ISO)
+  completedAt: string | null
+
+SCENARIO CONFIG:
+  name, description
+  children: [{ age, name, schoolDays? }]
+  parentA: { label, phone }
+  parentB: { label, phone }
+  template: string (schedule pattern)
+  targetSplit: number (0-100)
+  lockedNights: [{ parent, daysOfWeek[] }]
+  distanceMiles: number
+  tags: string[]
+  personaA?: string (persona ID)
+  personaB?: string (persona ID)
+  scenarioIds?: string[] (disruption catalog IDs)
+  simulationWeeks?: number
+
+MESSAGE:
+  id, from (user|system), text, timestamp, phone
+
+SCHEDULE DAY:
+  date (ISO string), assignedTo (parent_a|parent_b), isTransition (boolean)
+
+ACTIVE DISRUPTION:
+  id, state (8-state machine), eventType, reportingParent, otherParent,
+  duration, coverageType, reportedAt, affectedDays[], proposals,
+  selectedProposalId, resolvedAt
+
+SIMULATION LOG:
+  id, timestamp, type (api_call|tool_use|stage_change|error|info|disruption),
+  phone, data (arbitrary JSON)
+
+
+================================================================================
+9. PERSONAS (6 Archetypes)
+================================================================================
+
+Each persona has behavior parameters on 1-5 scales:
+
+1. COOPERATIVE ORGANIZER
+   conflict: 1 | fairness: 3 | rigidity: 4 | tolerance: 4
+   speed: fast | gaming: 0% | acceptance: 80%
+   Prioritizes stability. Accepts reasonable proposals quickly.
+
+2. FAIRNESS SCOREKEEPER
+   conflict: 3 | fairness: 5 | rigidity: 3 | tolerance: 2
+   speed: medium | gaming: 10% | acceptance: 50%
+   Tracks balance carefully. Resists perceived imbalance.
+
+3. FLEXIBLE BUT DISORGANIZED
+   conflict: 1 | fairness: 2 | rigidity: 1 | tolerance: 5
+   speed: slow | gaming: 0% | acceptance: 90%
+   Accepts most changes but frequently causes disruptions.
+
+4. STRATEGIC GAMER
+   conflict: 4 | fairness: 3 | rigidity: 3 | tolerance: 2
+   speed: medium | gaming: 70% | acceptance: 30%
+   Exploits system rules for advantage. Injects extra time requests.
+
+5. AVOIDANT PARENT
+   conflict: 2 | fairness: 2 | rigidity: 2 | tolerance: 3
+   speed: very_slow | gaming: 5% | acceptance: 60%
+   Slow to respond. 40% chance of ignoring messages entirely.
+
+6. HIGH CONFLICT CONTROLLER
+   conflict: 5 | fairness: 4 | rigidity: 5 | tolerance: 1
+   speed: fast | gaming: 30% | acceptance: 20%
+   Rejects most proposals. Rigid and combative.
+
+INTERACTION ARCHETYPES:
+  Define expected dynamics for persona pairs. Include:
+  - conflict_probability
+  - typical resolution patterns
+  - expected escalation paths
+
+
+================================================================================
+10. SCENARIO CATALOG
+================================================================================
+
+40+ scenarios across 11 categories, 5 difficulty levels:
+
+CATEGORIES:
+  health     — child_sick, parent_sick
+  school     — school_closure, school_event_conflict
+  work       — work_emergency, business_trip
+  logistics  — late_pickup, transport_failure
+  travel     — vacation_request, parent_travel
+  holiday    — holiday_override, holiday_extension
+  conflict   — fairness_complaint, proposal_rejection_loop
+  stress     — compound_disruption, seasonal_chaos
+  edgecase   — emergency_relocation, court_order_update
+  family     — family_wedding, new_partner_introduction
+  legal      — custody_modification_request
+
+DIFFICULTY LEVELS:
+  1 — Simple disruption (today_only resolution)
+  2 — Multi-step negotiation
+  3 — Fairness balancing required (2_3_days duration)
+  4 — Repeated proposal rejection
+  5 — Solver constraint edge case
+
+
+================================================================================
+11. SCHEDULE TEMPLATES (5 Patterns)
+================================================================================
+
+Each template defines a repeating cycle of parent assignments:
+(true = parent_a, false = parent_b)
+
+ALTERNATING WEEKS (50/50):
+  Week 1: A A A A A A A
+  Week 2: B B B B B B B
+
+2-2-3 (50/50):
+  Week 1: A A B B A A A
+  Week 2: B B A A B B B
+
+3-4-4-3 (50/50):
+  Week 1: A A A B B B B
+  Week 2: A A A A B B B
+
+5-2 (71/29):
+  Every week: A A A A A B B
+
+EVERY OTHER WEEKEND (79/21):
+  Week 1: A A A A A A A
+  Week 2: A A A A A B B
+
+Schedule generation:
+  - Starts from next Monday
+  - Applies template pattern cyclically
+  - Overrides with locked nights (specific days always with specific parent)
+  - Marks transition days (custody switches)
+  - Default: 8 weeks (56 days)
+
+
+================================================================================
+12. SCENARIO PRESETS (15 Configurations)
+================================================================================
+
+Pre-built scenarios covering the full behavior matrix:
+
+COOPERATIVE BASELINES:
+  1. Cooperative 50/50 — 2 school kids, alternating weeks, both cooperative
+  2. Toddler Stability — young child, 2-2-3, organizer + scorekeeper
+
+FAIRNESS-SENSITIVE:
+  3. Scorekeeper vs Organizer — 3-4-4-3, fairness disputes
+  4. Scorekeeper vs Flexible — disruption-prone, fairness tracking
+
+HIGH CONFLICT:
+  5. High Conflict / No Contact — controller vs gamer, adversarial
+  6. Controller vs Scorekeeper — rigid controller, frequent disputes
+
+AVOIDANT:
+  7. Organizer vs Avoidant — one drives all decisions
+  8. Avoidant Pair — both low engagement, system auto-resolves
+
+STRATEGIC:
+  9. Gamer vs Organizer — strategic exploitation
+  10. Gamer vs Avoidant — takes advantage of disengagement
+
+LOGISTICS:
+  11. Long Distance 5-2 — 45 miles, logistics stress
+
+STRESS TEST:
+  12. Blended Ages — 3 kids (toddler to teen), compound disruptions
+  13. Maximum Adversarial — infant, controller vs gamer, every conflict
+  14. Emergency Relocation — schedule rebuild
+  15. Holiday Gauntlet — holiday season, every holiday scenario
+
+
+================================================================================
+13. MONTE CARLO SIMULATION
+================================================================================
+
+Files: lib/monte-carlo/
+
+Runs N iterations of a scenario with randomized persona decisions.
+Each iteration:
+  1. Create scenario from config
+  2. Run setup (automated onboarding)
+  3. Step through simulation weeks
+  4. Inject disruptions at configured points
+  5. Record all decisions, metrics, outcomes
+
+Output:
+  - Acceptance rate distribution
+  - Conflict escalation frequency
+  - Fairness drift over time
+  - Gaming attempt detection rate
+  - Schedule volatility metrics
+
+UI: /monte-carlo page with scenario picker and results visualization.
+
+
+================================================================================
+14. DEVELOPMENT WORKFLOW
+================================================================================
+
+SETUP:
+  cd apps/scenario-lab
+  npm install
+  npm run dev          # Start on port 4000
+
+TESTING:
+  npm test             # Run all 210 tests once
+  npm run test:watch   # Watch mode
+
+BUILD:
+  npm run build        # Next.js production build
+
+KEY SCRIPTS (package.json):
+  "dev": "next dev -p 4000"
+  "build": "next build"
+  "test": "vitest run"
+  "test:watch": "vitest"
+
+ENVIRONMENT VARIABLES:
+  LLM_ROUTER_URL — Optional LLM router (default: http://localhost:3100)
+  No other env vars required. System works fully offline.
+
+HMR NOTE:
+  The in-memory store uses globalThis to survive Hot Module Replacement.
+  Scenarios persist across code changes during development.
+  Restart the server to clear all state.
+
+TESTING NOTES:
+  - Tests use vitest with @/ path alias mapping to project root
+  - LLM tests have ~4s timeout (waiting for network failure)
+  - Orchestrator tests are slower (~8s) due to LLM fallback timeouts
+  - All tests are deterministic except probability-based persona tests
+    which use large sample sizes (20-50 iterations) for statistical validity
+
+
+================================================================================
+15. KNOWN LIMITATIONS
+================================================================================
+
+1. IN-MEMORY STATE: All data lost on server restart. No persistence layer.
+   Intentional for rapid iteration. Not suitable for production.
+
+2. NO REAL LLM INTEGRATION: LLM router is optional and fire-and-forget.
+   The system works fully without it. LLM adds intent classification
+   and entity extraction as enrichment only.
+
+3. SINGLE-USER: No authentication. No multi-user support. The store is
+   shared across all browser sessions hitting the same server.
+
+4. SCHEDULE GENERATION IS SIMPLIFIED: Uses template patterns + locked
+   nights. Does not call the Python CP-SAT optimizer. Adequate for
+   testing conversation logic but not production-quality schedules.
+
+5. NO REAL-TIME: Step-day is manual. No cron or automated time progression.
+   The user must explicitly advance the simulation day by day or in batches.
+
+6. NO SMS/WHATSAPP: Phone simulators are UI-only. No actual message delivery.
+   The phone numbers are identifiers, not real phone numbers.
+
+7. RESPONSE TIMING: Response delays are calculated but not enforced.
+   All responses are instant in the UI. Delay values are logged for analysis.
+
+8. PERSONA RANDOMNESS: Decision outcomes have a random component (Math.random).
+   The same scenario may produce different decisions across runs.
+   Monte Carlo simulation addresses this via statistical aggregation.
+
+9. PARENT B ONBOARDING: Parent B's automated onboarding is simplified.
+   It may exit early if the compound answer generation gets stuck.
+   A fallback ensures the "schedule created" message is always delivered.
+
+10. SWC LOCKFILE WARNING: Next.js 15.5 shows "Found lockfile missing swc
+    dependencies" on startup in monorepo context. Harmless — the server
+    starts and runs correctly despite the error messages.
+
+
+================================================================================
+16. KEY DESIGN DECISIONS
+================================================================================
+
+1. DETERMINISTIC OVER LLM:
+   Every piece of conversation logic can run without an LLM. The behavior
+   engine uses numeric scoring formulas, not natural language generation.
+   This makes the system testable, reproducible, and debuggable.
+
+2. ASYMMETRIC MESSAGING:
+   Each parent gets different messages based on their role in the current
+   interaction. The reporting parent sees confirmation + duration questions.
+   The other parent sees coverage requests + proposals. This mirrors how
+   a real mediation system would work — each party has their own view.
+
+3. IMMUTABLE STATE TRANSITIONS:
+   The disruption state machine uses pure functions that return new objects.
+   Each transition is a function call: createDisruption → setDuration →
+   attachProposals → selectProposal → resolveDisruption. No mutation.
+
+4. PERSONA BEHAVIOR AS NUMERIC PARAMETERS:
+   Rather than using LLM prompts to simulate personality, each persona
+   is a set of numeric parameters (conflict_level, fairness_sensitivity, etc.)
+   that feed into deterministic scoring formulas. This allows:
+   - Precise control over behavior
+   - Statistical analysis via Monte Carlo
+   - No LLM cost or latency
+
+5. LAYERED ARCHITECTURE:
+   The original 950-line route.ts was refactored into:
+   - 15-line HTTP adapter (route.ts)
+   - Orchestrator for routing
+   - 7 standalone handlers
+   - Shared state tracking
+   - Isolated LLM client
+   Each layer has a single responsibility and is independently testable.
+
+6. PERSONALIZED DAY SUMMARIES:
+   The explanation engine generates different text for each parent.
+   "Sat Mar 14 | Emma & Jake with you." vs
+   "Sat Mar 14 | Emma & Jake with Mom."
+   This required passing a recipient parameter through the call chain.
+
+7. SCHEDULE PREVIEW TRIGGERED BY MESSAGE TEXT:
+   The inline calendar preview in PhoneSimulator.tsx is triggered by
+   detecting "schedule is now created" in a system message. This means
+   any code path that should show the calendar must include that exact
+   phrase in its message text.
+
+8. CROSS-PARENT NOTIFICATION ON COMPLETION:
+   When Parent A completes onboarding via manual chat (send handler),
+   Parent B receives two messages:
+   - "Your family schedule is now created!" (triggers calendar)
+   - "[Mom] has invited you to ADCP..." (context)
+   These are separate messages so the trigger phrase is isolated.
+
+
+================================================================================
+END OF DOCUMENT
+================================================================================

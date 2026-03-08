@@ -75,6 +75,27 @@ export async function handleSend(
       action: 'schedule_generated',
       days: scenario.schedule.length,
     });
+
+    // Notify the other parent about schedule creation
+    const otherMessages = isParentA ? scenario.messagesB : scenario.messagesA;
+    const otherPhone = isParentA ? scenario.config.parentB.phone : scenario.config.parentA.phone;
+    const otherLabel = isParentA ? scenario.config.parentA.label : scenario.config.parentB.label;
+    const ts = new Date().toISOString();
+
+    otherMessages.push({
+      id: crypto.randomUUID(),
+      from: 'system',
+      text: "Your family schedule is now created! You can view your upcoming exchanges by typing 'schedule'. Type 'help' for available commands.",
+      timestamp: ts,
+      phone: otherPhone,
+    });
+    otherMessages.push({
+      id: crypto.randomUUID(),
+      from: 'system',
+      text: `${otherLabel} has invited you to ADCP to co-manage your family's custody schedule. Everything is set up and ready to go.`,
+      timestamp: ts,
+      phone: otherPhone,
+    });
   }
 
   addLog(scenario.id, 'info', phone, {

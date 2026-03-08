@@ -303,36 +303,49 @@ export function buildDaySummaryExplanation(
   config: ScenarioConfig,
   schedule: ScheduleDay[],
   simDay: number,
+  recipient?: 'parent_a' | 'parent_b',
 ): string {
   const today = schedule[simDay];
   if (!today) return '';
 
-  const assignedLabel = today.assignedTo === 'parent_a' ? config.parentA.label : config.parentB.label;
   const childNames = config.children.map(c => c.name).join(' & ');
   const dateStr = new Date(today.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
+  // Personalize based on recipient
+  const isWithRecipient = recipient ? today.assignedTo === recipient : false;
+  const assignedLabel = recipient
+    ? (isWithRecipient ? 'you' : (today.assignedTo === 'parent_a' ? config.parentA.label : config.parentB.label))
+    : (today.assignedTo === 'parent_a' ? config.parentA.label : config.parentB.label);
+
   // Find next transition
   let nextTransitionDate = '';
-  let nextTransitionParent = '';
+  let nextTransitionLabel = '';
   for (let i = simDay + 1; i < schedule.length; i++) {
     if (schedule[i].isTransition) {
       const d = new Date(schedule[i].date);
       nextTransitionDate = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-      nextTransitionParent = schedule[i].assignedTo === 'parent_a' ? config.parentA.label : config.parentB.label;
+      if (recipient) {
+        nextTransitionLabel = schedule[i].assignedTo === recipient ? 'you' : (schedule[i].assignedTo === 'parent_a' ? config.parentA.label : config.parentB.label);
+      } else {
+        nextTransitionLabel = schedule[i].assignedTo === 'parent_a' ? config.parentA.label : config.parentB.label;
+      }
       break;
     }
   }
 
   const lines = [
-    `${dateStr} | ${childNames} with ${assignedLabel}`,
+    `${dateStr} | ${childNames} with ${assignedLabel}.`,
   ];
 
   if (today.isTransition) {
-    lines.push(`Transition day. Custody moves to ${assignedLabel}.`);
+    const movesTo = recipient
+      ? (isWithRecipient ? 'you' : (today.assignedTo === 'parent_a' ? config.parentA.label : config.parentB.label))
+      : (today.assignedTo === 'parent_a' ? config.parentA.label : config.parentB.label);
+    lines.push(`Transition day. Custody moves to ${movesTo}.`);
   }
 
   if (nextTransitionDate) {
-    lines.push(`Next exchange: ${nextTransitionDate} to ${nextTransitionParent}.`);
+    lines.push(`Next exchange: ${nextTransitionDate} to ${nextTransitionLabel}.`);
   }
 
   lines.push('No action required.');
