@@ -8,13 +8,18 @@ import { Message, ScheduleDay } from '@/lib/types';
 
 function isCalculationTrace(text: string): boolean {
   const lower = text.toLowerCase();
+  // Must be a multi-line structured trace, not a short status message
+  const isMultiLine = text.includes('\n') && text.split('\n').length >= 3;
+  if (!isMultiLine) return false;
+
   return (
-    lower.includes('schedule disruption') ||
     lower.includes('fairness window') ||
     lower.includes('current schedule metrics') ||
     lower.includes('parent responses:') ||
     lower.includes('weekly schedule review') ||
-    lower.includes('monthly schedule report')
+    lower.includes('monthly schedule report') ||
+    // Only match "schedule disruption" when it's a full trace (starts with it as a heading)
+    lower.startsWith('schedule disruption')
   );
 }
 
@@ -346,7 +351,7 @@ export function PhoneSimulator({
                     : isTrace
                     ? 'bg-slate-50 border border-slate-200 text-lab-800 rounded-bl-sm'
                     : isDaySum
-                    ? 'bg-gray-50 border border-lab-100 text-lab-600 rounded-bl-sm'
+                    ? 'bg-white border border-lab-200 text-lab-600 rounded-bl-sm'
                     : 'bg-white border border-lab-200 text-lab-800 rounded-bl-sm'
                 }`}
               >
