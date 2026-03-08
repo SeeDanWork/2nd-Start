@@ -207,9 +207,10 @@ export function resolveDisruption(
 
 // ── Event Type Classification ──
 
+// child_sick MUST come before parent_sick — "child sick" contains "sick"
 const EVENT_KEYWORDS: Record<DisruptionEventType, RegExp[]> = {
-  parent_sick: [/sick/i, /ill/i, /not feeling well/i, /fever/i, /flu/i, /covid/i, /unwell/i],
   child_sick: [/child.*sick/i, /kid.*sick/i, /threw up/i, /vomit/i, /child.*ill/i, /child.*fever/i],
+  parent_sick: [/sick/i, /ill/i, /not feeling well/i, /fever/i, /flu/i, /covid/i, /unwell/i],
   work_emergency: [/work/i, /meeting/i, /business trip/i, /called in/i, /overtime/i, /deadline/i],
   transport_failure: [/car broke/i, /flat tire/i, /no ride/i, /transport/i, /can't drive/i, /vehicle/i],
   school_closure: [/school.*closed/i, /snow day/i, /school.*cancel/i, /no school/i],
