@@ -86,13 +86,33 @@ export async function POST(req: NextRequest) {
     drawSpacer(3);
   }
 
+  // ── Schedule ──
+  if (scenario.schedule.length > 0) {
+    drawSpacer(20);
+    drawText('Schedule', 13, true);
+    drawSpacer(5);
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    for (const day of scenario.schedule.slice(0, 56)) {
+      const d = new Date(day.date);
+      const dow = days[d.getDay()];
+      const label = day.assignedTo === 'parent_a' ? scenario.config.parentA.label : scenario.config.parentB.label;
+      const trans = day.isTransition ? ' [transition]' : '';
+      drawText(`${day.date} (${dow}): ${label}${trans}`, 8);
+      drawSpacer(1);
+    }
+    if (scenario.schedule.length > 56) {
+      drawText(`... and ${scenario.schedule.length - 56} more days`, 8);
+    }
+  }
+
   // ── Diagnostics Log ──
   drawSpacer(20);
   drawText('Diagnostics Log', 13, true);
   drawSpacer(5);
   for (const log of scenario.logs) {
     const ts = log.timestamp.slice(11, 19);
-    drawText(`[${ts}] ${log.type} (${log.phone.slice(-4)}): ${JSON.stringify(log.data).slice(0, 120)}`, 8);
+    const dataStr = sanitize(JSON.stringify(log.data).slice(0, 120));
+    drawText(`[${ts}] ${log.type} (${log.phone.slice(-4)}): ${dataStr}`, 8);
     drawSpacer(2);
   }
 
@@ -106,20 +126,50 @@ export async function POST(req: NextRequest) {
   });
 }
 
-function wrapText(text: string, font: { widthOfTextAtSize: (t: string, s: number) => number }, size: number, maxWidth: number): string[] {
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let current = '';
+/** Sanitize text for WinAnsi encoding (pdf-lib standard fonts) */
+function sanitize(text: string): string {
+  return text
+    .replace(/[\u2018\u2019\u201A]/g, "'")   // smart single quotes
+    .replace(/[\u201C\u201D\u201E]/g, '"')    // smart double quotes
+    .replace(/\u2013/g, '-')                   // en dash
+    .replace(/\u2014/g, '--')                  // em dash
+    .replace(/\u2026/g, '...')                 // ellipsis
+    .replace(/\u2022/g, '*')                   // bullet
+    .replace(/\u26A0/g, '[!]')                 // warning sign
+    .replace(/\u2192/g, '->')                  // right arrow
+    .replace(/[^\x20-\x7E\n\t]/g, '');        // strip remaining non-ASCII
+}
 
-  for (const word of words) {
-    const test = current ? `${current} ${word}` : word;
-    if (font.widthOfTextAtSize(test, size) > maxWidth && current) {
-      lines.push(current);
-      current = word;
-    } else {
-      current = test;
+function wrapText(text: string, font: { widthOfTextAtSize: (t: string, s: number) => number }, size: number, maxWidth: number): string[] {
+  const safe = sanitize(text);
+  // Split on newlines first, then wrap each line
+  const inputLines = safe.split('\n');
+  const result: string[] = [];
+
+  for (const inputLine of inputLines) {
+    if (inputLine.trim() === '') {
+      result.push('');
+      continue;
     }
+    const words = inputLine.split(' ');
+    let current = '';
+    for (const word of words) {
+      const test = current ? `${current} ${word}` : word;
+      try {
+        if (font.widthOfTextAtSize(test, size) > maxWidth && current) {
+          result.push(current);
+          current = word;
+        } else {
+          current = test;
+        }
+      } catch {
+        // Skip problematic text
+        if (current) result.push(current);
+        current = '';
+      }
+    }
+    if (current) result.push(current);
   }
-  if (current) lines.push(current);
-  return lines.length ? lines : [''];
+
+  return result.length ? result : [''];
 }

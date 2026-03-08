@@ -23,6 +23,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/scenarios/new" className="text-sm text-lab-500 hover:text-lab-700">
               New Scenario
             </Link>
+            <Link href="/monte-carlo" className="text-sm text-lab-500 hover:text-lab-700">
+              Monte Carlo
+            </Link>
           </div>
         </nav>
         <main className="max-w-7xl mx-auto px-4 py-6">

@@ -118,6 +118,105 @@ export interface FamilyStructure {
   targetSplit: number;
 }
 
+// ── Interaction Archetypes ───────────────────────────────────
+
+export interface InteractionArchetype {
+  id: string;
+  parent_a: string;
+  parent_b: string;
+  behavior_summary: string;
+  conflict_probability: number;
+}
+
+export const INTERACTION_ARCHETYPES: InteractionArchetype[] = [
+  {
+    id: 'cooperative_pair',
+    parent_a: 'cooperative_organizer',
+    parent_b: 'cooperative_organizer',
+    behavior_summary: 'Both prioritize stability and accept reasonable proposals quickly.',
+    conflict_probability: 0.05,
+  },
+  {
+    id: 'organizer_scorekeeper',
+    parent_a: 'cooperative_organizer',
+    parent_b: 'fairness_scorekeeper',
+    behavior_summary: 'Organizer proposes solutions; Scorekeeper checks fairness.',
+    conflict_probability: 0.15,
+  },
+  {
+    id: 'organizer_avoidant',
+    parent_a: 'cooperative_organizer',
+    parent_b: 'avoidant_parent',
+    behavior_summary: 'Organizer drives decisions while Avoidant delays response.',
+    conflict_probability: 0.2,
+  },
+  {
+    id: 'flexible_organizer',
+    parent_a: 'flexible_disorganized',
+    parent_b: 'cooperative_organizer',
+    behavior_summary: 'Frequent disruptions but quick resolution.',
+    conflict_probability: 0.1,
+  },
+  {
+    id: 'flexible_scorekeeper',
+    parent_a: 'flexible_disorganized',
+    parent_b: 'fairness_scorekeeper',
+    behavior_summary: 'Disruptions create fairness negotiation.',
+    conflict_probability: 0.25,
+  },
+  {
+    id: 'strategic_scorekeeper',
+    parent_a: 'strategic_gamer',
+    parent_b: 'fairness_scorekeeper',
+    behavior_summary: 'Strategic parent attempts advantage; Scorekeeper enforces balance.',
+    conflict_probability: 0.35,
+  },
+  {
+    id: 'strategic_organizer',
+    parent_a: 'strategic_gamer',
+    parent_b: 'cooperative_organizer',
+    behavior_summary: 'Organizer moderates gaming attempts.',
+    conflict_probability: 0.2,
+  },
+  {
+    id: 'strategic_avoidant',
+    parent_a: 'strategic_gamer',
+    parent_b: 'avoidant_parent',
+    behavior_summary: 'System must enforce fairness due to low engagement.',
+    conflict_probability: 0.3,
+  },
+  {
+    id: 'high_conflict_organizer',
+    parent_a: 'high_conflict_controller',
+    parent_b: 'cooperative_organizer',
+    behavior_summary: 'Organizer attempts mediation while conflict parent rejects proposals.',
+    conflict_probability: 0.45,
+  },
+  {
+    id: 'high_conflict_scorekeeper',
+    parent_a: 'high_conflict_controller',
+    parent_b: 'fairness_scorekeeper',
+    behavior_summary: 'Frequent disputes over fairness metrics.',
+    conflict_probability: 0.55,
+  },
+  {
+    id: 'high_conflict_strategic',
+    parent_a: 'high_conflict_controller',
+    parent_b: 'strategic_gamer',
+    behavior_summary: 'Highly adversarial negotiation.',
+    conflict_probability: 0.65,
+  },
+  {
+    id: 'avoidant_pair',
+    parent_a: 'avoidant_parent',
+    parent_b: 'avoidant_parent',
+    behavior_summary: 'Low engagement; system must auto-resolve.',
+    conflict_probability: 0.15,
+  },
+];
+
+// ── Family Structure Personas ────────────────────────────────
+
 export const FAMILY_STRUCTURES: FamilyStructure[] = [
   {
     id: 'simple_shared',

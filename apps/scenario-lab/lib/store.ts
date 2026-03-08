@@ -1,8 +1,11 @@
 import { Scenario, ScenarioConfig, ScenarioStatus } from './types';
 import { randomBytes } from 'crypto';
 
-// In-memory scenario store (server-side only)
-const scenarios = new Map<string, Scenario>();
+// Persist across HMR in dev mode using globalThis
+const globalForStore = globalThis as unknown as {
+  __scenarioStore?: Map<string, Scenario>;
+};
+const scenarios = globalForStore.__scenarioStore ??= new Map<string, Scenario>();
 
 function genId(): string {
   return randomBytes(8).toString('hex');
@@ -17,6 +20,7 @@ export function createScenario(config: ScenarioConfig): Scenario {
     messagesB: [],
     logs: [],
     schedule: [],
+    currentDay: 0,
     bootstrapFacts: null,
     familyId: null,
     createdAt: new Date().toISOString(),

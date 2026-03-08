@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Scenario, SCENARIO_PRESETS } from '@/lib/types';
+import { PARENT_PERSONAS } from '@/lib/personas';
 
 export default function Dashboard() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
@@ -23,7 +24,8 @@ export default function Dashboard() {
       body: JSON.stringify(preset),
     });
     const scenario = await res.json();
-    setScenarios(prev => [scenario, ...prev]);
+    // Go straight to simulate
+    window.location.href = `/scenarios/${scenario.id}/simulate`;
   }
 
   async function deleteScenario(id: string) {
@@ -62,25 +64,36 @@ export default function Dashboard() {
 
       {/* Quick Start Presets */}
       <div className="mb-8">
-        <h2 className="text-sm font-medium text-lab-500 mb-3">Quick Start Presets</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
-          {SCENARIO_PRESETS.map((preset, i) => (
-            <button
-              key={i}
-              onClick={() => createFromPreset(i)}
-              className="text-left p-3 bg-white border border-lab-200 rounded-lg hover:border-lab-400 transition-colors"
-            >
-              <div className="text-sm font-medium text-lab-700">{preset.name}</div>
-              <div className="text-xs text-lab-400 mt-1">{preset.description}</div>
-              <div className="flex gap-1 mt-2 flex-wrap">
-                {preset.tags.map(tag => (
-                  <span key={tag} className="px-1.5 py-0.5 bg-lab-100 text-lab-500 text-[10px] rounded">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </button>
-          ))}
+        <h2 className="text-sm font-medium text-lab-500 mb-3">Quick Start — Click to Launch</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          {SCENARIO_PRESETS.map((preset, i) => {
+            const pA = PARENT_PERSONAS.find(p => p.id === preset.personaA);
+            const pB = PARENT_PERSONAS.find(p => p.id === preset.personaB);
+            return (
+              <button
+                key={i}
+                onClick={() => createFromPreset(i)}
+                className="text-left p-3 bg-white border border-lab-200 rounded-lg hover:border-lab-500 hover:shadow-sm transition-all"
+              >
+                <div className="text-sm font-medium text-lab-700">{preset.name}</div>
+                <div className="text-[11px] text-lab-400 mt-1 line-clamp-2">{preset.description}</div>
+                <div className="flex gap-1.5 mt-2">
+                  <span className="px-1.5 py-0.5 text-[10px] bg-lab-100 text-lab-500 rounded">{preset.template}</span>
+                  <span className="px-1.5 py-0.5 text-[10px] bg-lab-100 text-lab-500 rounded">{preset.targetSplit}/{100 - preset.targetSplit}</span>
+                  <span className="px-1.5 py-0.5 text-[10px] bg-lab-100 text-lab-500 rounded">{preset.children.length} kid{preset.children.length > 1 ? 's' : ''}</span>
+                </div>
+                {pA && pB && (
+                  <div className="flex gap-1.5 mt-1.5">
+                    <span className="px-1.5 py-0.5 text-[10px] bg-orange-50 text-orange-600 rounded">A: {pA.name}</span>
+                    <span className="px-1.5 py-0.5 text-[10px] bg-green-50 text-green-600 rounded">B: {pB.name}</span>
+                  </div>
+                )}
+                {preset.scenarioIds && preset.scenarioIds.length > 0 && (
+                  <div className="text-[10px] text-lab-400 mt-1.5">{preset.scenarioIds.length} disruption{preset.scenarioIds.length > 1 ? 's' : ''} pre-loaded</div>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
