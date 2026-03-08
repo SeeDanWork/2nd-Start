@@ -287,19 +287,27 @@ export default function SimulatePage({ params }: { params: Promise<{ id: string 
     }
   }, [id]);
 
-  async function handleExportPdf() {
+  async function handleExport(type: 'summary' | 'conversation' | 'schedule' | 'diagnostics') {
     setExporting(true);
     try {
       const res = await fetch('/api/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenarioId: id }),
+        body: JSON.stringify({ scenarioId: id, type }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Export failed' }));
+        alert(`Export failed: ${err.error || res.statusText}`);
+        return;
+      }
+      const disposition = res.headers.get('content-disposition') || '';
+      const filenameMatch = disposition.match(/filename="([^"]+)"/);
+      const filename = filenameMatch ? filenameMatch[1] : `${type}-${id}.txt`;
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `scenario-${id}.pdf`;
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
     } finally {
@@ -660,15 +668,39 @@ export default function SimulatePage({ params }: { params: Promise<{ id: string 
           </div>
         </Section>
 
-        {/* Actions */}
-        <div className="px-3 py-3 border-t border-lab-200">
-          <button
-            onClick={handleExportPdf}
-            disabled={exporting}
-            className="w-full px-3 py-1.5 text-xs border border-lab-200 rounded hover:bg-lab-50 disabled:opacity-50"
-          >
-            {exporting ? 'Exporting...' : 'Export PDF'}
-          </button>
+        {/* Export Actions */}
+        <div className="px-3 py-3 border-t border-lab-200 space-y-1.5">
+          <div className="text-[10px] font-medium text-lab-500 uppercase tracking-wider">Export</div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              onClick={() => handleExport('summary')}
+              disabled={exporting}
+              className="px-2 py-1.5 text-[11px] border border-lab-200 rounded hover:bg-lab-50 disabled:opacity-50"
+            >
+              Summary (.txt)
+            </button>
+            <button
+              onClick={() => handleExport('conversation')}
+              disabled={exporting}
+              className="px-2 py-1.5 text-[11px] border border-lab-200 rounded hover:bg-lab-50 disabled:opacity-50"
+            >
+              Conversation (.txt)
+            </button>
+            <button
+              onClick={() => handleExport('schedule')}
+              disabled={exporting}
+              className="px-2 py-1.5 text-[11px] border border-lab-200 rounded hover:bg-lab-50 disabled:opacity-50"
+            >
+              Schedule (.csv)
+            </button>
+            <button
+              onClick={() => handleExport('diagnostics')}
+              disabled={exporting}
+              className="px-2 py-1.5 text-[11px] border border-lab-200 rounded hover:bg-lab-50 disabled:opacity-50"
+            >
+              Diagnostics (.json)
+            </button>
+          </div>
         </div>
       </div>
 

@@ -65,6 +65,7 @@ export interface Scenario {
   logs: SimulationLog[];
   schedule: ScheduleDay[];
   currentDay: number;
+  activeDisruptions: import('./disruption-engine').ActiveDisruption[];
   bootstrapFacts: Record<string, unknown> | null;
   familyId: string | null;
   createdAt: string;

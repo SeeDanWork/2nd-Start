@@ -1,175 +1,230 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { getScenario } from '@/lib/store';
 
+// Supported export types
+type ExportType = 'conversation' | 'schedule' | 'diagnostics' | 'summary';
+
 export async function POST(req: NextRequest) {
-  const { scenarioId } = await req.json();
+  const { scenarioId, type = 'summary' } = await req.json() as { scenarioId: string; type?: ExportType };
   const scenario = getScenario(scenarioId);
   if (!scenario) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    return NextResponse.json({ error: 'Scenario not found' }, { status: 404 });
   }
 
-  const pdf = await PDFDocument.create();
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const fontSize = 10;
-  const lineHeight = 14;
-  const margin = 50;
-
-  function addPage() {
-    const page = pdf.addPage([612, 792]); // Letter size
-    return { page, y: 792 - margin };
+  switch (type) {
+    case 'conversation':
+      return exportConversation(scenario);
+    case 'schedule':
+      return exportSchedule(scenario);
+    case 'diagnostics':
+      return exportDiagnostics(scenario);
+    case 'summary':
+    default:
+      return exportSummary(scenario);
   }
+}
 
-  // ── Page 1: Scenario Summary ──
-  let { page, y } = addPage();
-  const pageWidth = 612 - margin * 2;
+// ── Conversation Log (.txt) ──
 
-  function drawText(text: string, size = fontSize, bold = false) {
-    const f = bold ? fontBold : font;
-    const lines = wrapText(text, f, size, pageWidth);
-    for (const line of lines) {
-      if (y < margin + lineHeight) {
-        ({ page, y } = addPage());
-      }
-      page.drawText(line, { x: margin, y, size, font: f, color: rgb(0.1, 0.1, 0.1) });
-      y -= lineHeight;
-    }
-  }
+function exportConversation(scenario: ReturnType<typeof getScenario> & {}) {
+  const lines: string[] = [
+    'ADCP Scenario Lab - Conversation Log',
+    `Scenario: ${scenario.config.name}`,
+    `Exported: ${new Date().toISOString().slice(0, 19)}`,
+    '='.repeat(60),
+    '',
+    `PARENT A: ${scenario.config.parentA.label} (${scenario.config.parentA.phone})`,
+    '-'.repeat(60),
+  ];
 
-  function drawSpacer(h = 10) { y -= h; }
-
-  drawText('ADCP Scenario Lab - Test Report', 16, true);
-  drawSpacer(5);
-  drawText(`Generated: ${new Date().toISOString().slice(0, 19)}`, 9);
-  drawSpacer(15);
-
-  drawText('Scenario Configuration', 13, true);
-  drawSpacer(5);
-  drawText(`Name: ${scenario.config.name}`);
-  drawText(`Description: ${scenario.config.description}`);
-  drawText(`Template: ${scenario.config.template}`);
-  drawText(`Target Split: ${scenario.config.targetSplit}/${100 - scenario.config.targetSplit}`);
-  drawText(`Distance: ${scenario.config.distanceMiles} miles`);
-  drawText(`Children: ${scenario.config.children.map(c => `${c.name} (${c.age})`).join(', ')}`);
-  drawText(`Parent A: ${scenario.config.parentA.label} (${scenario.config.parentA.phone})`);
-  drawText(`Parent B: ${scenario.config.parentB.label} (${scenario.config.parentB.phone})`);
-  drawText(`Status: ${scenario.status}`);
-
-  if (scenario.config.lockedNights.length > 0) {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    for (const ln of scenario.config.lockedNights) {
-      drawText(`Locked: ${ln.parent} on ${ln.daysOfWeek.map(d => days[d]).join(', ')}`);
-    }
-  }
-
-  if (scenario.config.tags.length > 0) {
-    drawText(`Tags: ${scenario.config.tags.join(', ')}`);
-  }
-
-  // ── Page 2+: Conversation Logs ──
-  drawSpacer(20);
-  drawText('Parent A Conversation', 13, true);
-  drawSpacer(5);
   for (const msg of scenario.messagesA) {
-    const prefix = msg.from === 'user' ? `[${scenario.config.parentA.label}]` : '[ADCP]';
-    drawText(`${prefix} ${msg.text}`, 9);
-    drawSpacer(3);
+    const prefix = msg.from === 'user' ? scenario.config.parentA.label : 'ADCP';
+    const ts = msg.timestamp?.slice(11, 19) || '';
+    lines.push(`[${ts}] ${prefix}:`);
+    lines.push(msg.text);
+    lines.push('');
   }
 
-  drawSpacer(20);
-  drawText('Parent B Conversation', 13, true);
-  drawSpacer(5);
+  lines.push('');
+  lines.push(`PARENT B: ${scenario.config.parentB.label} (${scenario.config.parentB.phone})`);
+  lines.push('-'.repeat(60));
+
   for (const msg of scenario.messagesB) {
-    const prefix = msg.from === 'user' ? `[${scenario.config.parentB.label}]` : '[ADCP]';
-    drawText(`${prefix} ${msg.text}`, 9);
-    drawSpacer(3);
+    const prefix = msg.from === 'user' ? scenario.config.parentB.label : 'ADCP';
+    const ts = msg.timestamp?.slice(11, 19) || '';
+    lines.push(`[${ts}] ${prefix}:`);
+    lines.push(msg.text);
+    lines.push('');
   }
 
-  // ── Schedule ──
-  if (scenario.schedule.length > 0) {
-    drawSpacer(20);
-    drawText('Schedule', 13, true);
-    drawSpacer(5);
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    for (const day of scenario.schedule.slice(0, 56)) {
-      const d = new Date(day.date);
-      const dow = days[d.getDay()];
-      const label = day.assignedTo === 'parent_a' ? scenario.config.parentA.label : scenario.config.parentB.label;
-      const trans = day.isTransition ? ' [transition]' : '';
-      drawText(`${day.date} (${dow}): ${label}${trans}`, 8);
-      drawSpacer(1);
-    }
-    if (scenario.schedule.length > 56) {
-      drawText(`... and ${scenario.schedule.length - 56} more days`, 8);
-    }
-  }
-
-  // ── Diagnostics Log ──
-  drawSpacer(20);
-  drawText('Diagnostics Log', 13, true);
-  drawSpacer(5);
-  for (const log of scenario.logs) {
-    const ts = log.timestamp.slice(11, 19);
-    const dataStr = sanitize(JSON.stringify(log.data).slice(0, 120));
-    drawText(`[${ts}] ${log.type} (${log.phone.slice(-4)}): ${dataStr}`, 8);
-    drawSpacer(2);
-  }
-
-  const pdfBytes = await pdf.save();
-
-  return new NextResponse(Buffer.from(pdfBytes), {
+  const content = lines.join('\n');
+  return new NextResponse(content, {
     headers: {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="scenario-${scenario.id}.pdf"`,
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Content-Disposition': `attachment; filename="conversation-${scenario.id}.txt"`,
     },
   });
 }
 
-/** Sanitize text for WinAnsi encoding (pdf-lib standard fonts) */
-function sanitize(text: string): string {
-  return text
-    .replace(/[\u2018\u2019\u201A]/g, "'")   // smart single quotes
-    .replace(/[\u201C\u201D\u201E]/g, '"')    // smart double quotes
-    .replace(/\u2013/g, '-')                   // en dash
-    .replace(/\u2014/g, '--')                  // em dash
-    .replace(/\u2026/g, '...')                 // ellipsis
-    .replace(/\u2022/g, '*')                   // bullet
-    .replace(/\u26A0/g, '[!]')                 // warning sign
-    .replace(/\u2192/g, '->')                  // right arrow
-    .replace(/[^\x20-\x7E\n\t]/g, '');        // strip remaining non-ASCII
-}
+// ── Schedule (.csv) ──
 
-function wrapText(text: string, font: { widthOfTextAtSize: (t: string, s: number) => number }, size: number, maxWidth: number): string[] {
-  const safe = sanitize(text);
-  // Split on newlines first, then wrap each line
-  const inputLines = safe.split('\n');
-  const result: string[] = [];
+function exportSchedule(scenario: ReturnType<typeof getScenario> & {}) {
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  for (const inputLine of inputLines) {
-    if (inputLine.trim() === '') {
-      result.push('');
-      continue;
-    }
-    const words = inputLine.split(' ');
-    let current = '';
-    for (const word of words) {
-      const test = current ? `${current} ${word}` : word;
-      try {
-        if (font.widthOfTextAtSize(test, size) > maxWidth && current) {
-          result.push(current);
-          current = word;
-        } else {
-          current = test;
-        }
-      } catch {
-        // Skip problematic text
-        if (current) result.push(current);
-        current = '';
-      }
-    }
-    if (current) result.push(current);
+  const rows = [
+    ['Date', 'Day', 'Assigned To', 'Parent', 'Transition'].join(','),
+  ];
+
+  for (const day of scenario.schedule) {
+    const d = new Date(day.date);
+    const dow = dayNames[d.getDay()];
+    const label = day.assignedTo === 'parent_a'
+      ? scenario.config.parentA.label
+      : scenario.config.parentB.label;
+    rows.push([
+      day.date,
+      dow,
+      day.assignedTo,
+      label,
+      day.isTransition ? 'yes' : '',
+    ].join(','));
   }
 
-  return result.length ? result : [''];
+  if (rows.length === 1) {
+    rows.push('No schedule generated yet');
+  }
+
+  const content = rows.join('\n');
+  return new NextResponse(content, {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="schedule-${scenario.id}.csv"`,
+    },
+  });
+}
+
+// ── Diagnostics (.json) ──
+
+function exportDiagnostics(scenario: ReturnType<typeof getScenario> & {}) {
+  const data = {
+    scenarioId: scenario.id,
+    exported: new Date().toISOString(),
+    config: {
+      name: scenario.config.name,
+      template: scenario.config.template,
+      targetSplit: scenario.config.targetSplit,
+      children: scenario.config.children,
+      parentA: scenario.config.parentA.label,
+      parentB: scenario.config.parentB.label,
+      personaA: scenario.config.personaA,
+      personaB: scenario.config.personaB,
+    },
+    stats: {
+      messagesA: scenario.messagesA.length,
+      messagesB: scenario.messagesB.length,
+      scheduleDays: scenario.schedule.length,
+      logEntries: scenario.logs.length,
+      currentDay: scenario.currentDay,
+      status: scenario.status,
+    },
+    logs: scenario.logs.map(log => ({
+      timestamp: log.timestamp,
+      type: log.type,
+      phone: log.phone,
+      data: log.data,
+    })),
+  };
+
+  const content = JSON.stringify(data, null, 2);
+  return new NextResponse(content, {
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Disposition': `attachment; filename="diagnostics-${scenario.id}.json"`,
+    },
+  });
+}
+
+// ── Summary (.txt) ──
+
+function exportSummary(scenario: ReturnType<typeof getScenario> & {}) {
+  const lines: string[] = [
+    'ADCP Scenario Lab - Summary Report',
+    `Exported: ${new Date().toISOString().slice(0, 19)}`,
+    '='.repeat(60),
+    '',
+    'CONFIGURATION',
+    '-'.repeat(40),
+    `Name: ${scenario.config.name}`,
+    `Description: ${scenario.config.description}`,
+    `Template: ${scenario.config.template}`,
+    `Target Split: ${scenario.config.targetSplit}/${100 - scenario.config.targetSplit}`,
+    `Distance: ${scenario.config.distanceMiles} miles`,
+    `Children: ${scenario.config.children.map(c => `${c.name} (age ${c.age})`).join(', ')}`,
+    `Parent A: ${scenario.config.parentA.label} (${scenario.config.parentA.phone})`,
+    `Parent B: ${scenario.config.parentB.label} (${scenario.config.parentB.phone})`,
+    `Persona A: ${scenario.config.personaA || 'none'}`,
+    `Persona B: ${scenario.config.personaB || 'none'}`,
+    `Status: ${scenario.status}`,
+    `Simulation Day: ${scenario.currentDay}`,
+    '',
+  ];
+
+  if (scenario.config.lockedNights.length > 0) {
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    lines.push('LOCKED NIGHTS');
+    lines.push('-'.repeat(40));
+    for (const ln of scenario.config.lockedNights) {
+      lines.push(`${ln.parent}: ${ln.daysOfWeek.map(d => dayNames[d]).join(', ')}`);
+    }
+    lines.push('');
+  }
+
+  // Schedule summary
+  if (scenario.schedule.length > 0) {
+    const aNights = scenario.schedule.filter(d => d.assignedTo === 'parent_a').length;
+    const bNights = scenario.schedule.length - aNights;
+    const transitions = scenario.schedule.filter(d => d.isTransition).length;
+    lines.push('SCHEDULE METRICS');
+    lines.push('-'.repeat(40));
+    lines.push(`Total days: ${scenario.schedule.length}`);
+    lines.push(`${scenario.config.parentA.label}: ${aNights} nights`);
+    lines.push(`${scenario.config.parentB.label}: ${bNights} nights`);
+    lines.push(`Actual split: ${Math.round(aNights / scenario.schedule.length * 100)}/${Math.round(bNights / scenario.schedule.length * 100)}`);
+    lines.push(`Total transitions: ${transitions}`);
+    lines.push(`Transitions/week: ${(transitions / (scenario.schedule.length / 7)).toFixed(1)}`);
+    lines.push('');
+  }
+
+  // Message stats
+  lines.push('MESSAGE STATS');
+  lines.push('-'.repeat(40));
+  lines.push(`Parent A messages: ${scenario.messagesA.length}`);
+  lines.push(`Parent B messages: ${scenario.messagesB.length}`);
+  lines.push(`System messages A: ${scenario.messagesA.filter(m => m.from === 'system').length}`);
+  lines.push(`System messages B: ${scenario.messagesB.filter(m => m.from === 'system').length}`);
+  lines.push(`User messages A: ${scenario.messagesA.filter(m => m.from === 'user').length}`);
+  lines.push(`User messages B: ${scenario.messagesB.filter(m => m.from === 'user').length}`);
+  lines.push(`Log entries: ${scenario.logs.length}`);
+  lines.push('');
+
+  // Log type breakdown
+  if (scenario.logs.length > 0) {
+    const typeCounts: Record<string, number> = {};
+    for (const log of scenario.logs) {
+      typeCounts[log.type] = (typeCounts[log.type] || 0) + 1;
+    }
+    lines.push('LOG BREAKDOWN');
+    lines.push('-'.repeat(40));
+    for (const [type, count] of Object.entries(typeCounts)) {
+      lines.push(`${type}: ${count}`);
+    }
+  }
+
+  const content = lines.join('\n');
+  return new NextResponse(content, {
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Content-Disposition': `attachment; filename="summary-${scenario.id}.txt"`,
+    },
+  });
 }

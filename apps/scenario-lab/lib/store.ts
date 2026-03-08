@@ -21,6 +21,7 @@ export function createScenario(config: ScenarioConfig): Scenario {
     logs: [],
     schedule: [],
     currentDay: 0,
+    activeDisruptions: [],
     bootstrapFacts: null,
     familyId: null,
     createdAt: new Date().toISOString(),

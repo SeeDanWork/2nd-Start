@@ -20,6 +20,18 @@ import {
 import { generateSchedule } from '@/lib/schedule-generator';
 import { getOperationalMessage, checkFairnessAlert, checkFrictionAhead } from '@/lib/operational-messages';
 import { buildDisruptionExplanation, buildDaySummaryExplanation, snapshotMetrics, formatLevel2, formatLevel3, buildExplanation } from '@/lib/explanation-engine';
+import {
+  createDisruption, setDuration, attachProposals, selectProposal,
+  declineAllProposals, markFollowupPending, resolveDisruption,
+  isDuplicateDisruption, classifyDisruptionType, DISRUPTION_LABELS,
+  ActiveDisruption, DisruptionDuration,
+} from '@/lib/disruption-engine';
+import { generateProposalBundle } from '@/lib/proposal-generator';
+import {
+  disruptionReportConfirmation, durationQuestion, coverageRequest,
+  proposalBundleMessage, proposalSelectedMessage, declineConfirmation,
+  manageSelfConfirmation, followupCheck, getQuickActions,
+} from '@/lib/message-router';
 
 const LLM_ROUTER = process.env.LLM_ROUTER_URL || 'http://localhost:3100';
 
@@ -667,117 +679,234 @@ export async function POST(req: NextRequest) {
       });
 
     } else if (action === 'inject_disruption') {
+      // ── Mediation-Based Disruption Flow ──
+      // Disruption originates from one parent (the phone making the request).
+      // Different messages sent to each parent. No broadcast.
+      // Flow: report → duration → coverage request → proposals → decision → resolution
+
       const scenarioDefId = body;
       const scenarioDef = SCENARIO_CATALOG.find(s => s.id === scenarioDefId);
       if (!scenarioDef) {
         return NextResponse.json({ error: 'Scenario not found in catalog' }, { status: 400 });
       }
 
-      const pA = PARENT_PERSONAS.find(p => p.id === scenario.config.personaA);
-      const pB = PARENT_PERSONAS.find(p => p.id === scenario.config.personaB);
-      const responsePattern = getResponsePattern(scenarioDefId);
-      const archetype = (scenario.config.personaA && scenario.config.personaB)
-        ? getArchetype(scenario.config.personaA, scenario.config.personaB)
-        : null;
-
-      addLog(scenarioId, 'disruption', phone, {
-        action: 'inject_disruption',
-        scenarioDef: scenarioDef.id,
-        name: scenarioDef.name,
-        difficulty: scenarioDef.difficulty,
-        events: scenarioDef.events,
-        expected_resolution: responsePattern?.typical_resolution || [],
-        archetype: archetype?.id || null,
-        is_high_conflict_match: archetype
-          ? responsePattern?.likely_conflict_archetypes.includes(archetype.id) || false
-          : false,
-      });
-
-      const ts = new Date().toISOString();
-
-      // Ensure schedule exists
       if (scenario.schedule.length === 0) {
         scenario.schedule = generateSchedule(scenario.config);
       }
 
-      // 1. System disruption alert to BOTH parents (operations-planner tone)
-      const alertText = [
-        `Schedule disruption detected.`,
-        `Event: ${scenarioDef.name}`,
-        `Severity: Level ${scenarioDef.difficulty}`,
-        ``,
-        scenarioDef.description,
-      ].join('\n');
+      const ts = new Date().toISOString();
+      const isParentA = phone === scenario.config.parentA.phone;
+      const reportingParent: 'parent_a' | 'parent_b' = isParentA ? 'parent_a' : 'parent_b';
+      const today = scenario.schedule[scenario.currentDay]?.date || new Date().toISOString().split('T')[0];
 
-      scenario.messagesA.push({
-        id: crypto.randomUUID(), from: 'system', text: alertText,
-        timestamp: ts, phone: scenario.config.parentA.phone,
-      });
-      scenario.messagesB.push({
-        id: crypto.randomUUID(), from: 'system', text: alertText,
-        timestamp: ts, phone: scenario.config.parentB.phone,
-      });
+      // Classify disruption type from catalog
+      const eventType = classifyDisruptionType(scenarioDef.description);
 
-      // 2. Both parents react based on their personas
-      const event = scenarioDef.events[0] || { type: scenarioDef.id, day: scenario.currentDay, description: scenarioDef.description };
-      const decisionA = pA ? evaluateDisruption(pA, event, scenario.currentDay) : null;
-      const decisionB = pB ? evaluateDisruption(pB, event, scenario.currentDay) : null;
-
-      if (pA && decisionA) {
-        const msgA = generatePersonaMessage(pA, 'disruption_report', { eventType: scenarioDef.name });
-        const reactionA = decisionA.decision === 'counter' && decisionA.counter_text
-          ? `${msgA} ${decisionA.counter_text}`
-          : msgA;
-        scenario.messagesA.push({
-          id: crypto.randomUUID(), from: 'user', text: reactionA,
-          timestamp: ts, phone: scenario.config.parentA.phone,
-        });
-      }
-      if (pB && decisionB) {
-        const msgB = generatePersonaMessage(pB, 'disruption_report', { eventType: scenarioDef.name });
-        const reactionB = decisionB.decision === 'counter' && decisionB.counter_text
-          ? `${msgB} ${decisionB.counter_text}`
-          : msgB;
-        scenario.messagesB.push({
-          id: crypto.randomUUID(), from: 'user', text: reactionB,
-          timestamp: ts, phone: scenario.config.parentB.phone,
-        });
+      // Idempotency check
+      if (isDuplicateDisruption(scenario.activeDisruptions, reportingParent, eventType, today)) {
+        return NextResponse.json({
+          error: 'Disruption already active for this parent and event type',
+          messagesA: scenario.messagesA,
+          messagesB: scenario.messagesB,
+        }, { status: 409 });
       }
 
-      // 3. Deterministic calculation trace — before/after metrics
-      const explanationText = buildDisruptionExplanation(
-        scenario.config,
-        scenario.schedule,
-        scenario.currentDay,
-        scenarioDef.name,
-        scenarioDef.description,
-        decisionA,
-        decisionB,
+      // Create disruption
+      const disruption = createDisruption(reportingParent, eventType, today);
+
+      addLog(scenarioId, 'disruption', phone, {
+        action: 'disruption_reported',
+        disruptionId: disruption.id,
+        eventType,
+        reportingParent,
+        scenarioDef: scenarioDef.id,
+        name: scenarioDef.name,
+        difficulty: scenarioDef.difficulty,
+      });
+
+      // Step 1: Reporter gets confirmation + options
+      const reporterMsg = disruptionReportConfirmation(
+        disruption, scenario.config, scenario.schedule, scenario.currentDay,
+      );
+      const reporterMessages = isParentA ? scenario.messagesA : scenario.messagesB;
+      reporterMessages.push({
+        id: crypto.randomUUID(), from: 'system', text: reporterMsg.text,
+        timestamp: ts, phone,
+      });
+
+      // Step 2: Auto-simulate reporter choosing "request coverage"
+      // (In a real system this would wait for user input)
+      const pReporter = PARENT_PERSONAS.find(p =>
+        p.id === (isParentA ? scenario.config.personaA : scenario.config.personaB)
       );
 
-      scenario.messagesA.push({
-        id: crypto.randomUUID(), from: 'system', text: explanationText,
-        timestamp: ts, phone: scenario.config.parentA.phone,
-      });
-      scenario.messagesB.push({
-        id: crypto.randomUUID(), from: 'system', text: explanationText,
-        timestamp: ts, phone: scenario.config.parentB.phone,
+      // Reporter says they need help
+      const reportText = generatePersonaMessage(
+        pReporter || PARENT_PERSONAS[0],
+        'disruption_report',
+        { eventType: scenarioDef.name },
+      );
+      reporterMessages.push({
+        id: crypto.randomUUID(), from: 'user', text: reportText,
+        timestamp: ts, phone,
       });
 
-      addLog(scenarioId, 'info', scenario.config.parentA.phone, {
-        action: 'disruption_resolved',
-        decisionA: decisionA?.decision || null,
-        decisionB: decisionB?.decision || null,
-        resolution: responsePattern?.typical_resolution || [],
-        metrics: snapshotMetrics(scenario.schedule, scenario.currentDay),
+      // Step 3: Ask duration
+      const durationMsg = durationQuestion(disruption);
+      reporterMessages.push({
+        id: crypto.randomUUID(), from: 'system', text: durationMsg.text,
+        timestamp: ts, phone,
       });
+
+      // Auto-simulate duration answer based on scenario difficulty
+      const durationChoice: DisruptionDuration =
+        scenarioDef.difficulty <= 2 ? 'today_only'
+        : scenarioDef.difficulty <= 3 ? '2_3_days'
+        : 'unknown';
+      const durationLabels: Record<DisruptionDuration, string> = {
+        today_only: 'Today only',
+        '2_3_days': '2-3 days',
+        week: 'About a week',
+        unknown: 'Not sure yet',
+      };
+      reporterMessages.push({
+        id: crypto.randomUUID(), from: 'user', text: durationLabels[durationChoice],
+        timestamp: ts, phone,
+      });
+
+      // Update disruption with duration
+      const withDuration = setDuration(disruption, durationChoice, scenario.schedule, scenario.currentDay);
+
+      // Step 4: Coverage request to OTHER parent
+      const coverageMsg = coverageRequest(withDuration, scenario.config);
+      const otherMessages = isParentA ? scenario.messagesB : scenario.messagesA;
+      const otherPhone = isParentA ? scenario.config.parentB.phone : scenario.config.parentA.phone;
+      otherMessages.push({
+        id: crypto.randomUUID(), from: 'system', text: coverageMsg.text,
+        timestamp: ts, phone: otherPhone,
+      });
+
+      // Step 5: Generate proposal bundle
+      const bundle = generateProposalBundle(
+        scenario.config, scenario.schedule, withDuration, scenario.currentDay,
+      );
+      const withProposals = attachProposals(withDuration, bundle);
+
+      // Send proposals to other parent
+      const bundleMsg = proposalBundleMessage(withProposals, bundle, scenario.config);
+      otherMessages.push({
+        id: crypto.randomUUID(), from: 'system', text: bundleMsg.text,
+        timestamp: ts, phone: otherPhone,
+      });
+
+      // Step 6: Other parent's persona reacts
+      const pOther = PARENT_PERSONAS.find(p =>
+        p.id === (isParentA ? scenario.config.personaB : scenario.config.personaA)
+      );
+      const otherDecision = pOther
+        ? evaluateDisruption(pOther, scenarioDef.events[0] || { type: eventType, day: scenario.currentDay, description: scenarioDef.description }, scenario.currentDay)
+        : { decision: 'accept', confidence: 0.5 };
+
+      let resolved: ActiveDisruption;
+
+      if (otherDecision.decision === 'accept' && bundle.options.length > 0) {
+        // Accept first option
+        const selected = bundle.options[0];
+        resolved = selectProposal(withProposals, selected.id);
+
+        otherMessages.push({
+          id: crypto.randomUUID(), from: 'user', text: `Option 1: ${selected.label}`,
+          timestamp: ts, phone: otherPhone,
+        });
+
+        // Send resolution to both parents
+        const resolution = proposalSelectedMessage(
+          resolved, selected.label, scenario.config, scenario.schedule, scenario.currentDay,
+        );
+        reporterMessages.push({
+          id: crypto.randomUUID(), from: 'system', text: resolution.reporter.text,
+          timestamp: ts, phone,
+        });
+        otherMessages.push({
+          id: crypto.randomUUID(), from: 'system', text: resolution.other.text,
+          timestamp: ts, phone: otherPhone,
+        });
+
+        addLog(scenarioId, 'info', phone, {
+          action: 'proposal_accepted',
+          disruptionId: resolved.id,
+          selectedOption: selected.id,
+          fairnessImpact: selected.fairnessImpact,
+        });
+      } else if (otherDecision.decision === 'reject') {
+        resolved = declineAllProposals(withProposals);
+
+        otherMessages.push({
+          id: crypto.randomUUID(), from: 'user', text: 'Decline',
+          timestamp: ts, phone: otherPhone,
+        });
+
+        const decline = declineConfirmation(resolved, scenario.config);
+        reporterMessages.push({
+          id: crypto.randomUUID(), from: 'system', text: decline.reporter.text,
+          timestamp: ts, phone,
+        });
+        otherMessages.push({
+          id: crypto.randomUUID(), from: 'system', text: decline.other.text,
+          timestamp: ts, phone: otherPhone,
+        });
+
+        addLog(scenarioId, 'info', phone, {
+          action: 'proposals_declined', disruptionId: resolved.id,
+        });
+      } else {
+        // Counter or partial — pick partial option if available
+        const partialOpt = bundle.options.find(o => o.coverageDays[0]?.type === 'partial_day_coverage');
+        const chosen = partialOpt || bundle.options[0];
+        resolved = chosen ? selectProposal(withProposals, chosen.id) : declineAllProposals(withProposals);
+
+        if (chosen) {
+          otherMessages.push({
+            id: crypto.randomUUID(), from: 'user',
+            text: `${chosen.label}`,
+            timestamp: ts, phone: otherPhone,
+          });
+
+          const resolution = proposalSelectedMessage(
+            resolved, chosen.label, scenario.config, scenario.schedule, scenario.currentDay,
+          );
+          reporterMessages.push({
+            id: crypto.randomUUID(), from: 'system', text: resolution.reporter.text,
+            timestamp: ts, phone,
+          });
+          otherMessages.push({
+            id: crypto.randomUUID(), from: 'system', text: resolution.other.text,
+            timestamp: ts, phone: otherPhone,
+          });
+        }
+
+        addLog(scenarioId, 'info', phone, {
+          action: 'proposal_counter',
+          disruptionId: resolved.id,
+          selectedOption: chosen?.id || null,
+        });
+      }
+
+      // Mark for follow-up if multi-day
+      if (durationChoice !== 'today_only') {
+        resolved = markFollowupPending(resolved);
+      } else {
+        resolved = resolveDisruption(resolved);
+      }
+
+      scenario.activeDisruptions.push(resolved);
 
       return NextResponse.json({
-        response: alertText,
         messagesA: scenario.messagesA,
         messagesB: scenario.messagesB,
         schedule: scenario.schedule,
         logs: scenario.logs,
+        activeDisruption: resolved,
       });
 
     } else {
