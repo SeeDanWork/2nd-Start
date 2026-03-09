@@ -49,12 +49,13 @@ export function handleStepDay(
   }
 
   const dayResults: DayResult[] = [];
-  const now = () => new Date().toISOString();
 
   for (let d = 0; d < days; d++) {
     const simDay = scenario.currentDay;
     scenario.currentDay++;
-    const ts = now();
+    // Use simulated day's date for timestamps so date separators work
+    const scheduleDay = scenario.schedule[simDay];
+    const ts = scheduleDay ? new Date(scheduleDay.date + 'T09:00:00').toISOString() : new Date().toISOString();
 
     const opMsgA = getOperationalMessage(scenario.config, scenario.schedule, simDay, 'parent_a');
     const opMsgB = getOperationalMessage(scenario.config, scenario.schedule, simDay, 'parent_b');

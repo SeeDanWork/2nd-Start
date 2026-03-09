@@ -37,10 +37,11 @@ export function handleInjectDisruption(
     scenario.schedule = generateSchedule(scenario.config);
   }
 
-  const ts = new Date().toISOString();
   const isParentA = phone === scenario.config.parentA.phone;
   const reportingParent: 'parent_a' | 'parent_b' = isParentA ? 'parent_a' : 'parent_b';
   const today = scenario.schedule[scenario.currentDay]?.date || new Date().toISOString().split('T')[0];
+  // Use simulated day's date for timestamps so date separators work
+  const ts = new Date(today + 'T10:00:00').toISOString();
 
   const eventType = classifyDisruptionType(scenarioDef.description);
 

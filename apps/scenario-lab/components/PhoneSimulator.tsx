@@ -26,6 +26,39 @@ function isScheduleCreatedMessage(text: string): boolean {
   return lower.includes('schedule is now created') || lower.includes('schedule has been created');
 }
 
+/**
+ * Format a date label for the SMS-style day separator.
+ * Returns "Today", "Yesterday", or "Mon, Mar 8".
+ */
+function formatDateLabel(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const msgDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffMs = today.getTime() - msgDay.getTime();
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+/** Extract date-only string (YYYY-MM-DD) from ISO timestamp */
+function dateKey(timestamp: string): string {
+  return timestamp.slice(0, 10);
+}
+
+/** SMS-style centered date separator */
+function DateSeparator({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3 my-2">
+      <div className="flex-1 border-t border-gray-200" />
+      <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">{label}</span>
+      <div className="flex-1 border-t border-gray-200" />
+    </div>
+  );
+}
+
 function SchedulePreview({ schedule, parentALabel, parentBLabel, onView }: {
   schedule: ScheduleDay[];
   parentALabel: string;
@@ -218,31 +251,37 @@ export function PhoneSimulator({
             Click Connect to start
           </div>
         )}
-        {messages.map(msg => {
+        {messages.map((msg, idx) => {
           const isUser = msg.from === 'user';
           const isSystem = msg.from === 'system';
 
+          // Show date separator when the date changes between messages
+          const prevMsg = idx > 0 ? messages[idx - 1] : null;
+          const showDateSep = idx === 0 || (prevMsg && dateKey(msg.timestamp) !== dateKey(prevMsg.timestamp));
+
           return (
-            <div
-              key={msg.id}
-              className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[85%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap ${
-                  isUser
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-200 text-gray-900'
-                }`}
-              >
-                {linkifyText(msg.text)}
-                {isSystem && isScheduleCreatedMessage(msg.text) && schedule && schedule.length > 0 && (
-                  <SchedulePreview
-                    schedule={schedule}
-                    parentALabel={parentALabel || 'Parent A'}
-                    parentBLabel={parentBLabel || 'Parent B'}
-                    onView={onViewSchedule}
-                  />
-                )}
+            <div key={msg.id}>
+              {showDateSep && (
+                <DateSeparator label={formatDateLabel(msg.timestamp)} />
+              )}
+              <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  className={`max-w-[85%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap ${
+                    isUser
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-200 text-gray-900'
+                  }`}
+                >
+                  {linkifyText(msg.text)}
+                  {isSystem && isScheduleCreatedMessage(msg.text) && schedule && schedule.length > 0 && (
+                    <SchedulePreview
+                      schedule={schedule}
+                      parentALabel={parentALabel || 'Parent A'}
+                      parentBLabel={parentBLabel || 'Parent B'}
+                      onView={onViewSchedule}
+                    />
+                  )}
+                </div>
               </div>
             </div>
           );
