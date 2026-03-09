@@ -3,118 +3,6 @@
 import { useState, useRef, useEffect, ReactNode } from 'react';
 import { Message, ScheduleDay } from '@/lib/types';
 
-// ── Message Classification ──
-// Detect calculation-trace style messages for special rendering
-
-function isCalculationTrace(text: string): boolean {
-  const lower = text.toLowerCase();
-  // Must be a multi-line structured trace, not a short status message
-  const isMultiLine = text.includes('\n') && text.split('\n').length >= 3;
-  if (!isMultiLine) return false;
-
-  return (
-    lower.includes('fairness window') ||
-    lower.includes('current schedule metrics') ||
-    lower.includes('parent responses:') ||
-    lower.includes('weekly schedule review') ||
-    lower.includes('monthly schedule report') ||
-    // Only match "schedule disruption" when it's a full trace (starts with it as a heading)
-    lower.startsWith('schedule disruption')
-  );
-}
-
-function isDisruptionAlert(text: string): boolean {
-  return text.startsWith('Schedule disruption detected.');
-}
-
-function isDaySummary(text: string): boolean {
-  return text.includes('No action required.') && !text.includes('disruption');
-}
-
-// ── Calculation Trace Renderer ──
-
-function CalculationTrace({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const lines = text.split('\n');
-
-  // Split into summary (first 3 lines) and detail (rest)
-  const summaryLines = lines.slice(0, 3).filter(Boolean);
-  const detailLines = lines.slice(3);
-
-  return (
-    <div className="font-mono">
-      <div className="text-[11px] leading-relaxed">
-        {summaryLines.map((line, i) => (
-          <div key={i} className={line.startsWith('[') ? statusLineClass(line) : ''}>
-            {line}
-          </div>
-        ))}
-      </div>
-      {detailLines.length > 0 && (
-        <>
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="mt-1.5 text-[10px] text-lab-500 hover:text-lab-700 flex items-center gap-1"
-          >
-            <svg className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`}
-              fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-            {expanded ? 'Hide details' : 'View calculation trace'}
-          </button>
-          {expanded && (
-            <div className="mt-1.5 pt-1.5 border-t border-lab-100 text-[10px] leading-relaxed text-lab-600">
-              {detailLines.map((line, i) => {
-                if (!line.trim()) return <div key={i} className="h-1.5" />;
-                return (
-                  <div key={i} className={statusLineClass(line)}>
-                    {line}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function statusLineClass(line: string): string {
-  if (line.startsWith('[+]')) return 'text-green-600';
-  if (line.startsWith('[-]')) return 'text-red-500';
-  if (line.startsWith('[=]')) return 'text-lab-400';
-  if (line.startsWith('Result:') || line.startsWith('Constraint:')) return 'font-medium';
-  return '';
-}
-
-// ── Disruption Alert Renderer ──
-
-function DisruptionAlert({ text }: { text: string }) {
-  const lines = text.split('\n').filter(Boolean);
-  return (
-    <div className="border-l-2 border-amber-400 pl-2">
-      <div className="text-[11px] font-semibold text-amber-700 mb-1">{lines[0]}</div>
-      {lines.slice(1).map((line, i) => (
-        <div key={i} className="text-[11px] text-lab-600">{line}</div>
-      ))}
-    </div>
-  );
-}
-
-// ── Day Summary Renderer ──
-
-function DaySummaryBubble({ text }: { text: string }) {
-  const lines = text.split('\n').filter(Boolean);
-  return (
-    <div className="text-[11px] text-lab-500 font-mono">
-      {lines.map((line, i) => (
-        <div key={i}>{line}</div>
-      ))}
-    </div>
-  );
-}
-
 interface PhoneSimulatorProps {
   label: string;
   phone: string;
@@ -333,8 +221,6 @@ export function PhoneSimulator({
         {messages.map(msg => {
           const isUser = msg.from === 'user';
           const isSystem = msg.from === 'system';
-          const isTrace = isSystem && isCalculationTrace(msg.text);
-          const isAlert = isSystem && isDisruptionAlert(msg.text);
 
           return (
             <div
@@ -342,23 +228,13 @@ export function PhoneSimulator({
               className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[85%] px-3 py-2 rounded-xl text-sm whitespace-pre-wrap ${
+                className={`max-w-[85%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap ${
                   isUser
-                    ? 'bg-lab-700 text-white rounded-br-sm'
-                    : isAlert
-                    ? 'bg-amber-50 border border-amber-200 text-lab-800 rounded-bl-sm'
-                    : isTrace
-                    ? 'bg-slate-50 border border-slate-200 text-lab-800 rounded-bl-sm'
-                    : 'bg-white border border-lab-200 text-lab-800 rounded-bl-sm'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-200 text-gray-900'
                 }`}
               >
-                {isAlert ? (
-                  <DisruptionAlert text={msg.text} />
-                ) : isTrace ? (
-                  <CalculationTrace text={msg.text} />
-                ) : (
-                  linkifyText(msg.text)
-                )}
+                {linkifyText(msg.text)}
                 {isSystem && isScheduleCreatedMessage(msg.text) && schedule && schedule.length > 0 && (
                   <SchedulePreview
                     schedule={schedule}
@@ -373,7 +249,7 @@ export function PhoneSimulator({
         })}
         {sending && (
           <div className="flex justify-start">
-            <div className="bg-white border border-lab-200 px-3 py-2 rounded-xl rounded-bl-sm">
+            <div className="bg-gray-200 px-3 py-2 rounded-2xl">
               <div className="flex gap-1">
                 <div className="w-1.5 h-1.5 bg-lab-300 rounded-full animate-bounce" />
                 <div className="w-1.5 h-1.5 bg-lab-300 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }} />
