@@ -238,8 +238,8 @@ export function generatePersonaMessage(
       return "Let me think about this and get back to you.";
 
     case 'disruption_report':
-      if (b.logistics_tolerance >= 4) return `${context?.eventType || 'Something came up'} — I can cover if needed.`;
-      if (b.conflict_level >= 4) return `${context?.eventType || 'This happened'} and it's your responsibility to handle it.`;
+      if (b.logistics_tolerance >= 4) return `${context?.eventType || 'Something came up'} — can we arrange coverage?`;
+      if (b.conflict_level >= 4) return `${context?.eventType || 'This happened'}. I need help with pickup today.`;
       return `${context?.eventType || 'Heads up'} — we need to figure out coverage.`;
 
     case 'complaint':

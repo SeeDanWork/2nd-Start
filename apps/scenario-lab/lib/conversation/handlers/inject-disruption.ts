@@ -11,14 +11,9 @@ import {
   createDisruption, setDuration, attachProposals, selectProposal,
   declineAllProposals, markFollowupPending, resolveDisruption,
   isDuplicateDisruption, classifyDisruptionType,
-  ActiveDisruption, DisruptionDuration,
+  ActiveDisruption, DisruptionDuration, DISRUPTION_LABELS,
 } from '../../disruption-engine';
 import { generateProposalBundle } from '../../proposal-generator';
-import {
-  disruptionReportConfirmation, durationQuestion, coverageRequest,
-  proposalBundleMessage, proposalSelectedMessage, declineConfirmation,
-  manageSelfConfirmation, followupCheck,
-} from '../../message-router';
 
 export interface InjectDisruptionResult {
   messagesA: Scenario['messagesA'];
@@ -69,17 +64,29 @@ export function handleInjectDisruption(
   const reporterMessages = isParentA ? scenario.messagesA : scenario.messagesB;
   const otherMessages = isParentA ? scenario.messagesB : scenario.messagesA;
   const otherPhone = isParentA ? scenario.config.parentB.phone : scenario.config.parentA.phone;
+  const reporterLabel = isParentA ? scenario.config.parentA.label : scenario.config.parentB.label;
+  const otherLabel = isParentA ? scenario.config.parentB.label : scenario.config.parentA.label;
+  const childNames = scenario.config.children.map(c => c.name).join(' & ');
+  const todaySchedule = scenario.schedule[scenario.currentDay];
+  const dateStr = todaySchedule
+    ? new Date(todaySchedule.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    : 'Today';
+  const assignedToReporter = todaySchedule?.assignedTo === reportingParent;
 
-  // Step 1: Reporter gets confirmation
-  const reporterMsg = disruptionReportConfirmation(
-    disruption, scenario.config, scenario.schedule, scenario.currentDay,
-  );
+  // ── Day context (both parents get today's status) ──
+  const dayContextReporter = `${dateStr} | ${childNames} with ${assignedToReporter ? 'you' : otherLabel}.`;
+  const dayContextOther = `${dateStr} | ${childNames} with ${assignedToReporter ? reporterLabel : 'you'}.`;
+
   reporterMessages.push({
-    id: crypto.randomUUID(), from: 'system', text: reporterMsg.text,
+    id: crypto.randomUUID(), from: 'system', text: dayContextReporter,
     timestamp: ts, phone,
   });
+  otherMessages.push({
+    id: crypto.randomUUID(), from: 'system', text: dayContextOther,
+    timestamp: ts, phone: otherPhone,
+  });
 
-  // Step 2: Reporter requests coverage
+  // ── Step 1: Reporter TEXTS about the disruption (parent message first) ──
   const pReporter = PARENT_PERSONAS.find(p =>
     p.id === (isParentA ? scenario.config.personaA : scenario.config.personaB)
   );
@@ -93,14 +100,22 @@ export function handleInjectDisruption(
     timestamp: ts, phone,
   });
 
-  // Step 3: Duration question
-  const durationMsg = durationQuestion(disruption);
+  // ── Step 2: System acknowledges and asks duration ──
+  const eventLabel = DISRUPTION_LABELS[eventType];
   reporterMessages.push({
-    id: crypto.randomUUID(), from: 'system', text: durationMsg.text,
+    id: crypto.randomUUID(), from: 'system', text: [
+      `Got it — ${eventLabel.toLowerCase()} recorded.`,
+      `How long do you expect this to last?`,
+      '',
+      '1. Today only',
+      '2. 2-3 days',
+      '3. About a week',
+      '4. Not sure yet',
+    ].join('\n'),
     timestamp: ts, phone,
   });
 
-  // Auto-simulate duration
+  // ── Step 3: Reporter answers duration ──
   const durationChoice: DisruptionDuration =
     scenarioDef.difficulty <= 2 ? 'today_only'
     : scenarioDef.difficulty <= 3 ? '2_3_days'
@@ -118,26 +133,47 @@ export function handleInjectDisruption(
 
   const withDuration = setDuration(disruption, durationChoice, scenario.schedule, scenario.currentDay);
 
-  // Step 4: Coverage request to other parent
-  const coverageMsg = coverageRequest(withDuration, scenario.config);
+  // ── Step 4: System confirms and notifies reporter that other parent is being contacted ──
+  reporterMessages.push({
+    id: crypto.randomUUID(), from: 'system',
+    text: `Notifying ${otherLabel}. I'll let you know when they respond.`,
+    timestamp: ts, phone,
+  });
+
+  // ── Step 5: Other parent gets coverage request (on THEIR phone) ──
+  const durationText = withDuration.duration === 'today_only' ? 'today'
+    : withDuration.duration === '2_3_days' ? '2-3 days'
+    : withDuration.duration === 'week' ? 'this week'
+    : 'duration unknown';
+
   otherMessages.push({
-    id: crypto.randomUUID(), from: 'system', text: coverageMsg.text,
+    id: crypto.randomUUID(), from: 'system', text: [
+      `${reporterLabel} reports: ${eventLabel.toLowerCase()}.`,
+      `Estimated duration: ${durationText}.`,
+      `Can you help with coverage?`,
+    ].join('\n'),
     timestamp: ts, phone: otherPhone,
   });
 
-  // Step 5: Generate proposals
+  // ── Step 6: Generate proposals and show to other parent ──
   const bundle = generateProposalBundle(
     scenario.config, scenario.schedule, withDuration, scenario.currentDay,
   );
   const withProposals = attachProposals(withDuration, bundle);
 
-  const bundleMsg = proposalBundleMessage(withProposals, bundle, scenario.config);
+  const choiceLines = bundle.options.map((opt, i) => `${i + 1}. ${opt.label}`);
+  choiceLines.push(`${bundle.options.length + 1}. Decline all`);
+
   otherMessages.push({
-    id: crypto.randomUUID(), from: 'system', text: bundleMsg.text,
+    id: crypto.randomUUID(), from: 'system', text: [
+      'Here are the coverage options:',
+      '',
+      ...choiceLines,
+    ].join('\n'),
     timestamp: ts, phone: otherPhone,
   });
 
-  // Step 6: Other parent reacts
+  // ── Step 7: Other parent responds ──
   const pOther = PARENT_PERSONAS.find(p =>
     p.id === (isParentA ? scenario.config.personaB : scenario.config.personaA)
   );
@@ -155,21 +191,24 @@ export function handleInjectDisruption(
     const selected = bundle.options[0];
     resolved = selectProposal(withProposals, selected.id);
 
+    // Other parent picks an option
     otherMessages.push({
-      id: crypto.randomUUID(), from: 'user', text: `Option 1: ${selected.label}`,
+      id: crypto.randomUUID(), from: 'user', text: `${selected.label}`,
       timestamp: ts, phone: otherPhone,
     });
 
-    const resolution = proposalSelectedMessage(
-      resolved, selected.label, scenario.config, scenario.schedule, scenario.currentDay,
-    );
-    reporterMessages.push({
-      id: crypto.randomUUID(), from: 'system', text: resolution.reporter.text,
-      timestamp: ts, phone,
-    });
+    // Confirm to other parent
     otherMessages.push({
-      id: crypto.randomUUID(), from: 'system', text: resolution.other.text,
+      id: crypto.randomUUID(), from: 'system',
+      text: `Got it. Coverage confirmed. Schedule updated.`,
       timestamp: ts, phone: otherPhone,
+    });
+
+    // Notify reporter
+    reporterMessages.push({
+      id: crypto.randomUUID(), from: 'system',
+      text: `${otherLabel} accepted coverage.\n\nSelected: ${selected.label}.\nSchedule adjustment applied.`,
+      timestamp: ts, phone,
     });
 
     addLog(scenario.id, 'info', phone, {
@@ -182,18 +221,22 @@ export function handleInjectDisruption(
     resolved = declineAllProposals(withProposals);
 
     otherMessages.push({
-      id: crypto.randomUUID(), from: 'user', text: 'Decline',
+      id: crypto.randomUUID(), from: 'user', text: "I can't cover right now",
       timestamp: ts, phone: otherPhone,
     });
 
-    const decline = declineConfirmation(resolved, scenario.config);
-    reporterMessages.push({
-      id: crypto.randomUUID(), from: 'system', text: decline.reporter.text,
-      timestamp: ts, phone,
-    });
+    // Confirm to other parent
     otherMessages.push({
-      id: crypto.randomUUID(), from: 'system', text: decline.other.text,
+      id: crypto.randomUUID(), from: 'system',
+      text: `Understood. I'll let ${reporterLabel} know.`,
       timestamp: ts, phone: otherPhone,
+    });
+
+    // Notify reporter
+    reporterMessages.push({
+      id: crypto.randomUUID(), from: 'system',
+      text: `${otherLabel} is unable to cover.\n\nYou may need to manage this yourself or we can explore other options.`,
+      timestamp: ts, phone,
     });
 
     addLog(scenario.id, 'info', phone, {
@@ -208,20 +251,20 @@ export function handleInjectDisruption(
     if (chosen) {
       otherMessages.push({
         id: crypto.randomUUID(), from: 'user',
-        text: `${chosen.label}`,
+        text: `I can do ${chosen.label.toLowerCase()}`,
         timestamp: ts, phone: otherPhone,
       });
 
-      const resolution = proposalSelectedMessage(
-        resolved, chosen.label, scenario.config, scenario.schedule, scenario.currentDay,
-      );
-      reporterMessages.push({
-        id: crypto.randomUUID(), from: 'system', text: resolution.reporter.text,
-        timestamp: ts, phone,
-      });
       otherMessages.push({
-        id: crypto.randomUUID(), from: 'system', text: resolution.other.text,
+        id: crypto.randomUUID(), from: 'system',
+        text: `Got it. Coverage confirmed. Schedule updated.`,
         timestamp: ts, phone: otherPhone,
+      });
+
+      reporterMessages.push({
+        id: crypto.randomUUID(), from: 'system',
+        text: `${otherLabel} offered partial coverage.\n\nSelected: ${chosen.label}.\nSchedule adjustment applied.`,
+        timestamp: ts, phone,
       });
     }
 
