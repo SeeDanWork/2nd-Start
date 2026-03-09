@@ -31,6 +31,7 @@ import {
   DEFAULT_SCHEDULE_HORIZON_WEEKS,
   generateIcsString,
 } from '@adcp/shared';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { FamilyContextService } from '../family-context/family-context.service';
 import { DisruptionsService } from '../disruptions/disruptions.service';
 import { GoogleCalendarSyncService } from '../google-calendar/google-calendar-sync.service';
@@ -58,6 +59,7 @@ export class SchedulesService {
     private readonly familyContextService: FamilyContextService,
     private readonly disruptionsService: DisruptionsService,
     private readonly googleCalendarSyncService: GoogleCalendarSyncService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async getActiveSchedule(familyId: string): Promise<BaseScheduleVersion | null> {
@@ -438,6 +440,8 @@ export class SchedulesService {
       this.logger.warn(`Google Calendar sync failed: ${err.message}`);
     });
 
+    this.eventEmitter.emit('schedule.activated', { familyId });
+
     return version;
   }
 
@@ -522,6 +526,8 @@ export class SchedulesService {
     this.googleCalendarSyncService.syncScheduleForFamily(familyId).catch((err) => {
       this.logger.warn(`Google Calendar sync failed: ${err.message}`);
     });
+
+    this.eventEmitter.emit('schedule.activated', { familyId });
 
     return version;
   }

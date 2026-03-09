@@ -1,9 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { NotificationRecord, User } from '../entities';
 import { NotificationChannel, NotificationType } from '@adcp/shared';
 import { EmailService } from '../email/email.service';
+import { MessageSenderService } from '../messaging/message-sender.service';
+import { formatNotificationSms } from '../messaging/templates/notification-sms';
 
 @Injectable()
 export class NotificationService {
@@ -15,6 +17,9 @@ export class NotificationService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly emailService: EmailService,
+    @Optional()
+    @Inject(MessageSenderService)
+    private readonly messageSenderService?: MessageSenderService,
   ) {}
 
   async send(
@@ -45,6 +50,16 @@ export class NotificationService {
           type as NotificationType,
           data,
         );
+      }
+    }
+
+    // SMS dispatch — if user has phone + messaging channel configured
+    if (user && user.phoneNumber && (user as any).messagingChannel && this.messageSenderService) {
+      try {
+        const smsBody = formatNotificationSms(type, data);
+        await this.messageSenderService.sendMessage(user.phoneNumber, smsBody);
+      } catch (err) {
+        this.logger.warn(`SMS dispatch failed for user ${userId}: ${err}`);
       }
     }
 

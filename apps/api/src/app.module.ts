@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AuthModule } from './auth/auth.module';
 import { FamiliesModule } from './families/families.module';
 import { ChildrenModule } from './children/children.module';
@@ -19,9 +20,12 @@ import { FamilyContextModule } from './family-context/family-context.module';
 import { DisruptionsModule } from './disruptions/disruptions.module';
 import { PresetsModule } from './presets/presets.module';
 import { GoogleCalendarModule } from './google-calendar/google-calendar.module';
+import { MessagingModule } from './messaging/messaging.module';
+import { CalendarSyncModule } from './calendar-sync/calendar-sync.module';
 
 @Module({
   imports: [
+    EventEmitterModule.forRoot(),
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DATABASE_HOST || 'localhost',
@@ -51,6 +55,8 @@ import { GoogleCalendarModule } from './google-calendar/google-calendar.module';
     DisruptionsModule,
     PresetsModule,
     GoogleCalendarModule,
+    MessagingModule,
+    CalendarSyncModule,
   ],
 })
 export class AppModule {}

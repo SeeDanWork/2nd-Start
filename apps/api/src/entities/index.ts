@@ -25,3 +25,7 @@ export { DisruptionEvent } from './disruption-event.entity';
 export { OverlayPolicyEntity } from './overlay-policy.entity';
 export { PolicyDecisionRecord } from './policy-decision-record.entity';
 export { GoogleCalendarToken } from './google-calendar-token.entity';
+export { ConversationSession } from './conversation-session.entity';
+export { MessageLog } from './message-log.entity';
+export { CalendarConnection } from './calendar-connection.entity';
+export { CalendarEvent } from './calendar-event.entity';

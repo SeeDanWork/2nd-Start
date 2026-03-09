@@ -13,6 +13,7 @@ import {
   ConsentRuleType,
   ShareLinkScope,
   ShareLinkFormat,
+  MessagingChannel,
 } from './enums';
 import {
   MAX_REASON_NOTE_LENGTH,
@@ -290,4 +291,12 @@ export const paginationQuerySchema = z.object({
 
 export const ledgerQuerySchema = z.object({
   windows: z.string().default('2,4,8,12'),
+});
+
+// ─── Messaging ──────────────────────────────────────────────
+
+export const inboundMessageSchema = z.object({
+  from: z.string().min(1),
+  body: z.string().min(1),
+  channel: z.nativeEnum(MessagingChannel),
 });

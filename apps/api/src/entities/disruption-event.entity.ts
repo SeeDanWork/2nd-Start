@@ -9,6 +9,7 @@ import {
 
 @Entity('disruption_events')
 @Index('idx_disruption_family_dates', ['familyId', 'startDate', 'endDate'])
+@Index('idx_disruption_family_date', ['familyId', 'date'])
 export class DisruptionEvent {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -33,6 +34,18 @@ export class DisruptionEvent {
 
   @Column({ type: 'date', name: 'end_date' })
   endDate!: string;
+
+  @Column({ type: 'date', nullable: true })
+  date!: string;
+
+  @Column({ type: 'text', nullable: true })
+  description!: string | null;
+
+  @Column({ type: 'text', name: 'child_name', nullable: true })
+  childName!: string | null;
+
+  @Column({ type: 'text', default: 'active' })
+  status!: string;
 
   @Column({ type: 'jsonb', default: {} })
   metadata!: Record<string, unknown>;

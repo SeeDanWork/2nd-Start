@@ -25,6 +25,7 @@ import {
   NotificationType,
   ConsentRuleType,
   EmergencyModeStatus,
+  MessageIntent,
 } from './enums';
 
 // ─── Core Entities ──────────────────────────────────────────
@@ -469,4 +470,13 @@ export interface MonthlySummary {
   requestsAccepted: number;
   requestsExpired: number;
   scheduleVersionsCreated: number;
+}
+
+// ─── Messaging ──────────────────────────────────────────────
+
+export interface ParsedIntent {
+  intent: MessageIntent;
+  confidence: number;
+  entities: Record<string, string>;
+  rawText: string;
 }

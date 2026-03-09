@@ -1,0 +1,24 @@
+{
+  "name": "@adcp/llm-router",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "openai": "^4.77.0",
+    "@anthropic-ai/sdk": "^0.36.0",
+    "@google/generative-ai": "^0.21.0",
+    "sql.js": "^1.11.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

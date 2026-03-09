@@ -28,6 +28,12 @@ export class User {
   @Column({ type: 'text', array: true, name: 'device_tokens', default: '{}' })
   deviceTokens!: string[];
 
+  @Column({ type: 'text', name: 'phone_number', nullable: true, unique: true })
+  phoneNumber!: string | null;
+
+  @Column({ type: 'text', name: 'messaging_channel', nullable: true })
+  messagingChannel!: string | null;
+
   @Column({ type: 'boolean', name: 'onboarding_completed', default: false })
   onboardingCompleted!: boolean;
 
