@@ -1,0 +1,347 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ──────────────────────────────────────────────────────
+
+enum ParentRole {
+  MOTHER
+  FATHER
+  GUARDIAN
+  OTHER
+}
+
+enum PolicyPriority {
+  HARD
+  STRONG
+  SOFT
+}
+
+enum PolicyRuleType {
+  SIBLING_COHESION
+  MIN_BLOCK_LENGTH
+  SCHOOL_NIGHT_ROUTINE
+  TRAVEL_DISTANCE_LIMIT
+  EXCHANGE_LOCATION
+  ACTIVITY_COMMITMENT
+}
+
+enum ProposalStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum ScheduleStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum DisruptionType {
+  ILLNESS
+  TRAVEL
+  SCHOOL_CLOSURE
+  ACTIVITY_CONFLICT
+  WEATHER
+  OTHER
+}
+
+enum CalendarConstraintLevel {
+  HARD
+  STRONG
+  SOFT
+}
+
+enum IntentType {
+  AVAILABILITY_CHANGE
+  SWAP_REQUEST
+  DISRUPTION_REPORT
+  PROPOSAL_REQUEST
+  POLICY_CONFIRMATION
+}
+
+// ── Models ─────────────────────────────────────────────────────
+
+model Family {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  parents          Parent[]
+  children         Child[]
+  scheduleVersions ScheduleVersion[]
+  policyRules      PolicyRule[]
+  fairnessLedgers  FairnessLedger[]
+  calendarEvents   CalendarEvent[]
+  intents          Intent[]
+
+  @@map("families")
+}
+
+model Parent {
+  id        String     @id @default(uuid()) @db.Uuid
+  familyId  String     @map("family_id") @db.Uuid
+  name      String
+  role      ParentRole
+  email     String
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  family                    Family                  @relation(fields: [familyId], references: [id])
+  nightOwnerships           NightOwnership[]
+  exchangesFrom             Exchange[]              @relation("ExchangeFrom")
+  exchangesTo               Exchange[]              @relation("ExchangeTo")
+  fairnessLedgers           FairnessLedger[]
+  disruptions               DisruptionOverlay[]
+  calendarEvents            CalendarEvent[]
+  intents                   Intent[]
+  proposalNightOwnerships   ProposalNightOwnership[]
+  proposalExchangesFrom     ProposalExchange[]      @relation("ProposalExchangeFrom")
+  proposalExchangesTo       ProposalExchange[]      @relation("ProposalExchangeTo")
+
+  @@map("parents")
+}
+
+model Child {
+  id        String   @id @default(uuid()) @db.Uuid
+  familyId  String   @map("family_id") @db.Uuid
+  name      String
+  birthDate DateTime @map("birth_date") @db.Date
+  createdAt DateTime @default(now()) @map("created_at")
+
+  family                    Family                  @relation(fields: [familyId], references: [id])
+  nightOwnerships           NightOwnership[]
+  exchanges                 Exchange[]
+  disruptions               DisruptionOverlay[]
+  calendarEvents            CalendarEvent[]
+  proposalNightOwnerships   ProposalNightOwnership[]
+  proposalExchanges         ProposalExchange[]
+
+  @@map("children")
+}
+
+model ScheduleVersion {
+  id                    String         @id @default(uuid()) @db.Uuid
+  familyId              String         @map("family_id") @db.Uuid
+  baselineVersionId     String?        @map("baseline_version_id") @db.Uuid
+  status                ScheduleStatus
+  startDate             DateTime       @map("start_date") @db.Date
+  endDate               DateTime       @map("end_date") @db.Date
+  createdAt             DateTime       @default(now()) @map("created_at")
+  solverRunId           String?        @map("solver_run_id")
+  activatedAt           DateTime?      @map("activated_at")
+  archivedAt            DateTime?      @map("archived_at")
+  derivedFromProposalId String?        @map("derived_from_proposal_id") @db.Uuid
+  versionNumber         Int            @map("version_number")
+
+  family                Family                @relation(fields: [familyId], references: [id])
+  baselineVersion       ScheduleVersion?      @relation("ScheduleBaseline", fields: [baselineVersionId], references: [id])
+  derivedVersions       ScheduleVersion[]     @relation("ScheduleBaseline")
+  nightOwnerships       NightOwnership[]
+  exchanges             Exchange[]
+  proposals             Proposal[]
+  disruptions           DisruptionOverlay[]
+  explanationArtifacts  ExplanationArtifact[]
+
+  @@unique([familyId, versionNumber])
+  @@map("schedule_versions")
+}
+
+model NightOwnership {
+  id         String   @id @default(uuid()) @db.Uuid
+  scheduleId String   @map("schedule_id") @db.Uuid
+  date       DateTime @db.Date
+  childId    String   @map("child_id") @db.Uuid
+  parentId   String   @map("parent_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  schedule ScheduleVersion @relation(fields: [scheduleId], references: [id])
+  child    Child            @relation(fields: [childId], references: [id])
+  parent   Parent           @relation(fields: [parentId], references: [id])
+
+  @@unique([scheduleId, childId, date])
+  @@map("night_ownerships")
+}
+
+model Exchange {
+  id           String   @id @default(uuid()) @db.Uuid
+  scheduleId   String   @map("schedule_id") @db.Uuid
+  childId      String   @map("child_id") @db.Uuid
+  date         DateTime @db.Date
+  fromParentId String   @map("from_parent_id") @db.Uuid
+  toParentId   String   @map("to_parent_id") @db.Uuid
+  time         String
+  location     String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  schedule   ScheduleVersion @relation(fields: [scheduleId], references: [id])
+  child      Child            @relation(fields: [childId], references: [id])
+  fromParent Parent           @relation("ExchangeFrom", fields: [fromParentId], references: [id])
+  toParent   Parent           @relation("ExchangeTo", fields: [toParentId], references: [id])
+
+  @@map("exchanges")
+}
+
+model PolicyRule {
+  id         String         @id @default(uuid()) @db.Uuid
+  familyId   String         @map("family_id") @db.Uuid
+  ruleType   PolicyRuleType @map("rule_type")
+  priority   PolicyPriority
+  parameters Json
+  active     Boolean        @default(true)
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  family Family @relation(fields: [familyId], references: [id])
+
+  @@map("policy_rules")
+}
+
+model FairnessLedger {
+  id               String   @id @default(uuid()) @db.Uuid
+  familyId         String   @map("family_id") @db.Uuid
+  parentId         String   @map("parent_id") @db.Uuid
+  nightDeviation   Int      @default(0) @map("night_deviation")
+  weekendDeviation Int      @default(0) @map("weekend_deviation")
+  holidayDeviation Int      @default(0) @map("holiday_deviation")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  family Family @relation(fields: [familyId], references: [id])
+  parent Parent @relation(fields: [parentId], references: [id])
+
+  @@map("fairness_ledgers")
+}
+
+model Proposal {
+  id                     String         @id @default(uuid()) @db.Uuid
+  baseScheduleVersionId  String         @map("base_schedule_version_id") @db.Uuid
+  createdBy              String         @map("created_by")
+  type                   String
+  status                 ProposalStatus @default(PENDING)
+  createdAt              DateTime       @default(now()) @map("created_at")
+  expiresAt              DateTime?      @map("expires_at")
+  resolvedAt             DateTime?      @map("resolved_at")
+  invalidatedReason      String?        @map("invalidated_reason")
+
+  baseScheduleVersion ScheduleVersion    @relation(fields: [baseScheduleVersionId], references: [id])
+  proposalSchedules   ProposalSchedule[]
+
+  @@map("proposals")
+}
+
+model ProposalSchedule {
+  id                  String   @id @default(uuid()) @db.Uuid
+  proposalId          String   @map("proposal_id") @db.Uuid
+  scoreBreakdown      Json     @map("score_breakdown")
+  fairnessProjection  Json     @map("fairness_projection")
+  stabilityDelta      Float    @map("stability_delta")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  proposal        Proposal                 @relation(fields: [proposalId], references: [id])
+  nightOwnerships ProposalNightOwnership[]
+  exchanges       ProposalExchange[]
+
+  @@map("proposal_schedules")
+}
+
+model ProposalNightOwnership {
+  id                 String   @id @default(uuid()) @db.Uuid
+  proposalScheduleId String   @map("proposal_schedule_id") @db.Uuid
+  date               DateTime @db.Date
+  childId            String   @map("child_id") @db.Uuid
+  parentId           String   @map("parent_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  proposalSchedule ProposalSchedule @relation(fields: [proposalScheduleId], references: [id])
+  child            Child             @relation(fields: [childId], references: [id])
+  parent           Parent            @relation(fields: [parentId], references: [id])
+
+  @@unique([proposalScheduleId, childId, date])
+  @@map("proposal_night_ownerships")
+}
+
+model ProposalExchange {
+  id                 String   @id @default(uuid()) @db.Uuid
+  proposalScheduleId String   @map("proposal_schedule_id") @db.Uuid
+  childId            String   @map("child_id") @db.Uuid
+  date               DateTime @db.Date
+  fromParentId       String   @map("from_parent_id") @db.Uuid
+  toParentId         String   @map("to_parent_id") @db.Uuid
+  time               String
+  location           String
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  proposalSchedule ProposalSchedule @relation(fields: [proposalScheduleId], references: [id])
+  child            Child             @relation(fields: [childId], references: [id])
+  fromParent       Parent            @relation("ProposalExchangeFrom", fields: [fromParentId], references: [id])
+  toParent         Parent            @relation("ProposalExchangeTo", fields: [toParentId], references: [id])
+
+  @@map("proposal_exchanges")
+}
+
+model DisruptionOverlay {
+  id                String         @id @default(uuid()) @db.Uuid
+  scheduleVersionId String         @map("schedule_version_id") @db.Uuid
+  childId           String         @map("child_id") @db.Uuid
+  date              DateTime       @db.Date
+  assignedParentId  String         @map("assigned_parent_id") @db.Uuid
+  type              DisruptionType
+  reason            String
+  createdAt         DateTime       @default(now()) @map("created_at")
+
+  scheduleVersion ScheduleVersion @relation(fields: [scheduleVersionId], references: [id])
+  child           Child            @relation(fields: [childId], references: [id])
+  assignedParent  Parent           @relation(fields: [assignedParentId], references: [id])
+
+  @@map("disruption_overlays")
+}
+
+model CalendarEvent {
+  id              String                  @id @default(uuid()) @db.Uuid
+  familyId        String                  @map("family_id") @db.Uuid
+  parentId        String?                 @map("parent_id") @db.Uuid
+  childId         String?                 @map("child_id") @db.Uuid
+  title           String
+  startTime       DateTime                @map("start_time")
+  endTime         DateTime                @map("end_time")
+  constraintLevel CalendarConstraintLevel @map("constraint_level")
+  source          String
+  createdAt       DateTime                @default(now()) @map("created_at")
+
+  family Family  @relation(fields: [familyId], references: [id])
+  parent Parent? @relation(fields: [parentId], references: [id])
+  child  Child?  @relation(fields: [childId], references: [id])
+
+  @@map("calendar_events")
+}
+
+model Intent {
+  id         String     @id @default(uuid()) @db.Uuid
+  familyId   String     @map("family_id") @db.Uuid
+  parentId   String     @map("parent_id") @db.Uuid
+  type       IntentType
+  payload    Json
+  confidence Float
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  family Family @relation(fields: [familyId], references: [id])
+  parent Parent @relation(fields: [parentId], references: [id])
+
+  @@map("intents")
+}
+
+model ExplanationArtifact {
+  id                String   @id @default(uuid()) @db.Uuid
+  scheduleVersionId String   @map("schedule_version_id") @db.Uuid
+  type              String
+  data              Json
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  scheduleVersion ScheduleVersion @relation(fields: [scheduleVersionId], references: [id])
+
+  @@map("explanation_artifacts")
+}
