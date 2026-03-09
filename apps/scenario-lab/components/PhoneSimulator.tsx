@@ -335,7 +335,6 @@ export function PhoneSimulator({
           const isSystem = msg.from === 'system';
           const isTrace = isSystem && isCalculationTrace(msg.text);
           const isAlert = isSystem && isDisruptionAlert(msg.text);
-          const isDaySum = isSystem && isDaySummary(msg.text);
 
           return (
             <div
@@ -350,8 +349,6 @@ export function PhoneSimulator({
                     ? 'bg-amber-50 border border-amber-200 text-lab-800 rounded-bl-sm'
                     : isTrace
                     ? 'bg-slate-50 border border-slate-200 text-lab-800 rounded-bl-sm'
-                    : isDaySum
-                    ? 'bg-white border border-lab-200 text-lab-600 rounded-bl-sm'
                     : 'bg-white border border-lab-200 text-lab-800 rounded-bl-sm'
                 }`}
               >
@@ -359,8 +356,6 @@ export function PhoneSimulator({
                   <DisruptionAlert text={msg.text} />
                 ) : isTrace ? (
                   <CalculationTrace text={msg.text} />
-                ) : isDaySum ? (
-                  <DaySummaryBubble text={msg.text} />
                 ) : (
                   linkifyText(msg.text)
                 )}
