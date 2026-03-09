@@ -188,13 +188,19 @@ model Exchange {
 }
 
 model PolicyRule {
-  id         String         @id @default(uuid()) @db.Uuid
-  familyId   String         @map("family_id") @db.Uuid
-  ruleType   PolicyRuleType @map("rule_type")
-  priority   PolicyPriority
-  parameters Json
-  active     Boolean        @default(true)
-  createdAt  DateTime       @default(now()) @map("created_at")
+  id             String         @id @default(uuid()) @db.Uuid
+  familyId       String         @map("family_id") @db.Uuid
+  ruleType       PolicyRuleType @map("rule_type")
+  priority       PolicyPriority
+  parameters     Json
+  active         Boolean        @default(true)
+  createdAt      DateTime       @default(now()) @map("created_at")
+  scopeType      String         @default("FAMILY") @map("scope_type")
+  scopeChildId   String?        @map("scope_child_id") @db.Uuid
+  scopeDateStart DateTime?      @map("scope_date_start") @db.Date
+  scopeDateEnd   DateTime?      @map("scope_date_end") @db.Date
+  label          String?
+  updatedAt      DateTime       @updatedAt @map("updated_at")
 
   family Family @relation(fields: [familyId], references: [id])
 
