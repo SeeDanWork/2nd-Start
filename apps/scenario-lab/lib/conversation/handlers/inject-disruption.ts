@@ -1,7 +1,7 @@
 // ── Inject Disruption Handler ────────────────────────────────
 // Mediation-based disruption flow with asymmetric messaging.
 
-import { Scenario } from '../../types';
+import { Scenario, ScenarioConfig } from '../../types';
 import { addLog } from '../../store';
 import { PARENT_PERSONAS } from '../../personas';
 import { SCENARIO_CATALOG } from '../../scenarios';
@@ -11,9 +11,9 @@ import {
   createDisruption, setDuration, attachProposals, selectProposal,
   declineAllProposals, markFollowupPending, resolveDisruption,
   isDuplicateDisruption, classifyDisruptionType,
-  ActiveDisruption, DisruptionDuration, DISRUPTION_LABELS,
+  ActiveDisruption, DisruptionDuration, DISRUPTION_LABELS, ProposalOption,
 } from '../../disruption-engine';
-import { generateProposalBundle } from '../../proposal-generator';
+import { generateProposalBundle, formatProposalOption } from '../../proposal-generator';
 
 export interface InjectDisruptionResult {
   messagesA: Scenario['messagesA'];
@@ -148,7 +148,7 @@ export function handleInjectDisruption(
 
   otherMessages.push({
     id: crypto.randomUUID(), from: 'system', text: [
-      `${reporterLabel} reports: ${eventLabel.toLowerCase()}.`,
+      `${reporterLabel} reports: ${scenarioDef.name}.`,
       `Estimated duration: ${durationText}.`,
       `Can you help with coverage?`,
     ].join('\n'),
@@ -190,6 +190,7 @@ export function handleInjectDisruption(
   if (otherDecision.decision === 'accept' && bundle.options.length > 0) {
     const selected = bundle.options[0];
     resolved = selectProposal(withProposals, selected.id);
+    const changeSummary = buildScheduleChangeSummary(selected, scenario.config, reporterLabel, otherLabel);
 
     // Other parent picks an option
     otherMessages.push({
@@ -197,17 +198,17 @@ export function handleInjectDisruption(
       timestamp: ts, phone: otherPhone,
     });
 
-    // Confirm to other parent
+    // Confirm to other parent with schedule details
     otherMessages.push({
       id: crypto.randomUUID(), from: 'system',
-      text: `Got it. Coverage confirmed. Schedule updated.`,
+      text: `Coverage confirmed.\n\n${changeSummary}`,
       timestamp: ts, phone: otherPhone,
     });
 
-    // Notify reporter
+    // Notify reporter with schedule details
     reporterMessages.push({
       id: crypto.randomUUID(), from: 'system',
-      text: `${otherLabel} accepted coverage.\n\nSelected: ${selected.label}.\nSchedule adjustment applied.`,
+      text: `${otherLabel} accepted coverage.\n\n${changeSummary}`,
       timestamp: ts, phone,
     });
 
@@ -225,17 +226,15 @@ export function handleInjectDisruption(
       timestamp: ts, phone: otherPhone,
     });
 
-    // Confirm to other parent
     otherMessages.push({
       id: crypto.randomUUID(), from: 'system',
       text: `Understood. I'll let ${reporterLabel} know.`,
       timestamp: ts, phone: otherPhone,
     });
 
-    // Notify reporter
     reporterMessages.push({
       id: crypto.randomUUID(), from: 'system',
-      text: `${otherLabel} is unable to cover.\n\nYou may need to manage this yourself or we can explore other options.`,
+      text: `${otherLabel} is unable to cover.\n\nNo schedule changes made. You may need to manage this yourself or we can explore other options.`,
       timestamp: ts, phone,
     });
 
@@ -249,6 +248,8 @@ export function handleInjectDisruption(
     resolved = chosen ? selectProposal(withProposals, chosen.id) : declineAllProposals(withProposals);
 
     if (chosen) {
+      const changeSummary = buildScheduleChangeSummary(chosen, scenario.config, reporterLabel, otherLabel);
+
       otherMessages.push({
         id: crypto.randomUUID(), from: 'user',
         text: `I can do ${chosen.label.toLowerCase()}`,
@@ -257,13 +258,13 @@ export function handleInjectDisruption(
 
       otherMessages.push({
         id: crypto.randomUUID(), from: 'system',
-        text: `Got it. Coverage confirmed. Schedule updated.`,
+        text: `Coverage confirmed.\n\n${changeSummary}`,
         timestamp: ts, phone: otherPhone,
       });
 
       reporterMessages.push({
         id: crypto.randomUUID(), from: 'system',
-        text: `${otherLabel} offered partial coverage.\n\nSelected: ${chosen.label}.\nSchedule adjustment applied.`,
+        text: `${otherLabel} offered partial coverage.\n\n${changeSummary}`,
         timestamp: ts, phone,
       });
     }
@@ -291,6 +292,58 @@ export function handleInjectDisruption(
     logs: scenario.logs,
     activeDisruption: resolved,
   };
+}
+
+// ── Helpers ──
+
+function buildScheduleChangeSummary(
+  option: ProposalOption,
+  config: ScenarioConfig,
+  reporterLabel: string,
+  otherLabel: string,
+): string {
+  const lines: string[] = [];
+  const aLabel = config.parentA.label;
+  const bLabel = config.parentB.label;
+
+  // Coverage days
+  if (option.coverageDays.length > 0) {
+    const coverageDates = option.coverageDays.map(d => {
+      const date = new Date(d.date);
+      return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    });
+    const coverParent = option.coverageDays[0].parent === 'parent_a' ? aLabel : bLabel;
+    lines.push(`Schedule change: ${coverParent} covers ${coverageDates.join(', ')}.`);
+  }
+
+  // Fairness impact
+  const aDelta = option.fairnessImpact.parentADelta;
+  const bDelta = option.fairnessImpact.parentBDelta;
+  if (aDelta !== 0 || bDelta !== 0) {
+    const parts: string[] = [];
+    if (aDelta !== 0) parts.push(`${aLabel} ${aDelta > 0 ? '+' : ''}${aDelta} nights`);
+    if (bDelta !== 0) parts.push(`${bLabel} ${bDelta > 0 ? '+' : ''}${bDelta} nights`);
+    lines.push(`Fairness adjustment: ${parts.join(', ')}.`);
+  } else {
+    lines.push('No fairness impact — balance maintained.');
+  }
+
+  // Compensation days
+  if (option.compensationDays.length > 0) {
+    const compDates = option.compensationDays.map(d => {
+      const date = new Date(d.date);
+      const parent = d.parent === 'parent_a' ? aLabel : bLabel;
+      return `${date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} (${parent})`;
+    });
+    lines.push(`Compensation: ${compDates.join(', ')}.`);
+  }
+
+  // Routine impact
+  if (option.routineImpact !== 'none') {
+    lines.push(`Routine disruption: ${option.routineImpact}.`);
+  }
+
+  return lines.join('\n');
 }
 
 export class DuplicateDisruptionError extends Error {
