@@ -9,7 +9,26 @@ import { classifyIntent, extractOptionNumber, ClassifiedIntent } from './intent-
 import { RequestsService } from '../requests/requests.service';
 import { ProposalsService } from '../proposals/proposals.service';
 import { MetricsService } from '../metrics/metrics.service';
+import { SharingService } from '../sharing/sharing.service';
 import { RequestType, RequestStatus } from '@adcp/shared';
+import {
+  renderStatusReply,
+  renderProposalSummary,
+  renderAcceptedReply,
+  renderDeclinedReply,
+  renderHelp,
+  renderUnknownIntent,
+  renderUnregistered,
+  renderUnsubscribed,
+  renderConfirmRequest,
+  renderCancelled,
+  renderNoPending,
+  renderError,
+  renderBudgetExhausted,
+  renderNoActiveSchedule,
+  buildOptionSnapshot,
+  ProposalOptionSnapshot,
+} from './sms-reply-templates';
 
 @Injectable()
 export class ConversationOrchestratorService {
@@ -25,6 +44,7 @@ export class ConversationOrchestratorService {
     private readonly requestsService: RequestsService,
     private readonly proposalsService: ProposalsService,
     private readonly metricsService: MetricsService,
+    private readonly sharingService: SharingService,
   ) {}
 
   /**
@@ -38,7 +58,7 @@ export class ConversationOrchestratorService {
     // 1. Check for STOP
     if (/^\s*(stop|unsubscribe|opt\s*out)\s*$/i.test(text)) {
       await this.updateConversationState(phoneNumber, 'IDLE', null);
-      return 'You have been unsubscribed. Reply START to re-subscribe.';
+      return renderUnsubscribed();
     }
 
     // 2. Resolve identity
@@ -46,7 +66,7 @@ export class ConversationOrchestratorService {
 
     // 3. Unknown number
     if (!identity) {
-      return 'This number is not registered. Log in to your ADCP account and add your phone number in Settings to use SMS.';
+      return renderUnregistered();
     }
 
     // 4. Load or create conversation
@@ -72,7 +92,7 @@ export class ConversationOrchestratorService {
       await this.setConversationState(conversation, 'AWAITING_CLARIFICATION', {
         originalText: text,
       });
-      return 'I didn\'t understand. Reply: STATUS, SWAP, COVER, SICK, ACCEPT, DECLINE, or HELP.';
+      return renderUnknownIntent();
     }
 
     // 8. Route to handler
@@ -107,9 +127,9 @@ export class ConversationOrchestratorService {
         return this.handleHelp();
       case 'STOP':
         await this.setConversationState(conversation, 'IDLE', null);
-        return 'You have been unsubscribed. Reply START to re-subscribe.';
+        return renderUnsubscribed();
       default:
-        return 'I didn\'t understand. Reply HELP for commands.';
+        return renderUnknownIntent();
     }
   }
 
@@ -119,29 +139,16 @@ export class ConversationOrchestratorService {
     try {
       const today = await this.metricsService.getToday(identity.familyId);
 
-      const parts: string[] = [];
-      if (today.tonight.parent) {
-        parts.push(`Tonight: ${today.tonight.parent}`);
-      } else {
-        parts.push('No schedule set yet.');
-      }
-
-      if (today.nextHandoff) {
-        parts.push(`Next handoff: ${today.nextHandoff.date}`);
-      }
-
-      if (today.fairness) {
-        parts.push(`Fairness delta: ${today.fairness.delta} nights (8wk)`);
-      }
-
-      if (today.pendingRequests > 0) {
-        parts.push(`${today.pendingRequests} pending request(s)`);
-      }
-
-      return parts.join(' | ');
+      return renderStatusReply({
+        tonightParent: today.tonight.parent,
+        nextHandoffDate: today.nextHandoff?.date ?? null,
+        fairnessDelta: today.fairness?.delta ?? null,
+        windowWeeks: today.fairness?.windowWeeks ?? null,
+        pendingRequests: today.pendingRequests,
+      });
     } catch (err: any) {
       this.logger.error(`Status check failed: ${err.message}`);
-      return 'Could not load status. Please try again.';
+      return renderError();
     }
   }
 
@@ -259,13 +266,13 @@ export class ConversationOrchestratorService {
       });
 
       if (pendingRequests.length === 0) {
-        return 'No pending proposals to accept.';
+        return renderNoPending();
       }
 
       const request = pendingRequests[0];
       const bundle = await this.proposalsService.getProposals(identity.familyId, request.id);
       if (!bundle || !bundle.options || bundle.options.length === 0) {
-        return 'No proposal options available.';
+        return renderNoPending();
       }
 
       // Check if user specified an option number
@@ -279,10 +286,14 @@ export class ConversationOrchestratorService {
         identity.userId,
       );
 
-      return `Proposal accepted. Schedule updated for ${request.dates?.join(', ') || 'requested dates'}.`;
+      return renderAcceptedReply({
+        dates: request.dates || [],
+        optionRank: option.rank,
+        newVersionNumber: null,
+      });
     } catch (err: any) {
       this.logger.error(`Proposal accept failed: ${err.message}`);
-      return 'Could not accept proposal. Please try again.';
+      return renderError();
     }
   }
 
@@ -300,7 +311,7 @@ export class ConversationOrchestratorService {
       });
 
       if (pendingRequests.length === 0) {
-        return 'No pending proposals to decline.';
+        return renderNoPending();
       }
 
       const request = pendingRequests[0];
@@ -310,10 +321,10 @@ export class ConversationOrchestratorService {
         identity.userId,
       );
 
-      return 'Proposal declined. No schedule changes made.';
+      return renderDeclinedReply({ dates: request.dates || [] });
     } catch (err: any) {
       this.logger.error(`Proposal decline failed: ${err.message}`);
-      return 'Could not decline proposal. Please try again.';
+      return renderError();
     }
   }
 
@@ -327,7 +338,7 @@ export class ConversationOrchestratorService {
   // ── Help ───────────────────────────────────────────────────────
 
   private handleHelp(): string {
-    return 'Commands: STATUS, SWAP [date], COVER [date], SICK [date], ACCEPT, DECLINE, HELP, STOP';
+    return renderHelp();
   }
 
   // ── Continuation Handlers ──────────────────────────────────────
@@ -341,7 +352,7 @@ export class ConversationOrchestratorService {
     const intent = classifyIntent(text);
 
     if (intent.type === 'UNKNOWN' || intent.confidence < 0.6) {
-      return 'Still not clear. Reply: STATUS, SWAP, COVER, SICK, ACCEPT, DECLINE, or HELP.';
+      return renderUnknownIntent();
     }
 
     await this.setConversationState(conversation, 'IDLE', null);
@@ -356,7 +367,7 @@ export class ConversationOrchestratorService {
     const pending = conversation.pendingIntent;
     if (!pending) {
       await this.setConversationState(conversation, 'IDLE', null);
-      return 'No pending action. Reply HELP for commands.';
+      return renderNoPending();
     }
 
     const lower = text.toLowerCase().trim();
@@ -374,7 +385,7 @@ export class ConversationOrchestratorService {
 
     if (['no', 'n', 'cancel'].includes(lower)) {
       await this.setConversationState(conversation, 'IDLE', null);
-      return 'Cancelled. No changes made.';
+      return renderCancelled();
     }
 
     return 'Reply YES to confirm or NO to cancel.';
@@ -403,7 +414,7 @@ export class ConversationOrchestratorService {
       reasonNote: (pending?.originalText as string) || 'Via SMS',
     });
 
-    return `Create ${this.friendlyRequestType(requestType)} for ${dates.join(', ')}? Reply YES or NO.`;
+    return renderConfirmRequest(requestType, dates);
   }
 
   // ── Shared Helpers ─────────────────────────────────────────────
@@ -430,23 +441,48 @@ export class ConversationOrchestratorService {
 
       await this.setConversationState(conversation, 'IDLE', null);
 
-      const optionCount = bundle.options?.length || 0;
-      if (optionCount === 0) {
-        return `Request created for ${dates.join(', ')}. No proposals could be generated.`;
+      const options = bundle.options || [];
+      const snapshots: ProposalOptionSnapshot[] = options.map(buildOptionSnapshot);
+
+      // Create short review link
+      let reviewUrl: string | null = null;
+      try {
+        const expiry = new Date();
+        expiry.setDate(expiry.getDate() + 7);
+        const shareLink = await this.sharingService.createShareLink(
+          identity.familyId,
+          identity.userId,
+          {
+            scope: `proposal:${request.id}`,
+            label: `SMS proposal review`,
+            format: 'web',
+            expiresAt: expiry.toISOString(),
+          },
+        );
+        const appUrl = process.env.APP_URL || 'http://localhost:3000';
+        reviewUrl = `${appUrl}/share/${shareLink.token}`;
+      } catch (linkErr: any) {
+        this.logger.warn(`Share link creation failed: ${linkErr.message}`);
       }
 
-      return `${optionCount} proposal(s) ready for ${dates.join(', ')}. Reply ACCEPT or DECLINE.`;
+      return renderProposalSummary({
+        optionCount: options.length,
+        dates,
+        requestType: type,
+        reviewUrl,
+        options: snapshots,
+      });
     } catch (err: any) {
       this.logger.error(`Request creation failed: ${err.message}`);
       await this.setConversationState(conversation, 'IDLE', null);
 
       if (err.message?.includes('budget')) {
-        return 'Change budget exhausted this month. No more requests allowed.';
+        return renderBudgetExhausted();
       }
       if (err.message?.includes('No active schedule')) {
-        return 'No active schedule found. Set up your schedule first.';
+        return renderNoActiveSchedule();
       }
-      return 'Could not process request. Please try again later.';
+      return renderError();
     }
   }
 
@@ -461,15 +497,6 @@ export class ConversationOrchestratorService {
         return RequestType.WANT_TIME;
       default:
         return RequestType.NEED_COVERAGE;
-    }
-  }
-
-  private friendlyRequestType(type: string): string {
-    switch (type) {
-      case RequestType.NEED_COVERAGE: return 'coverage request';
-      case RequestType.SWAP_DATE: return 'swap request';
-      case RequestType.WANT_TIME: return 'extra time request';
-      default: return 'request';
     }
   }
 

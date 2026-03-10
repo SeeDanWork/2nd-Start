@@ -16,6 +16,7 @@ import {
 import { RequestsModule } from '../requests/requests.module';
 import { ProposalsModule } from '../proposals/proposals.module';
 import { MetricsModule } from '../metrics/metrics.module';
+import { SharingModule } from '../sharing/sharing.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { MetricsModule } from '../metrics/metrics.module';
     RequestsModule,
     ProposalsModule,
     MetricsModule,
+    SharingModule,
   ],
   controllers: [SmsWebhookController],
   providers: [
