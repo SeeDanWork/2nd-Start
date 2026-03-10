@@ -834,13 +834,128 @@
 | **7 — Audit + Sharing** | 7.1–7.3 | DONE | Audit log, ICS feeds, share links, exports |
 | **8 — Notifications** | 8.1–8.2 | DONE | Email, push, real-time WebSocket updates |
 | **9 — Offline + Polish** | 9.1–9.3 | DONE | Offline support, onboarding templates, UI polish |
+| **10 — Core Domain** | 10.1 | DONE | Typed policy rule engine with 4 rule types, repository interfaces |
+| **11 — Solver Enhancements** | 11.1 | DONE | Relaxation engine, seasonal modes, stability windows, tie-breaking |
+| **12 — Scenario Lab** | 12.1 | DONE | Next.js scenario testing app with visual schedule output |
+| **13 — Pattern Detection** | 13.1–13.5 | DONE | 6 detectors, evidence extraction, suggestion generation, idempotent resolution (229 tests) |
 
-**Total: 28 steps across 10 phases.** Each step is one Claude Code session producing testable output.
+**Total: 28 steps across 10 phases (original), plus Phases 10-13 on the Deterministic-Model-Refinement branch.**
 
 ### Completion Log
 - **2026-02-15**: Phases 0-3 completed (commits `4147a39`, `5c0d7e7`). API typechecks clean. Full CP-SAT solver implemented. Mobile auth + calendar + constraints UI functional.
 - **2026-02-15**: Phases 4-5 completed. Metrics API (ledger, stability, today endpoint), home screen fairness bars + stability indicators, full requests API (create, list, cancel, budget enforcement), proposals API (generate via CP-SAT, accept→new schedule version, decline), proposal solver with minimal-disruption optimization, mobile requests + proposals UI with create flow and proposal review cards.
 - **2026-02-15**: Phases 6-9 completed. All 28 steps done. Phase 6: GuardrailsService with consent rules CRUD, auto-approve evaluation, budget status, emergency mode (activate/cancel/return), mobile guardrails UI in settings + emergency banner on home. Phase 7: Audit log (paginated) + monthly summary added to MetricsService, SharingService with crypto token links + ICS generation + HTML calendar, mobile audit screen + sharing section. Phase 8: NotificationService with email templates (console transport) + push stubs, FamilyGateway WebSocket (socket.io) with family rooms + event emitters, mobile socket store + in-app notification banner. Phase 9: Offline cache store (Zustand + AsyncStorage persist), onboarding templates (4 archetypes: daycare split, alternating weeks, 2-2-3, 5-2), template picker in mobile onboarding flow.
+- **2026-03-05**: Phase 10 completed. Core Domain package (`packages/core-domain`) with typed policy rule engine: 4 rule types (MIN_BLOCK_LENGTH, ACTIVITY_COMMITMENT, EXCHANGE_LOCATION, SIBLING_COHESION), repository interfaces, priority enum (SOFT/STRONG/HARD), scoped rules (FAMILY/CHILD with date ranges).
+- **2026-03-05**: Phase 11 completed. Solver enhancements: relaxation engine for infeasible constraint sets, seasonal weight modes, stability windows, similarity scoring for solution diversity, deterministic tie-breaking, routine-consistency penalties, template library.
+- **2026-03-06**: Phase 12 completed. Scenario Lab (`apps/scenario-lab`) — Next.js web app for testing solver scenarios with visual schedule output.
+- **2026-03-09**: Phase 13 completed. Passive Pattern Detection and Policy Suggestion Foundation in `packages/core-domain/src/observations/`: 6 behavior detectors, 4 evidence extractors, suggestion generation with deduplication, review service with artifact builder, resolution workflow with idempotent acceptance (229 tests across 12 test files). Mediation layer added to API (`apps/api/src/mediation/`). Feedback system added (`apps/api/src/feedback/`).
+
+---
+
+## Phase 10 — Core Domain Package
+
+### Step 10.1: Typed Policy Rule Engine
+**Input:** Shared enums and types from packages/shared.
+**Work:**
+- Created `packages/core-domain/` package with domain-driven architecture
+- `PolicyRuleType` enum: `MIN_BLOCK_LENGTH`, `ACTIVITY_COMMITMENT`, `EXCHANGE_LOCATION`, `SIBLING_COHESION`
+- `PolicyPriority` enum: `SOFT`, `STRONG`, `HARD`
+- `TypedPolicyRule` interface with typed parameters, scoped rules (FAMILY/CHILD + date ranges), and optional `sourceSuggestionId` for traceability
+- Repository interfaces: `IPolicyRuleRepository` with `findById`, `findByFamilyId`, `findActiveByFamilyId`, `findBySourceSuggestionId`, `save`, `update`, `delete`
+
+**Status:** DONE
+
+---
+
+## Phase 11 — Solver Enhancements
+
+### Step 11.1: Relaxation Engine + Seasonal Modes
+**Input:** CP-SAT solver from Phase 3.
+**Work:**
+- Relaxation engine for diagnosing infeasible constraint sets
+- Seasonal weight modes (summer, school year, holidays)
+- Stability windows for gradual schedule transitions
+- Similarity scoring for solution diversity (Hamming distance)
+- Deterministic tie-breaking rules
+- Routine-consistency penalties and template library
+
+**Status:** DONE
+
+---
+
+## Phase 12 — Scenario Lab
+
+### Step 12.1: Scenario Lab Web App
+**Input:** Solver from Phase 11, API from prior phases.
+**Work:**
+- Next.js app in `apps/scenario-lab/` for visual scenario testing
+- 51 scenarios across 10 categories in `apps/simulator/`
+- Schedule visualization with calendar output
+
+**Status:** DONE
+
+---
+
+## Phase 13 — Passive Pattern Detection
+
+### Step 13.1: Observation Evidence System
+**Input:** Core domain from Phase 10.
+**Work:**
+- `ObservationEvidenceRecord` type with `familyId`, `date`, `evidenceType`, `metadata`, `detectedBy`
+- 4 evidence extractors: transition frequency, block length, school-night disruption, weekend fragmentation
+- `IObservationEvidenceRepository` with `save`, `saveBatch`, `findByFamilyId`, `findByWindow`, `findById`, `findByIds`
+- `BehaviorObservationWindow` for date-bounded analysis
+
+**Status:** DONE
+
+### Step 13.2: Behavior Detectors
+**Work:**
+- 6 detectors registered via `DetectorRegistry`:
+  - `MinBlockLengthDetector` — identifies families consistently requesting longer blocks
+  - `ActivityResponsibilityDetector` — detects one parent consistently handling specific activities
+  - `SiblingDivergenceDetector` — detects when siblings need different schedules
+  - `SchoolClosureCoverageDetector` — identifies school closure coverage patterns
+  - `ExchangeLocationDetector` — detects preferred exchange location patterns
+  - `PreferredExchangeDayDetector` — identifies preferred handoff days
+- Each detector implements `IBehaviorDetector` interface with `detect(window, evidence): DetectorResult[]`
+
+**Status:** DONE
+
+### Step 13.3: Policy Suggestion Generation
+**Work:**
+- `PolicySuggestionService` orchestrates detection → suggestion generation
+- `SuggestionDeduplicator` prevents duplicate PENDING_REVIEW suggestions for same family/type
+- `SuggestionEvidenceSummarizer` aggregates evidence into human-readable summaries
+- `PolicySuggestion` type with `suggestionType`, `confidenceScore`, `evidenceSummary`, `proposedRuleType`, `proposedPriority`, `proposedParameters`, `proposedScope`
+- `IPolicySuggestionRepository` and `IPolicySuggestionEvidenceLinkRepository` for persistence
+
+**Status:** DONE
+
+### Step 13.4: Suggestion Review and Resolution
+**Work:**
+- `PolicySuggestionReviewService` with `getPendingSuggestions(familyId)` and artifact builder
+- `PolicySuggestionArtifactBuilder` creates review artifacts with evidence links
+- `PolicySuggestionResolutionWorkflow` handles ACCEPT/REJECT decisions:
+  - ACCEPT: creates `TypedPolicyRule` from suggestion via `CONVERSION_MAP`
+  - REJECT: marks suggestion as rejected with resolver info
+  - Idempotent acceptance via `sourceSuggestionId` — retries after partial failure reuse existing rules
+- Error types: `PolicySuggestionResolutionError`, `UnsupportedSuggestionConversionError`
+- 6 suggestion types supported: `MIN_BLOCK_LENGTH_ADJUSTMENT`, `ACTIVITY_RESPONSIBILITY_RULE`, `SIBLING_DIVERGENCE_PREFERENCE`, `SCHOOL_CLOSURE_COVERAGE_PREFERENCE`, `PREFERRED_EXCHANGE_LOCATION`, `PREFERRED_EXCHANGE_DAY` (unsupported — no clean rule mapping)
+
+**Status:** DONE
+
+### Step 13.5: Production Hardening
+**Work:**
+- 229 tests across 12 test files covering:
+  - 6 detector test suites (one per detector)
+  - Suggestion service integration tests
+  - Resolution workflow tests (accept, reject, idempotency, error paths)
+  - Failure path tests (partial failures, repository errors)
+  - Production hardening tests with DB-like detached repository doubles
+- DB-like test doubles that deep-clone on every save/find (simulating TypeORM behavior)
+- Validated: acceptance atomicity, generation idempotency, active-rule suppression, repository object semantics, ordering contracts
+
+**Status:** DONE
 
 ---
 

@@ -1,8 +1,7 @@
 # Deterministic Scheduling System Verification Report
 
-Generated: 2026-03-05
+Generated: 2026-03-05 (updated 2026-03-09)
 Branch: Deterministic-Model-Refinement
-Commit: 469eed5
 
 This report is a structured systems audit of the ADCP (Anti-Drama Co-Parenting)
 deterministic scheduling engine. Every section contains evidence snippets from
@@ -44,8 +43,15 @@ the actual codebase with file paths and line numbers.
 | Recommendations V2 | `packages/shared/src/recommendations/scoring.ts` | `recommendBaselineV2()` |
 | Age Baselines | `packages/shared/src/recommendations/age_baselines.ts` | 9 fine-grained age bands |
 | Simulator | `apps/simulator/` | 51 scenarios across 10 categories |
+| Core Domain Policy Engine | `packages/core-domain/src/policy/` | `TypedPolicyRule`, `IPolicyRuleRepository` |
+| Observation Detectors | `packages/core-domain/src/observations/detectors/` | 6 detectors via `DetectorRegistry` |
+| Evidence Extractors | `packages/core-domain/src/observations/evidence/` | 4 extractors |
+| Suggestion Generation | `packages/core-domain/src/observations/core/` | `PolicySuggestionService`, `SuggestionDeduplicator` |
+| Suggestion Resolution | `packages/core-domain/src/observations/suggestions/` | `PolicySuggestionResolutionWorkflow` |
+| Suggestion Review | `packages/core-domain/src/observations/review/` | `PolicySuggestionReviewService`, `PolicySuggestionArtifactBuilder` |
 | Solver Test Suite | `apps/optimizer/tests/` | brain tests + bootstrap tests |
 | Shared Test Suite | `packages/shared/tests/` | 37 files, 132+ suites |
+| Core Domain Test Suite | `packages/core-domain/src/observations/__tests__/` | 12 files, 229 tests |
 
 ---
 
@@ -2156,6 +2162,58 @@ Solver penalties applied to CP-SAT objective
 
 ---
 
+# 14 Observation Subsystem Determinism (Phase 13)
+
+## 14.1 Policy Suggestion Generation
+
+The observation subsystem generates policy suggestions deterministically:
+
+- **Detectors** are registered in a fixed order via `DetectorRegistry` and executed sequentially
+- **Deduplication** uses `SuggestionDeduplicator` which only checks PENDING_REVIEW status — ACCEPTED/REJECTED suggestions don't block new suggestions
+- **Evidence accumulation** is append-only; unbounded across generation runs
+- **Sorting** is enforced at the service layer (not relying on repository ordering)
+
+## 14.2 Suggestion Resolution Determinism
+
+The `PolicySuggestionResolutionWorkflow` provides deterministic, idempotent acceptance:
+
+- **CONVERSION_MAP** is a static, exhaustive mapping from all 6 suggestion types to rule types (or null for unsupported)
+- **Idempotency**: Before creating a rule, checks `findBySourceSuggestionId(suggestionId)` — if a rule exists from a prior partial failure, reuses it
+- **Priority conversion**: String → enum mapping is deterministic (`toPriority()` defaults to SOFT)
+- **No transaction wrapping**: Acceptance is non-atomic (rule save → suggestion update). Idempotency guard prevents duplicate active rules on retry.
+- **Error paths**: `PolicySuggestionResolutionError` for not-found and non-pending states; `UnsupportedSuggestionConversionError` for unmapped types
+
+## 14.3 Test Coverage
+
+229 tests across 12 test files validate determinism:
+
+```
+Detector Tests:              6 suites (one per detector)
+Suggestion Service:          Integration tests for generation + deduplication
+Resolution Workflow:         Accept, reject, idempotency, error paths
+Failure Paths:               Partial failures, repository errors
+Production Hardening:        19 tests with DB-like detached repositories
+  - Deep-clone on every save/find (simulating TypeORM behavior)
+  - Acceptance atomicity validation
+  - Generation idempotency
+  - Active-rule suppression
+  - Repository object semantics
+  - Ordering contracts
+```
+
+## 14.4 Key Determinism Guarantees
+
+| Property | How Verified |
+|----------|-------------|
+| Same evidence + same window → same suggestions | Detector unit tests with fixed inputs |
+| Deduplication is idempotent | Service tests: duplicate calls don't create duplicate suggestions |
+| Acceptance creates exactly one rule | Production hardening test with partial failure + retry |
+| Rejection has no side effects | Resolution tests verify no rules created |
+| Unsupported types fail explicitly | Error path test for PREFERRED_EXCHANGE_DAY |
+| Repository semantics match DB | Detached repo doubles (deep-clone) verify no shared-reference bugs |
+
+---
+
 # Appendix: File Count Summary
 
 ```
@@ -2175,8 +2233,10 @@ Shared Mediation Files:      7 (types, explain, compensation, feedback-weights, 
 Test Files (shared):        37 (132+ suites, ~850 assertions)
 Test Files (bootstrap):      7 (50+ test cases)
 Test Files (brain):          8
+Test Files (core-domain):   12 (229 tests, ~3000 lines)
 Simulator Scenarios:        51 (20 implemented, 31 stubs)
-Total Lines of Code:        ~30,000+
+Core Domain Source Files:   ~30 (detectors, extractors, services, workflows, types, repos)
+Total Lines of Code:        ~35,000+
 ```
 
 ---

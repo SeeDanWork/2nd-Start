@@ -332,6 +332,61 @@ Tracks user-facing scenarios across the app. Each use case records the flow, sta
 
 ---
 
+## 13. Passive Pattern Detection & Policy Suggestions
+
+### UC-13.1: System detects behavioral patterns
+- **Actor:** System (passive)
+- **Flow:** System analyzes observation windows (date-bounded family evidence) > 6 behavior detectors scan for recurring patterns (min block length, activity responsibility, sibling divergence, school closure coverage, exchange location, preferred exchange day) > Evidence records stored
+- **Status:** DONE
+- **Notes:** Fully implemented in `packages/core-domain/src/observations/`. Detectors registered via DetectorRegistry.
+
+### UC-13.2: System generates policy suggestions
+- **Actor:** System (passive)
+- **Flow:** Detectors produce results > PolicySuggestionService generates suggestions with confidence scores + evidence summaries > Deduplicator prevents duplicate PENDING_REVIEW suggestions for same family/type > Suggestions stored with evidence links
+- **Status:** DONE
+- **Notes:** 6 suggestion types supported. PREFERRED_EXCHANGE_DAY has no clean rule mapping (throws UnsupportedSuggestionConversionError on accept).
+
+### UC-13.3: Parent reviews pending suggestions
+- **Actor:** Parent A or B
+- **Flow:** View pending suggestions for family > Each suggestion shows: type, confidence score, evidence summary (occurrence count, representative examples, date window), proposed rule type/priority/parameters/scope
+- **Status:** DONE (domain layer)
+- **Notes:** PolicySuggestionReviewService + PolicySuggestionArtifactBuilder implemented. No API endpoint or UI yet.
+
+### UC-13.4: Parent accepts policy suggestion
+- **Actor:** Parent A or B
+- **Flow:** Select pending suggestion > Accept > System creates TypedPolicyRule from suggestion (via CONVERSION_MAP) > Suggestion marked ACCEPTED with resolver info > Rule becomes active
+- **Status:** DONE (domain layer)
+- **Notes:** Idempotent acceptance — retries after partial failure reuse existing rules via `sourceSuggestionId`. Supported rule types: MIN_BLOCK_LENGTH, ACTIVITY_COMMITMENT, EXCHANGE_LOCATION, SIBLING_COHESION.
+
+### UC-13.5: Parent rejects policy suggestion
+- **Actor:** Parent A or B
+- **Flow:** Select pending suggestion > Reject > Suggestion marked REJECTED with resolver info > No rule created
+- **Status:** DONE (domain layer)
+
+---
+
+## 14. Mediation & Feedback
+
+### UC-14.1: Handle objection to proposal
+- **Actor:** Parent A or B
+- **Flow:** Parent objects to a proposal > MediationService processes objection > Guided response bundle generated with alternative options
+- **Status:** DONE (API layer)
+- **Notes:** `apps/api/src/mediation/mediation.service.ts`
+
+### UC-14.2: Submit feedback on schedule
+- **Actor:** Parent A or B
+- **Flow:** Parent submits feedback (category, severity, optional free text) > FeedbackService stores record > System adjusts weights based on feedback patterns
+- **Status:** DONE (API layer)
+- **Notes:** `apps/api/src/feedback/feedback.service.ts`. FeedbackProfile entity tracks per-family feedback patterns.
+
+### UC-14.3: Pre-conflict detection
+- **Actor:** System (passive)
+- **Flow:** System runs pre-conflict checks on proposals > Identifies potential points of contention > Alerts sent before conflicts escalate
+- **Status:** DONE (shared layer)
+- **Notes:** `packages/shared/src/mediation/preconflict.ts`
+
+---
+
 ## Appendix: Cross-Cutting Gaps
 
 | Gap | Impact | Notes |
@@ -339,6 +394,8 @@ Tracks user-facing scenarios across the app. Each use case records the flow, sta
 | No background jobs/cron | UC-7.4, UC-8.5 | Proposal expiry and emergency auto-return need scheduled triggers |
 | Notification triggers not wired | UC-11.1 | EmailService ready but no module calls NotificationService.send() |
 | In-memory token storage | UC-1.1 | Magic link + invite tokens use Maps, not Redis. Resend (UC-2.7) mitigates invite token loss on restart. |
-| No test suite | All | No unit or integration tests exist |
+| No test suite (API/mobile) | API, mobile | No API or mobile unit/integration tests exist. Core-domain has 229 tests. Shared has 132+. Optimizer has brain + bootstrap tests. |
 | Onboarding templates API stub | UC-2.1 | Templates hardcoded on mobile, API returns empty |
 | No role-based permissions | UC-2.5 | Caregiver/viewer roles exist but no permission scoping |
+| Pattern detection not wired to API | UC-13.1-13.5 | Domain layer complete with 229 tests; no API endpoints or UI for suggestions |
+| No background trigger for detection | UC-13.1 | Observation window analysis requires manual invocation; no cron/scheduler |

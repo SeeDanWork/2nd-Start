@@ -253,6 +253,42 @@ The onboarding brain generates 5 schedule options with different weight emphases
 
 ---
 
+## 17. Policy Rules (Observation-Driven)
+
+Rules created from accepted policy suggestions. Stored as `TypedPolicyRule` in `packages/core-domain/src/policy/types/TypedPolicyRule.ts`.
+
+| Rule Type | Parameters | Effect | Priority |
+|-----------|-----------|--------|----------|
+| **MIN_BLOCK_LENGTH** | `{ nights: number }` | Enforces minimum consecutive nights per custody block. | SOFT / STRONG / HARD |
+| **ACTIVITY_COMMITMENT** | `{ activityLabel, preferredResponsibleParentId, disruptionType? }` | Assigns responsibility for specific activities (sports, school closures) to a parent. | SOFT / STRONG / HARD |
+| **EXCHANGE_LOCATION** | `{ preferredLocation }` | Sets preferred exchange/handoff location. | SOFT / STRONG / HARD |
+| **SIBLING_COHESION** | `{ allowDivergence: boolean }` | Controls whether siblings can have different schedules. | SOFT / STRONG / HARD |
+
+**Scope**: Each rule can be scoped to `FAMILY` (all children) or `CHILD` (specific child, with optional `dateStart`/`dateEnd`).
+
+**Source Traceability**: Rules created via suggestion acceptance carry `sourceSuggestionId` for idempotent acceptance and audit.
+
+**Files**: `packages/core-domain/src/policy/types/TypedPolicyRule.ts`, `packages/core-domain/src/enums/PolicyRuleType.ts`, `packages/core-domain/src/enums/PolicyPriority.ts`
+
+---
+
+## 18. Observation Detectors
+
+6 behavior detectors that analyze family evidence windows and generate policy suggestions.
+
+| Detector | Suggestion Type | What It Detects |
+|----------|----------------|-----------------|
+| **MinBlockLengthDetector** | `MIN_BLOCK_LENGTH_ADJUSTMENT` | Family consistently requesting longer custody blocks |
+| **ActivityResponsibilityDetector** | `ACTIVITY_RESPONSIBILITY_RULE` | One parent consistently handling specific activities |
+| **SiblingDivergenceDetector** | `SIBLING_DIVERGENCE_PREFERENCE` | Siblings needing different schedule patterns |
+| **SchoolClosureCoverageDetector** | `SCHOOL_CLOSURE_COVERAGE_PREFERENCE` | Recurring school closure coverage patterns |
+| **ExchangeLocationDetector** | `PREFERRED_EXCHANGE_LOCATION` | Preferred exchange location patterns |
+| **PreferredExchangeDayDetector** | `PREFERRED_EXCHANGE_DAY` | Preferred handoff day-of-week patterns (no rule conversion) |
+
+**Files**: `packages/core-domain/src/observations/detectors/`, `packages/core-domain/src/observations/core/PolicySuggestionService.ts`
+
+---
+
 ## Summary
 
 | Category | Count | Hard | Soft |
@@ -272,4 +308,6 @@ The onboarding brain generates 5 schedule options with different weight emphases
 | Guardrails | 4 | 0 | 4 |
 | Solver Execution | 6 | 0 | 6 |
 | Holidays | 3 | 1 | 2 |
-| **Total** | **~80+** | **~36** | **~57** |
+| Policy Rules | 4 types | 0-4 | 0-4 |
+| Observation Detectors | 6 | 0 | 6 |
+| **Total** | **~90+** | **~36-40** | **~63-67** |

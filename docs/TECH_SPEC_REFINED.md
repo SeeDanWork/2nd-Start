@@ -947,7 +947,130 @@ ORDER BY a.date;
 
 ---
 
-## 15) Open Decisions (Require Product Input)
+## 15) Core Domain Package (`packages/core-domain`)
+
+A pure TypeScript domain layer with no framework dependencies. Contains the policy engine and observation subsystem.
+
+### 15.1 Policy Engine
+
+**Location:** `packages/core-domain/src/policy/`
+
+#### TypedPolicyRule
+```
+id              string (generated)
+familyId        string
+ruleType        PolicyRuleType
+  — enum: 'MIN_BLOCK_LENGTH' | 'ACTIVITY_COMMITMENT' | 'EXCHANGE_LOCATION' | 'SIBLING_COHESION'
+priority        PolicyPriority
+  — enum: 'SOFT' | 'STRONG' | 'HARD'
+active          boolean
+label           string
+scope           { scopeType: 'FAMILY' | 'CHILD', childId?, dateStart?, dateEnd? }
+parameters      Record<string, unknown>  — type-specific
+sourceSuggestionId  string (optional)  — tracks origin for idempotent acceptance
+createdAt       string (ISO timestamp)
+updatedAt       string (ISO timestamp)
+```
+
+**Parameter schemas by rule type:**
+- `MIN_BLOCK_LENGTH`: `{ nights: number }`
+- `ACTIVITY_COMMITMENT`: `{ activityLabel: string, preferredResponsibleParentId: string, disruptionType?: string }`
+- `EXCHANGE_LOCATION`: `{ preferredLocation: string }`
+- `SIBLING_COHESION`: `{ allowDivergence: boolean }`
+
+#### IPolicyRuleRepository
+```typescript
+findById(id: string): Promise<TypedPolicyRule | null>
+findByFamilyId(familyId: string): Promise<TypedPolicyRule[]>
+findActiveByFamilyId(familyId: string): Promise<TypedPolicyRule[]>
+findBySourceSuggestionId(suggestionId: string): Promise<TypedPolicyRule | null>
+save(rule: TypedPolicyRule): Promise<void>
+update(rule: TypedPolicyRule): Promise<void>
+delete(id: string): Promise<void>
+```
+
+### 15.2 Observation Subsystem
+
+**Location:** `packages/core-domain/src/observations/`
+
+#### Evidence Records
+```
+evidenceId      string
+familyId        string
+date            string (ISO date)
+evidenceType    string
+metadata        Record<string, unknown>
+detectedBy      string (detector name)
+createdAt       string (ISO timestamp)
+```
+
+#### Policy Suggestions
+```
+suggestionId    string
+familyId        string
+suggestionType  PolicySuggestionType
+  — enum: 'MIN_BLOCK_LENGTH_ADJUSTMENT' | 'ACTIVITY_RESPONSIBILITY_RULE'
+       | 'SIBLING_DIVERGENCE_PREFERENCE' | 'SCHOOL_CLOSURE_COVERAGE_PREFERENCE'
+       | 'PREFERRED_EXCHANGE_LOCATION' | 'PREFERRED_EXCHANGE_DAY'
+status          'PENDING_REVIEW' | 'ACCEPTED' | 'REJECTED'
+confidenceScore number (0-1)
+evidenceSummary { occurrenceCount, windowStart, windowEnd, representativeExamples[] }
+proposedRuleType  string
+proposedPriority  string
+proposedParameters  Record<string, unknown>
+proposedScope     { scopeType, childId?, dateStart?, dateEnd? }
+createdAt       string (ISO timestamp)
+resolvedAt      string (optional)
+resolvedBy      string (optional)
+```
+
+#### Suggestion Resolution Workflow
+
+The `PolicySuggestionResolutionWorkflow` handles accepting or rejecting suggestions:
+
+1. Validate suggestion exists and is PENDING_REVIEW
+2. On REJECT: update status to REJECTED, record resolver info
+3. On ACCEPT:
+   a. Check `CONVERSION_MAP` for supported suggestion → rule type mapping
+   b. **Idempotency check**: query `findBySourceSuggestionId` — if rule exists from prior partial failure, reuse it
+   c. If no existing rule: create `TypedPolicyRule` with `sourceSuggestionId` set
+   d. Update suggestion status to ACCEPTED
+
+**Conversion map:**
+| Suggestion Type | Rule Type | Supported |
+|----------------|-----------|-----------|
+| MIN_BLOCK_LENGTH_ADJUSTMENT | MIN_BLOCK_LENGTH | Yes |
+| ACTIVITY_RESPONSIBILITY_RULE | ACTIVITY_COMMITMENT | Yes |
+| SIBLING_DIVERGENCE_PREFERENCE | SIBLING_COHESION | Yes |
+| SCHOOL_CLOSURE_COVERAGE_PREFERENCE | ACTIVITY_COMMITMENT | Yes |
+| PREFERRED_EXCHANGE_LOCATION | EXCHANGE_LOCATION | Yes |
+| PREFERRED_EXCHANGE_DAY | — | No (throws UnsupportedSuggestionConversionError) |
+
+### 15.3 Behavior Detectors
+
+Six detectors registered via `DetectorRegistry`, each implementing `IBehaviorDetector`:
+
+| Detector | Evidence Type | Output |
+|----------|--------------|--------|
+| MinBlockLengthDetector | Block length patterns | MIN_BLOCK_LENGTH_ADJUSTMENT suggestions |
+| ActivityResponsibilityDetector | Activity handling patterns | ACTIVITY_RESPONSIBILITY_RULE suggestions |
+| SiblingDivergenceDetector | Sibling schedule differences | SIBLING_DIVERGENCE_PREFERENCE suggestions |
+| SchoolClosureCoverageDetector | School closure handling | SCHOOL_CLOSURE_COVERAGE_PREFERENCE suggestions |
+| ExchangeLocationDetector | Exchange location usage | PREFERRED_EXCHANGE_LOCATION suggestions |
+| PreferredExchangeDayDetector | Handoff day patterns | PREFERRED_EXCHANGE_DAY suggestions |
+
+### 15.4 Test Coverage
+
+229 tests across 12 test files in `packages/core-domain/src/observations/__tests__/`:
+- 6 detector test suites
+- Suggestion service integration tests
+- Resolution workflow tests (accept, reject, idempotency)
+- Failure path tests (partial failures, repository errors)
+- Production hardening tests with DB-like detached repository doubles
+
+---
+
+## 16) Open Decisions (Require Product Input)
 
 1. **Weekend definition default:** `fri_sat` (Fri + Sat overnights) or `sat_sun` (Sat + Sun)? Currently defaulting to `fri_sat`.
 2. **Fairness band default:** ±1 overnight over 8 weeks. Is this right for most families?
