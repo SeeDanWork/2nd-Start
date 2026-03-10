@@ -19,6 +19,9 @@ export class User {
   @Column({ type: 'text', name: 'display_name' })
   displayName!: string;
 
+  @Column({ type: 'text', name: 'phone_number', nullable: true, unique: true })
+  phoneNumber!: string | null;
+
   @Column({ type: 'text', default: 'America/New_York' })
   timezone!: string;
 

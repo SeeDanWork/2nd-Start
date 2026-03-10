@@ -24,6 +24,7 @@ import { MediationModule } from './mediation/mediation.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { CalendarIntegrationModule } from './calendar-integration/calendar-integration.module';
 import { JobsModule } from './jobs/jobs.module';
+import { MessagingModule } from './messaging/messaging.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { JobsModule } from './jobs/jobs.module';
     MediationModule,
     CalendarIntegrationModule,
     JobsModule,
+    MessagingModule,
   ],
 })
 export class AppModule {}

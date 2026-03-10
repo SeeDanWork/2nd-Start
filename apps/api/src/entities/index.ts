@@ -30,3 +30,4 @@ export { FeedbackProfile } from './feedback-profile.entity';
 export { CalendarSource } from './calendar-source.entity';
 export { CalendarEvent } from './calendar-event.entity';
 export { CalendarSyncLog } from './calendar-sync-log.entity';
+export { SmsConversation } from './sms-conversation.entity';
