@@ -11,6 +11,7 @@ import {
   ChangeBudgetLedger,
   EmergencyMode,
   AuditLog,
+  FamilyMembership,
 } from '../entities';
 import {
   ConsentRuleType,
@@ -18,8 +19,12 @@ import {
   AuditAction,
   AuditEntityType,
   DEFAULT_CHANGE_BUDGET_PER_MONTH,
+  NotificationType,
+  MemberRole,
 } from '@adcp/shared';
 import { FamilyContextService } from '../family-context/family-context.service';
+import { NotificationService } from '../notifications/notification.service';
+import { FamilyGateway } from '../notifications/family.gateway';
 
 @Injectable()
 export class GuardrailsService {
@@ -34,7 +39,11 @@ export class GuardrailsService {
     private readonly emergencyRepo: Repository<EmergencyMode>,
     @InjectRepository(AuditLog)
     private readonly auditRepo: Repository<AuditLog>,
+    @InjectRepository(FamilyMembership)
+    private readonly membershipRepo: Repository<FamilyMembership>,
     private readonly familyContextService: FamilyContextService,
+    private readonly notificationService: NotificationService,
+    private readonly familyGateway: FamilyGateway,
   ) {}
 
   // ─── Consent Rules CRUD ────────────────────────────────────
@@ -240,6 +249,17 @@ export class GuardrailsService {
       }),
     );
 
+    // Fire-and-forget: notify all family members
+    this.notifyFamilyMembers(familyId, NotificationType.EMERGENCY_ACTIVATED, {
+      emergencyId: emergency.id,
+      returnToBaselineAt: dto.returnToBaselineAt,
+      referenceId: emergency.id,
+    });
+    this.familyGateway.emitEmergencyChanged(familyId, {
+      status: 'activated',
+      emergencyId: emergency.id,
+    });
+
     return emergency;
   }
 
@@ -289,6 +309,17 @@ export class GuardrailsService {
       }),
     );
 
+    // Fire-and-forget: notify all family members
+    this.notifyFamilyMembers(familyId, NotificationType.EMERGENCY_RETURN, {
+      emergencyId: emergency.id,
+      method: 'cancelled',
+      referenceId: emergency.id,
+    });
+    this.familyGateway.emitEmergencyChanged(familyId, {
+      status: 'cancelled',
+      emergencyId: emergency.id,
+    });
+
     return saved;
   }
 
@@ -314,6 +345,17 @@ export class GuardrailsService {
     );
 
     this.logger.log(`Emergency ${emergencyId} returned to baseline`);
+
+    // Fire-and-forget: notify all family members
+    this.notifyFamilyMembers(emergency.familyId, NotificationType.EMERGENCY_RETURN, {
+      emergencyId: emergency.id,
+      method: 'scheduled_return',
+      referenceId: emergency.id,
+    });
+    this.familyGateway.emitEmergencyChanged(emergency.familyId, {
+      status: 'returned',
+      emergencyId: emergency.id,
+    });
   }
 
   async checkExpiredEmergencies(): Promise<number> {
@@ -330,5 +372,25 @@ export class GuardrailsService {
       }
     }
     return count;
+  }
+
+  private async notifyFamilyMembers(
+    familyId: string,
+    type: NotificationType,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      const members = await this.membershipRepo.find({ where: { familyId } });
+      const parents = members.filter(
+        (m) =>
+          m.userId &&
+          (m.role === MemberRole.PARENT_A || m.role === MemberRole.PARENT_B),
+      );
+      for (const parent of parents) {
+        await this.notificationService.send(familyId, parent.userId!, type, data);
+      }
+    } catch (err: any) {
+      this.logger.warn(`Emergency notification failed (non-blocking): ${err.message}`);
+    }
   }
 }

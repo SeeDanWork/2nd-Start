@@ -29,3 +29,7 @@ export { ConversationSession } from './conversation-session.entity';
 export { MessageLog } from './message-log.entity';
 export { CalendarConnection } from './calendar-connection.entity';
 export { CalendarEvent } from './calendar-event.entity';
+export { UserFeedback } from './user-feedback.entity';
+export { FeedbackProfile } from './feedback-profile.entity';
+export { CalendarSource } from './calendar-source.entity';
+export { CalendarSyncLog } from './calendar-sync-log.entity';

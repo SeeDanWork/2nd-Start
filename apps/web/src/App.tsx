@@ -1,4 +1,4 @@
-import { CSSProperties } from 'react';
+import { useState, CSSProperties } from 'react';
 import { DeterministicView } from './components/deterministic/DeterministicView';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ViewerLayout } from './components/viewer/ViewerLayout';
@@ -6,6 +6,56 @@ import { ScheduleViewer } from './components/viewer/ScheduleViewer';
 import { MetricsViewer } from './components/viewer/MetricsViewer';
 import { HistoryViewer } from './components/viewer/HistoryViewer';
 import { SmsSimulator } from './components/simulator/SmsSimulator';
+import { ScenarioLab } from './components/scenario-lab/ScenarioLab';
+
+type TabId = 'deterministic' | 'scenario-lab';
+
+const TABS: Array<{ id: TabId; label: string }> = [
+  { id: 'deterministic', label: 'Deterministic Model' },
+  { id: 'scenario-lab', label: 'Scenario Lab' },
+];
+
+function DevHarness() {
+  const [activeTab, setActiveTab] = useState<TabId>('scenario-lab');
+
+  if (activeTab === 'scenario-lab') {
+    return (
+      <div style={styles.root}>
+        <div style={styles.toolbar}>
+          <span style={styles.toolbarTitle}>ADCP Web Harness</span>
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              style={activeTab === tab.id ? styles.tabActive : styles.tab}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <ScenarioLab />
+      </div>
+    );
+  }
+
+  return (
+    <div style={styles.root}>
+      <div style={styles.toolbar}>
+        <span style={styles.toolbarTitle}>ADCP Web Harness</span>
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            style={activeTab === tab.id ? styles.tabActive : styles.tab}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <DeterministicView />
+    </div>
+  );
+}
 
 function Landing() {
   return (
@@ -14,9 +64,9 @@ function Landing() {
       <p style={styles.subtitle}>Anti-Drama Co-Parenting</p>
       <div style={styles.actions}>
         <a href="/simulator" style={styles.primaryBtn}>SMS Simulator</a>
+        <a href="/harness" style={styles.primaryBtn}>Dev Harness</a>
         <p style={styles.hint}>Or open a schedule link sent to your phone</p>
       </div>
-      <DeterministicView />
     </div>
   );
 }
@@ -27,6 +77,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/simulator" element={<SmsSimulator />} />
+        <Route path="/harness" element={<DevHarness />} />
         <Route path="/view/:familyId/:token" element={<ViewerLayout />}>
           <Route index element={<ScheduleViewer />} />
           <Route path="metrics" element={<MetricsViewer />} />
@@ -47,14 +98,26 @@ const styles: Record<string, CSSProperties> = {
   toolbar: {
     display: 'flex',
     alignItems: 'center',
-    gap: 16,
+    gap: 8,
     padding: '8px 16px',
     borderBottom: '1px solid #e5e7eb',
     backgroundColor: '#f8f9fa',
+    flexShrink: 0,
   },
   toolbarTitle: {
     fontWeight: 700,
     fontSize: 15,
+    marginRight: 8,
+  },
+  tab: {
+    padding: '4px 14px',
+    backgroundColor: 'transparent',
+    color: '#6b7280',
+    border: '1px solid #d1d5db',
+    fontSize: 12,
+    fontWeight: 500,
+    borderRadius: 4,
+    cursor: 'pointer',
   },
   tabActive: {
     padding: '4px 14px',
@@ -64,6 +127,7 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 12,
     fontWeight: 600,
     borderRadius: 4,
+    cursor: 'pointer',
   },
   landing: {
     display: 'flex',

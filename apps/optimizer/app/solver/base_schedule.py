@@ -68,6 +68,9 @@ def _compute_metrics(
     assignments: dict[date, int],
     dates: list[date],
     weekend_def: str,
+    template_pattern: tuple[int, ...] | None = None,
+    template_cycle_length: int = 0,
+    reference_schedule: dict[date, int] | None = None,
 ) -> SolutionMetrics:
     """Compute metrics for a solution."""
     a_nights = sum(1 for v in assignments.values() if v == 0)
@@ -120,6 +123,49 @@ def _compute_metrics(
     weeks = max(len(dates) / 7, 1)
     school_pct = (school_same / max(school_total - 1, 1)) * 100 if school_total > 1 else 100.0
 
+    # Template adherence: 1.0 - (deviations / total_days)
+    tmpl_adherence = 0.0
+    if template_pattern and template_cycle_length > 0:
+        deviations = 0
+        for i, d in enumerate(dates):
+            cycle_pos = i % template_cycle_length
+            expected = template_pattern[cycle_pos]
+            if assignments[d] != expected:
+                deviations += 1
+        tmpl_adherence = round(1.0 - (deviations / max(len(dates), 1)), 4)
+
+    # Routine similarity: compare against reference schedule
+    routine_sim = 0.0
+    if reference_schedule:
+        comparable = [d for d in dates if d in reference_schedule]
+        changed = sum(1 for d in comparable if assignments[d] != reference_schedule[d])
+        routine_sim = round(1.0 - (changed / max(len(comparable), 1)), 4) if comparable else 0.0
+
+    # Transition pattern preserved: check if solution transition DOWs match reference
+    trans_preserved = True
+    if reference_schedule:
+        ref_trans_dows: set[int] = set()
+        prev_ref = None
+        for d in dates:
+            if d in reference_schedule:
+                if prev_ref is not None and reference_schedule[d] != prev_ref:
+                    ref_trans_dows.add(d.weekday())
+                prev_ref = reference_schedule[d]
+        sol_trans_dows: set[int] = set()
+        prev_sol = None
+        for d in dates:
+            if prev_sol is not None and assignments[d] != prev_sol:
+                sol_trans_dows.add(d.weekday())
+            prev_sol = assignments[d]
+        trans_preserved = sol_trans_dows <= ref_trans_dows if ref_trans_dows else True
+
+    # Short block count: interior days where both neighbors differ
+    short_blocks = 0
+    for i in range(1, len(dates) - 1):
+        val = assignments[dates[i]]
+        if assignments[dates[i - 1]] != val and assignments[dates[i + 1]] != val:
+            short_blocks += 1
+
     return SolutionMetrics(
         parent_a_overnights=a_nights,
         parent_b_overnights=b_nights,
@@ -131,6 +177,10 @@ def _compute_metrics(
         max_consecutive_b=max_consec_b,
         school_night_consistency_pct=round(school_pct, 1),
         weekend_fragmentation_count=frag_count,
+        template_adherence=tmpl_adherence,
+        routine_similarity_pct=routine_sim,
+        transition_pattern_preserved=trans_preserved,
+        short_block_count=short_blocks,
     )
 
 
@@ -139,8 +189,12 @@ def _hamming_distance(s1: dict, s2: dict) -> int:
     return sum(1 for d in s1 if s1[d] != s2[d])
 
 
-def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
-    """Generate base schedule using CP-SAT constraint programming."""
+def _solve_core(request: ScheduleRequest) -> ScheduleResponse:
+    """Core solving logic — builds model, solves, returns response.
+
+    Does NOT perform relaxation. Called by generate_base_schedule
+    and by the relaxation engine.
+    """
     t0 = time.time()
 
     start = date.fromisoformat(request.horizon_start)
@@ -205,6 +259,61 @@ def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
                 else:
                     model.add(sum(x[d] for d in window) <= max_n)
 
+    # 2b. Min consecutive nights (outside bonus weeks and disruption locks)
+    bonus_week_dates: set[date] = set()
+    for bw in request.bonus_weeks:
+        bw_start = date.fromisoformat(bw.start_date)
+        bw_end = date.fromisoformat(bw.end_date)
+        d_iter = bw_start
+        while d_iter <= bw_end:
+            bonus_week_dates.add(d_iter)
+            d_iter += timedelta(days=1)
+    exempt_dates = disruption_locked_dates | bonus_week_dates
+
+    for mc in request.min_consecutive:
+        p_idx = 0 if mc.parent.value == "parent_a" else 1
+        min_n = mc.min_nights
+        for i in range(n_days - min_n + 1):
+            block_dates = [dates[i + j] for j in range(min_n)]
+            # Skip if any date in the block is exempt
+            if any(bd in exempt_dates for bd in block_dates):
+                continue
+            # trans_to_p[i]: day i is assigned to parent AND (i==0 OR day i-1 is NOT parent)
+            is_p = model.new_bool_var(f"min_c_is_{mc.parent.value}_{i}")
+            if p_idx == 0:
+                model.add(is_p == 1).only_enforce_if(x[dates[i]].negated())
+                model.add(is_p == 0).only_enforce_if(x[dates[i]])
+            else:
+                model.add(is_p == 1).only_enforce_if(x[dates[i]])
+                model.add(is_p == 0).only_enforce_if(x[dates[i]].negated())
+
+            if i == 0:
+                # First day: if assigned to parent, enforce block
+                for k in range(1, min_n):
+                    if p_idx == 0:
+                        model.add(x[dates[i + k]] == 0).only_enforce_if(is_p)
+                    else:
+                        model.add(x[dates[i + k]] == 1).only_enforce_if(is_p)
+            else:
+                # Transition: day i is parent AND day i-1 is NOT parent
+                was_not_p = model.new_bool_var(f"min_c_was_not_{mc.parent.value}_{i}")
+                if p_idx == 0:
+                    model.add(was_not_p == 1).only_enforce_if(x[dates[i - 1]])
+                    model.add(was_not_p == 0).only_enforce_if(x[dates[i - 1]].negated())
+                else:
+                    model.add(was_not_p == 1).only_enforce_if(x[dates[i - 1]].negated())
+                    model.add(was_not_p == 0).only_enforce_if(x[dates[i - 1]])
+
+                trans = model.new_bool_var(f"min_c_trans_{mc.parent.value}_{i}")
+                model.add_bool_and([is_p, was_not_p]).only_enforce_if(trans)
+                model.add_bool_or([is_p.negated(), was_not_p.negated()]).only_enforce_if(trans.negated())
+
+                for k in range(1, min_n):
+                    if p_idx == 0:
+                        model.add(x[dates[i + k]] == 0).only_enforce_if(trans)
+                    else:
+                        model.add(x[dates[i + k]] == 1).only_enforce_if(trans)
+
     # 3. Max transitions per week
     if request.max_transitions_per_week > 0:
         # Group by ISO week
@@ -237,7 +346,23 @@ def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
     # ─── Soft Constraints (Objective) ────────────────────────
 
     penalties = []
-    w = request.weights
+    from app.solver.seasons import apply_season_multipliers
+    w = apply_season_multipliers(request.weights, request.season_mode)
+
+    # Build reference map from previous_schedule_hint
+    reference_map: dict[date, int] = {}
+    for fa in request.previous_schedule_hint:
+        d_ref = date.fromisoformat(fa.date)
+        if d_ref in x:
+            reference_map[d_ref] = 0 if fa.parent.value == "parent_a" else 1
+
+    # Disruption adjustment: halve routine weights when disruption locks present
+    if request.disruption_locks:
+        w = w.model_copy(update={
+            "routine_consistency_weight": int(round(w.routine_consistency_weight * 0.5)),
+            "weekly_rhythm_weight": int(round(w.weekly_rhythm_weight * 0.5)),
+            "short_block_penalty": int(round(w.short_block_penalty * 0.5)),
+        })
 
     # Fairness deviation: |sum(x) - target|
     target_b = n_days // 2
@@ -289,13 +414,104 @@ def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
     if school_trans:
         penalties.append(w.school_night_disruption * sum(school_trans))
 
+    # Handoff location preference: penalize transitions on non-preferred days
+    preferred_days_set = set(request.preferred_handoff_days)
+    if preferred_days_set and w.handoff_location_preference > 0:
+        non_pref_trans = []
+        for d in t:
+            js_dow = (d.weekday() + 1) % 7
+            if js_dow not in preferred_days_set:
+                non_pref_trans.append(t[d])
+        if non_pref_trans:
+            penalties.append(w.handoff_location_preference * sum(non_pref_trans))
+
+    # Template alignment soft penalty
+    template_deviation_vars = []
+    if request.template_id and w.template_alignment > 0:
+        from app.solver.templates import get_template
+        template = get_template(request.template_id)
+        if template:
+            pattern = template.pattern14
+            cycle_len = template.cycle_length
+            for i, d in enumerate(dates):
+                cycle_pos = i % cycle_len
+                expected_parent = pattern[cycle_pos]
+                is_deviation = model.new_bool_var(f"tmpl_dev_{d.isoformat()}")
+                if expected_parent == 0:  # expect parent_a
+                    model.add(x[d] != 0).only_enforce_if(is_deviation)
+                    model.add(x[d] == 0).only_enforce_if(is_deviation.negated())
+                else:  # expect parent_b
+                    model.add(x[d] != 1).only_enforce_if(is_deviation)
+                    model.add(x[d] == 1).only_enforce_if(is_deviation.negated())
+                template_deviation_vars.append(is_deviation)
+            penalties.append(w.template_alignment * sum(template_deviation_vars))
+
+    # Short block penalty: penalize isolated single-night stays
+    short_block_vars = []
+    if w.short_block_penalty > 0 and n_days >= 3:
+        for i in range(1, n_days - 1):
+            d_prev = dates[i - 1]
+            d_cur = dates[i]
+            d_next = dates[i + 1]
+            # isolated if both neighbors differ: t[d_cur]=1 AND t[d_next]=1
+            isolated = model.new_bool_var(f"isolated_{d_cur.isoformat()}")
+            model.add_bool_and([t[d_cur], t[d_next]]).only_enforce_if(isolated)
+            model.add_bool_or([t[d_cur].negated(), t[d_next].negated()]).only_enforce_if(isolated.negated())
+            short_block_vars.append(isolated)
+        penalties.append(w.short_block_penalty * sum(short_block_vars))
+
+    # Weekly rhythm penalty: penalize transitions on non-reference DOWs
+    weekly_rhythm_vars = []
+    if w.weekly_rhythm_weight > 0:
+        # Extract reference transition DOWs from previous_schedule_hint (priority) or template
+        ref_trans_dows: set[int] = set()
+        if reference_map:
+            prev_ref_val = None
+            for d in dates:
+                if d in reference_map:
+                    if prev_ref_val is not None and reference_map[d] != prev_ref_val:
+                        ref_trans_dows.add(d.weekday())
+                    prev_ref_val = reference_map[d]
+        elif request.template_id:
+            from app.solver.templates import get_template as _get_tmpl_rhythm
+            _tmpl_r = _get_tmpl_rhythm(request.template_id)
+            if _tmpl_r:
+                p = _tmpl_r.pattern14
+                cl = _tmpl_r.cycle_length
+                for i in range(1, cl):
+                    if p[i] != p[i - 1]:
+                        # Map cycle position to a synthetic DOW
+                        ref_trans_dows.add(i % 7)
+        if ref_trans_dows:
+            for d in t:
+                if d.weekday() not in ref_trans_dows:
+                    weekly_rhythm_vars.append(t[d])
+            if weekly_rhythm_vars:
+                penalties.append(w.weekly_rhythm_weight * sum(weekly_rhythm_vars))
+
+    # Routine consistency: Hamming distance from previous_schedule_hint
+    routine_diff_vars = []
+    if w.routine_consistency_weight > 0 and reference_map:
+        for d in dates:
+            if d in reference_map:
+                rdiff = model.new_bool_var(f"routine_diff_{d.isoformat()}")
+                if reference_map[d] == 0:
+                    model.add(rdiff >= x[d])
+                    model.add(rdiff <= x[d])
+                else:
+                    model.add(rdiff >= 1 - x[d])
+                    model.add(rdiff <= 1 - x[d])
+                routine_diff_vars.append(rdiff)
+        if routine_diff_vars:
+            penalties.append(w.routine_consistency_weight * sum(routine_diff_vars))
+
     model.minimize(sum(penalties))
 
     # ─── Solve ───────────────────────────────────────────────
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = request.timeout_seconds
-    solver.parameters.num_workers = 4
+    solver.parameters.num_workers = 1
 
     collector = SolutionCollector(x, request.max_solutions)
     status = solver.solve(model, collector)
@@ -346,7 +562,22 @@ def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
             assignments.append(AssignmentDay(date=d.isoformat(), parent=parent, is_transition=is_trans))
             prev = parent
 
-        metrics = _compute_metrics(sol, dates, request.weekend_definition)
+        # Resolve template for metrics
+        tmpl_pattern = None
+        tmpl_cycle = 0
+        if request.template_id:
+            from app.solver.templates import get_template as _get_tmpl
+            _tmpl = _get_tmpl(request.template_id)
+            if _tmpl:
+                tmpl_pattern = _tmpl.pattern14
+                tmpl_cycle = _tmpl.cycle_length
+
+        metrics = _compute_metrics(
+            sol, dates, request.weekend_definition,
+            template_pattern=tmpl_pattern,
+            template_cycle_length=tmpl_cycle,
+            reference_schedule=reference_map if reference_map else None,
+        )
 
         # Compute penalty breakdown
         fair_dev = abs(metrics.parent_b_overnights - n_days // 2)
@@ -360,20 +591,84 @@ def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
             )
         )
 
+        school_night_trans = sum(
+            1 for a in assignments
+            if a.is_transition and _is_school_night(date.fromisoformat(a.date))
+        )
+
+        handoff_loc_pref = 0
+        if preferred_days_set and w.handoff_location_preference > 0:
+            handoff_loc_pref = sum(
+                1 for a in assignments
+                if a.is_transition
+                and (date.fromisoformat(a.date).weekday() + 1) % 7 not in preferred_days_set
+            )
+
+        # Compute template alignment breakdown (post-hoc count of deviations)
+        tmpl_align_count = 0
+        if tmpl_pattern and tmpl_cycle > 0:
+            for i_d, d in enumerate(dates):
+                cycle_pos = i_d % tmpl_cycle
+                if sol[d] != tmpl_pattern[cycle_pos]:
+                    tmpl_align_count += 1
+
+        # Compute short block count for breakdown
+        short_block_count_bd = 0
+        for i_d in range(1, n_days - 1):
+            val = sol[dates[i_d]]
+            if sol[dates[i_d - 1]] != val and sol[dates[i_d + 1]] != val:
+                short_block_count_bd += 1
+
+        # Compute weekly rhythm breakdown (transitions on non-reference DOWs)
+        weekly_rhythm_count = 0
+        bd_ref_dows: set[int] = set()
+        if reference_map:
+            prev_rv = None
+            for d in dates:
+                if d in reference_map:
+                    if prev_rv is not None and reference_map[d] != prev_rv:
+                        bd_ref_dows.add(d.weekday())
+                    prev_rv = reference_map[d]
+        if bd_ref_dows:
+            sol_prev = None
+            for d in dates:
+                if sol_prev is not None and sol[d] != sol_prev:
+                    if d.weekday() not in bd_ref_dows:
+                        weekly_rhythm_count += 1
+                sol_prev = sol[d]
+
+        # Compute routine consistency breakdown
+        routine_diff_count = 0
+        if reference_map:
+            for d in dates:
+                if d in reference_map and sol[d] != reference_map[d]:
+                    routine_diff_count += 1
+
         penalties_bd = PenaltyBreakdown(
             fairness_deviation=float(w.fairness_deviation * fair_dev),
             total_transitions=float(w.total_transitions * total_tr),
             non_daycare_handoffs=float(w.non_daycare_handoffs * non_dc),
             weekend_fragmentation=float(w.weekend_fragmentation * metrics.weekend_fragmentation_count),
-            school_night_disruption=0.0,  # simplified
+            school_night_disruption=float(w.school_night_disruption * school_night_trans),
+            handoff_location_preference=float(w.handoff_location_preference * handoff_loc_pref),
+            template_alignment=float(w.template_alignment * tmpl_align_count),
+            short_block=float(w.short_block_penalty * short_block_count_bd),
+            weekly_rhythm=float(w.weekly_rhythm_weight * weekly_rhythm_count),
+            routine_consistency=float(w.routine_consistency_weight * routine_diff_count),
             total=0.0,
         )
-        penalties_bd.total = (
+        penalties_bd.total = round(
             penalties_bd.fairness_deviation
             + penalties_bd.total_transitions
             + penalties_bd.non_daycare_handoffs
             + penalties_bd.weekend_fragmentation
             + penalties_bd.school_night_disruption
+            + penalties_bd.handoff_location_preference
+            + penalties_bd.template_alignment
+            + penalties_bd.short_block
+            + penalties_bd.weekly_rhythm
+            + penalties_bd.routine_consistency,
+            2,
         )
 
         solutions.append(Solution(
@@ -383,13 +678,47 @@ def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
             penalties=penalties_bd,
         ))
 
-    # Sort by total penalty
-    solutions.sort(key=lambda s: s.penalties.total)
+    # Sort by total penalty + tie-break key for determinism
+    from app.solver.tie_break import compute_tie_break_key
+    for s in solutions:
+        sol_map = {}
+        for a in s.assignments:
+            d = date.fromisoformat(a.date)
+            sol_map[d] = 0 if a.parent == "parent_a" else 1
+        s._tie_break = compute_tie_break_key(
+            sol_map, dates, request.weekend_definition,
+            long_distance_dates=request.long_distance_dates,
+        )
+    solutions.sort(key=lambda s: (s.penalties.total, s._tie_break))
     for i, s in enumerate(solutions):
         s.rank = i + 1
+        if hasattr(s, '_tie_break'):
+            del s._tie_break
 
     return ScheduleResponse(
         status=status_str,
         solutions=solutions,
         solve_time_ms=round(solve_time, 1),
     )
+
+
+def generate_base_schedule(request: ScheduleRequest) -> ScheduleResponse:
+    """Generate base schedule with relaxation fallback on infeasibility."""
+    response = _solve_core(request)
+
+    if response.status == "infeasible":
+        from app.solver.relaxation import try_relaxation
+        from app.solver.diagnostics import generate_diagnostics
+        relaxed_response, relaxation_result = try_relaxation(request, _solve_core)
+
+        if relaxed_response is not None and relaxed_response.status != "infeasible":
+            relaxed_response.status = "relaxed_solution"
+            relaxed_response.relaxation_info = relaxation_result.to_info()
+            relaxed_response.diagnostics = generate_diagnostics(request, relaxation_result)
+            return relaxed_response
+
+        # All relaxation attempts exhausted
+        response.relaxation_info = relaxation_result.to_info()
+        response.diagnostics = generate_diagnostics(request, relaxation_result)
+
+    return response

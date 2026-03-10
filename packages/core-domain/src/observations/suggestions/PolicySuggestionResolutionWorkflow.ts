@@ -102,36 +102,49 @@ export class PolicySuggestionResolutionWorkflow {
       throw new UnsupportedSuggestionConversionError(suggestion.suggestionType);
     }
 
-    // Convert priority string to enum
-    const priority = this.toPriority(suggestion.proposedPriority);
+    // Idempotency check: if a rule was already created for this suggestion
+    // (e.g., from a prior attempt where rule save succeeded but suggestion
+    // update failed), reuse it instead of creating a duplicate.
+    const existingRule = await this.policyRepo.findBySourceSuggestionId(input.suggestionId);
 
-    // Create the policy rule
-    const ruleId = this.genId('rule');
-    const now = input.resolvedAt;
+    let ruleId: string;
 
-    const rule: TypedPolicyRule = {
-      id: ruleId,
-      familyId: suggestion.familyId,
-      ruleType: conversion.ruleType,
-      priority,
-      active: true,
-      label: `Auto-suggested: ${suggestion.suggestionType}`,
-      scope: suggestion.proposedScope
-        ? {
-            scopeType: suggestion.proposedScope.scopeType,
-            childId: suggestion.proposedScope.childId,
-            dateStart: suggestion.proposedScope.dateStart,
-            dateEnd: suggestion.proposedScope.dateEnd,
-          }
-        : { scopeType: 'FAMILY' },
-      parameters: suggestion.proposedParameters,
-      createdAt: now,
-      updatedAt: now,
-    };
+    if (existingRule) {
+      // Rule already exists from a previous partial acceptance — reuse it
+      ruleId = existingRule.id;
+    } else {
+      // Convert priority string to enum
+      const priority = this.toPriority(suggestion.proposedPriority);
 
-    await this.policyRepo.save(rule);
+      // Create the policy rule
+      ruleId = this.genId('rule');
+      const now = input.resolvedAt;
 
-    // Update suggestion
+      const rule: TypedPolicyRule = {
+        id: ruleId,
+        familyId: suggestion.familyId,
+        ruleType: conversion.ruleType,
+        priority,
+        active: true,
+        label: `Auto-suggested: ${suggestion.suggestionType}`,
+        scope: suggestion.proposedScope
+          ? {
+              scopeType: suggestion.proposedScope.scopeType,
+              childId: suggestion.proposedScope.childId,
+              dateStart: suggestion.proposedScope.dateStart,
+              dateEnd: suggestion.proposedScope.dateEnd,
+            }
+          : { scopeType: 'FAMILY' },
+        parameters: suggestion.proposedParameters,
+        sourceSuggestionId: input.suggestionId,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await this.policyRepo.save(rule);
+    }
+
+    // Update suggestion status
     suggestion.status = 'ACCEPTED';
     suggestion.resolvedAt = input.resolvedAt;
     suggestion.resolvedBy = input.resolvedBy;

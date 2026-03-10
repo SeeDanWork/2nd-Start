@@ -14,4 +14,6 @@ export interface TypedPolicyRule<TParams extends BasePolicyParameters = BasePoli
   parameters: TParams;
   createdAt: string;
   updatedAt: string;
+  /** When created via suggestion acceptance, tracks the source suggestion for idempotency. */
+  sourceSuggestionId?: string;
 }

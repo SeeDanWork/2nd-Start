@@ -15,10 +15,13 @@ import {
   ConstraintSet,
   Constraint,
   PreConsentRule,
+  FamilyMembership,
 } from '../entities';
 import { SchedulesModule } from '../schedules/schedules.module';
 import { FamilyContextModule } from '../family-context/family-context.module';
 import { DisruptionsModule } from '../disruptions/disruptions.module';
+import { NotificationModule } from '../notifications/notification.module';
+import { FeedbackModule } from '../feedback/feedback.module';
 
 @Module({
   imports: [
@@ -34,6 +37,7 @@ import { DisruptionsModule } from '../disruptions/disruptions.module';
       ConstraintSet,
       Constraint,
       PreConsentRule,
+      FamilyMembership,
     ]),
     HttpModule.register({
       baseURL: process.env.OPTIMIZER_URL || 'http://localhost:8000',
@@ -42,6 +46,8 @@ import { DisruptionsModule } from '../disruptions/disruptions.module';
     SchedulesModule,
     FamilyContextModule,
     DisruptionsModule,
+    NotificationModule,
+    FeedbackModule,
   ],
   controllers: [ProposalsController],
   providers: [ProposalsService],

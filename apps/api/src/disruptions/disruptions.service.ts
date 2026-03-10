@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, IsNull, In } from 'typeorm';
 import {
   DisruptionEvent,
   OverlayPolicyEntity,
@@ -109,6 +109,36 @@ export class DisruptionsService {
       where: { familyId, resolvedAt: IsNull() },
       order: { startDate: 'ASC' },
     });
+  }
+
+  /**
+   * Get count of schedule changes in a rolling window for stability budget.
+   */
+  async getRecentScheduleChanges(
+    familyId: string,
+    windowDays: number = 28,
+  ): Promise<{ changedDays: number; windowStart: string; windowEnd: string }> {
+    const now = new Date();
+    const windowStart = new Date(now.getTime() - windowDays * 24 * 3600_000);
+
+    // Query audit log for schedule changes in the window
+    const changes = await this.auditRepo.find({
+      where: {
+        familyId,
+        action: In(['proposal.accepted', 'schedule_generated']),
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    const recentChanges = changes.filter(
+      (c) => new Date(c.createdAt) >= windowStart,
+    );
+
+    return {
+      changedDays: recentChanges.length,
+      windowStart: windowStart.toISOString().split('T')[0],
+      windowEnd: now.toISOString().split('T')[0],
+    };
   }
 
   // ─── Overlay Policies ───────────────────────────────────────────

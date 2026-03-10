@@ -10,6 +10,8 @@ import { renderEmergencyReturn } from './emergency-return';
 import { renderHandoffReminder } from './handoff-reminder';
 import { renderBudgetLow } from './budget-low';
 import { renderFairnessDrift } from './fairness-drift';
+import { renderObjectionReceived } from './objection-received';
+import { renderPreConflictAlert } from './preconflict-alert';
 
 export type EmailType = 'magic_link' | 'family_invite' | NotificationType;
 
@@ -27,4 +29,7 @@ export const templateRegistry: Record<EmailType, RenderFn> = {
   [NotificationType.HANDOFF_REMINDER]: renderHandoffReminder,
   [NotificationType.BUDGET_LOW]: renderBudgetLow,
   [NotificationType.FAIRNESS_DRIFT]: renderFairnessDrift,
+  [NotificationType.OBJECTION_RECEIVED]: renderObjectionReceived,
+  [NotificationType.PROPOSALS_REGENERATED]: renderObjectionReceived,
+  [NotificationType.PRECONFLICT_ALERT]: renderPreConflictAlert,
 };

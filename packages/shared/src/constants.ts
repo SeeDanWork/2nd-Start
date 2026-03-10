@@ -71,6 +71,35 @@ export const LIVING_ARRANGEMENT_WEIGHT_MULTIPLIERS: Record<string, Record<string
   undecided:      { fairnessDeviation: 1.0, totalTransitions: 1.0, nonDaycareHandoffs: 1.0, weekendFragmentation: 1.0, schoolNightDisruption: 1.0 },
 };
 
+// ─── Seasonal Weight Multipliers ─────────────────────────────
+
+export const SEASON_WEIGHT_MULTIPLIERS: Record<string, Record<string, number>> = {
+  school_year: {
+    fairnessDeviation: 1.0,
+    totalTransitions: 1.0,
+    nonDaycareHandoffs: 1.0,
+    weekendFragmentation: 0.8,
+    schoolNightDisruption: 1.3,
+    handoffLocationPreference: 1.0,
+  },
+  summer: {
+    fairnessDeviation: 1.3,
+    totalTransitions: 0.8,
+    nonDaycareHandoffs: 0.5,
+    weekendFragmentation: 0.8,
+    schoolNightDisruption: 0.3,
+    handoffLocationPreference: 1.0,
+  },
+  holiday_period: {
+    fairnessDeviation: 1.5,
+    totalTransitions: 0.7,
+    nonDaycareHandoffs: 0.7,
+    weekendFragmentation: 0.5,
+    schoolNightDisruption: 0.2,
+    handoffLocationPreference: 1.0,
+  },
+};
+
 // ─── Solver Precedence Hierarchy ─────────────────────────────
 //
 // Explicit ordering from §8 of the scheduling spec. Higher tiers
@@ -167,6 +196,32 @@ export const SHARE_LINK_TOKEN_BYTES = 32;
 export const CACHE_HORIZON_WEEKS = 18;
 export const CACHE_STALE_THRESHOLD_HOURS = 1;
 
+// ─── Stability Budget ──────────────────────────────────────
+
+/** Rolling window (days) over which schedule stability is measured. */
+export const DEFAULT_STABILITY_BUDGET_WINDOW_DAYS = 28;
+
+/** Max changed days allowed within the stability window before requiring full regen. */
+export const DEFAULT_STABILITY_BUDGET_MAX_CHANGES = 8;
+
+/** Disruptions ≤ this duration are considered "short" (overlay-only eligible). */
+export const SHORT_DISRUPTION_THRESHOLD_HOURS = 72;
+
+/** Buffer added to notice window for effective date calculations. */
+export const NOTICE_WINDOW_BUFFERED_HOURS = 48;
+
+// ─── Stability Window ───────────────────────────────────────
+
+/** Non-emergency, non-disruption changes must have effective date at least this many days out. */
+export const STABILITY_WINDOW_DAYS = 7;
+
 // ─── Account Deletion ───────────────────────────────────────
 
 export const ACCOUNT_DELETION_GRACE_DAYS = 30;
+
+// ─── Mediation ─────────────────────────────────────────────
+
+export const MAX_FEEDBACK_DELTA_PER_WEIGHT = 50;
+export const FAIRNESS_DRIFT_WARNING_FRACTION = 0.75;
+export const BUDGET_LOW_WARNING_FRACTION = 0.75;
+export const MAX_OBJECTION_ROUNDS = 2;

@@ -158,4 +158,117 @@ describe('PolicySuggestionArtifactBuilder', () => {
     });
     expect(artifacts).toHaveLength(4);
   });
+
+  it('EVIDENCE_COUNT_SUMMARY contains correct counts and window dates', () => {
+    const artifacts = builder.buildArtifacts({
+      suggestion: testSuggestion,
+      linkedEvidence: testEvidence,
+    });
+    const summary = artifacts.find(a => a.type === 'EVIDENCE_COUNT_SUMMARY')!;
+
+    expect(summary.data.totalEvidenceCount).toBe(3);
+    expect(summary.data.evidenceTypes).toEqual({ EXCHANGE_PATTERN: 3 });
+    expect(summary.data.windowStart).toBe('2026-03-01');
+    expect(summary.data.windowEnd).toBe('2026-03-31');
+  });
+
+  it('EVIDENCE_COUNT_SUMMARY counts mixed evidence types correctly', () => {
+    const mixedEvidence: ObservationEvidenceRecord[] = [
+      { evidenceId: 'ev-1', familyId: 'fam-1', evidenceType: 'EXCHANGE_PATTERN', date: '2026-03-01', data: {}, createdAt: '2026-03-01T00:00:00Z' },
+      { evidenceId: 'ev-2', familyId: 'fam-1', evidenceType: 'EXCHANGE_PATTERN', date: '2026-03-08', data: {}, createdAt: '2026-03-08T00:00:00Z' },
+      { evidenceId: 'ev-3', familyId: 'fam-1', evidenceType: 'OVERLAY_COVERAGE', date: '2026-03-15', data: {}, createdAt: '2026-03-15T00:00:00Z' },
+    ];
+    const artifacts = builder.buildArtifacts({
+      suggestion: testSuggestion,
+      linkedEvidence: mixedEvidence,
+    });
+    const summary = artifacts.find(a => a.type === 'EVIDENCE_COUNT_SUMMARY')!;
+
+    expect(summary.data.totalEvidenceCount).toBe(3);
+    expect(summary.data.evidenceTypes).toEqual({ EXCHANGE_PATTERN: 2, OVERLAY_COVERAGE: 1 });
+  });
+
+  it('REPRESENTATIVE_EXAMPLES passes through suggestion examples', () => {
+    const artifacts = builder.buildArtifacts({
+      suggestion: testSuggestion,
+      linkedEvidence: testEvidence,
+    });
+    const examples = artifacts.find(a => a.type === 'REPRESENTATIVE_EXAMPLES')!;
+
+    expect(examples.data.examples).toEqual([
+      { date: '2026-03-01', data: { dayOfWeek: 0 } },
+      { date: '2026-03-08', data: { dayOfWeek: 0 } },
+    ]);
+  });
+
+  it('CONFIDENCE_INPUTS contains all expected fields with correct values', () => {
+    const artifacts = builder.buildArtifacts({
+      suggestion: testSuggestion,
+      linkedEvidence: testEvidence,
+    });
+    const confidence = artifacts.find(a => a.type === 'CONFIDENCE_INPUTS')!;
+
+    expect(confidence.data.confidenceScore).toBe(0.8);
+    expect(confidence.data.occurrenceCount).toBe(4);
+    expect(confidence.data.suggestionType).toBe('PREFERRED_EXCHANGE_DAY');
+    expect(confidence.data.proposedRuleType).toBe('EXCHANGE_LOCATION');
+    expect(confidence.data.proposedPriority).toBe('SOFT');
+  });
+
+  it('PROPOSED_RULE contains rule details with correct values', () => {
+    const artifacts = builder.buildArtifacts({
+      suggestion: testSuggestion,
+      linkedEvidence: testEvidence,
+    });
+    const rule = artifacts.find(a => a.type === 'PROPOSED_RULE')!;
+
+    expect(rule.data.ruleType).toBe('EXCHANGE_LOCATION');
+    expect(rule.data.priority).toBe('SOFT');
+    expect(rule.data.parameters).toEqual({ preferredExchangeDay: 0 });
+    expect(rule.data.scope).toEqual({ scopeType: 'FAMILY' });
+  });
+
+  it('PROPOSED_RULE scope is null when suggestion has no scope', () => {
+    const noScopeSuggestion = { ...testSuggestion, proposedScope: undefined };
+    const artifacts = builder.buildArtifacts({
+      suggestion: noScopeSuggestion,
+      linkedEvidence: testEvidence,
+    });
+    const rule = artifacts.find(a => a.type === 'PROPOSED_RULE')!;
+
+    expect(rule.data.scope).toBeNull();
+  });
+
+  it('builds correct artifacts for SCHOOL_CLOSURE_COVERAGE suggestion', () => {
+    const closureSuggestion: PolicySuggestion = {
+      ...testSuggestion,
+      suggestionType: 'SCHOOL_CLOSURE_COVERAGE_PREFERENCE',
+      proposedRuleType: 'ACTIVITY_COMMITMENT',
+      proposedPriority: 'STRONG',
+      proposedParameters: { preferredResponsibleParentId: 'p1' },
+      confidenceScore: 0.92,
+      evidenceSummary: {
+        occurrenceCount: 5,
+        windowStart: '2026-03-01',
+        windowEnd: '2026-03-31',
+        representativeExamples: [{ date: '2026-03-05', data: { assignedParentId: 'p1' } }],
+      },
+    };
+    const artifacts = builder.buildArtifacts({
+      suggestion: closureSuggestion,
+      linkedEvidence: [],
+    });
+
+    const confidence = artifacts.find(a => a.type === 'CONFIDENCE_INPUTS')!;
+    expect(confidence.data.confidenceScore).toBe(0.92);
+    expect(confidence.data.suggestionType).toBe('SCHOOL_CLOSURE_COVERAGE_PREFERENCE');
+    expect(confidence.data.proposedRuleType).toBe('ACTIVITY_COMMITMENT');
+
+    const rule = artifacts.find(a => a.type === 'PROPOSED_RULE')!;
+    expect(rule.data.parameters).toEqual({ preferredResponsibleParentId: 'p1' });
+    expect(rule.data.priority).toBe('STRONG');
+
+    const summary = artifacts.find(a => a.type === 'EVIDENCE_COUNT_SUMMARY')!;
+    expect(summary.data.totalEvidenceCount).toBe(0);
+  });
 });

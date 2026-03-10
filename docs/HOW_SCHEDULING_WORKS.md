@@ -627,3 +627,47 @@ From most to least impact:
 9. **Parent preferences**: Target share percentage, handoff caps, weekend preferences shape the specific allocation.
 10. **Cross-family presets**: Inform initial suggestions but are overridden once the family makes their own choices.
 11. **Logistics**: Distance between homes, school/daycare schedules, no-contact preferences influence where and when handoffs happen.
+
+---
+
+## Passive Pattern Detection (Phase 13)
+
+Over time, the system observes a family's scheduling behavior and can suggest new household policy rules based on detected patterns. This is fully passive — no rules are applied without explicit parent approval.
+
+### What Gets Observed
+
+The system collects **observation evidence records** from scheduling activity: transition frequencies, block lengths, school-night disruptions, weekend fragmentation, activity handling patterns, and exchange location preferences. These records are analyzed within date-bounded **observation windows**.
+
+### How Detection Works
+
+Six specialized **behavior detectors** scan evidence windows for recurring patterns:
+
+- **MinBlockLengthDetector** — Identifies families that consistently use or request longer custody blocks
+- **ActivityResponsibilityDetector** — Detects when one parent consistently handles specific activities
+- **SiblingDivergenceDetector** — Detects when siblings might benefit from different schedule patterns
+- **SchoolClosureCoverageDetector** — Identifies recurring school closure coverage patterns
+- **ExchangeLocationDetector** — Detects preferred exchange location patterns
+- **PreferredExchangeDayDetector** — Identifies preferred handoff day-of-week patterns
+
+### What Gets Suggested
+
+When a detector finds a pattern with sufficient confidence, it generates a **policy suggestion** containing:
+
+- The suggestion type (e.g., "MIN_BLOCK_LENGTH_ADJUSTMENT")
+- A confidence score (0-1)
+- An evidence summary (occurrence count, date window, representative examples)
+- The proposed rule: type, priority, parameters, and scope
+
+### How Suggestions Are Resolved
+
+Parents review pending suggestions and either accept or reject them:
+
+- **Accept** → The system creates a `TypedPolicyRule` (MIN_BLOCK_LENGTH, ACTIVITY_COMMITMENT, EXCHANGE_LOCATION, or SIBLING_COHESION) with the proposed parameters. The rule becomes active immediately.
+- **Reject** → The suggestion is marked rejected. No rule is created. The system can generate a new suggestion later if patterns persist.
+
+### Safety Guarantees
+
+- **Deduplication**: The system never creates duplicate PENDING_REVIEW suggestions for the same family and suggestion type.
+- **Idempotent acceptance**: If a partial failure occurs during acceptance (rule created but suggestion status not updated), retrying the acceptance reuses the existing rule instead of creating a duplicate. This is tracked via `sourceSuggestionId` on the policy rule.
+- **No silent changes**: Suggestions are never auto-applied. Every policy rule requires explicit parent approval.
+- **Full traceability**: Every rule created from a suggestion carries a reference back to the source suggestion for audit purposes.

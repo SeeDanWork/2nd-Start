@@ -22,6 +22,9 @@ import { PresetsModule } from './presets/presets.module';
 import { GoogleCalendarModule } from './google-calendar/google-calendar.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { CalendarSyncModule } from './calendar-sync/calendar-sync.module';
+import { MediationModule } from './mediation/mediation.module';
+import { FeedbackModule } from './feedback/feedback.module';
+import { CalendarIntegrationModule } from './calendar-integration/calendar-integration.module';
 
 @Module({
   imports: [
@@ -57,6 +60,9 @@ import { CalendarSyncModule } from './calendar-sync/calendar-sync.module';
     GoogleCalendarModule,
     MessagingModule,
     CalendarSyncModule,
+    FeedbackModule,
+    MediationModule,
+    CalendarIntegrationModule,
   ],
 })
 export class AppModule {}

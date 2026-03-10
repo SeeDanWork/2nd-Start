@@ -444,3 +444,53 @@ Infant multipliers: transitions cost 2x, fairness costs 0.7x. The solver heavily
 
 ### "What happens when both parents lock the same night?"
 Conflict detection catches this before the solver runs. The system reports "Both parents have locked nights that prevent either from having the child on [day]" and blocks schedule generation until resolved.
+
+---
+
+## Observation-Driven Policy Rules
+
+Beyond the user-defined constraints and solver weights above, the system can **passively detect behavioral patterns** and suggest new policy rules. These rules are created through a structured workflow, not automatically applied.
+
+### How Pattern Detection Works
+
+The system analyzes family scheduling history through **observation windows** (date-bounded periods). Six behavior detectors scan evidence records for recurring patterns:
+
+1. **Min Block Length** — Detects when a family consistently requests or benefits from longer custody blocks (e.g., always requesting 3+ night blocks). Suggests a `MIN_BLOCK_LENGTH` rule.
+
+2. **Activity Responsibility** — Detects when one parent consistently handles specific activities (soccer practice, music lessons). Suggests an `ACTIVITY_COMMITMENT` rule assigning that parent as preferred for that activity.
+
+3. **Sibling Divergence** — Detects when siblings might benefit from different schedules (e.g., teen wants more time at one home). Suggests a `SIBLING_COHESION` rule with `allowDivergence: true`.
+
+4. **School Closure Coverage** — Detects recurring patterns in how school closures are handled (e.g., same parent always covers snow days). Suggests an `ACTIVITY_COMMITMENT` rule with `disruptionType: 'SCHOOL_CLOSURE'`.
+
+5. **Exchange Location** — Detects preferred exchange locations from historical patterns. Suggests an `EXCHANGE_LOCATION` rule.
+
+6. **Preferred Exchange Day** — Detects preferred handoff days. No rule conversion yet (throws error on acceptance attempt).
+
+### The Suggestion Lifecycle
+
+```
+Evidence Collection → Detector Analysis → Suggestion Generation (with deduplication)
+    → Parent Review → Accept (creates policy rule) or Reject (no effect)
+```
+
+- Each suggestion includes a **confidence score**, **evidence summary** (occurrence count, date window, representative examples), and **proposed rule parameters**.
+- **Deduplication** prevents duplicate PENDING_REVIEW suggestions for the same family and suggestion type.
+- **Acceptance is idempotent** — if a partial failure occurs (rule saved but suggestion update failed), retrying reuses the existing rule via `sourceSuggestionId` instead of creating a duplicate.
+
+### Policy Rule Types
+
+| Rule Type | Parameters | What It Does |
+|-----------|-----------|-------------|
+| `MIN_BLOCK_LENGTH` | `{ nights: number }` | Enforces minimum consecutive nights per custody block |
+| `ACTIVITY_COMMITMENT` | `{ activityLabel, preferredResponsibleParentId, disruptionType? }` | Assigns activity responsibility to a parent |
+| `EXCHANGE_LOCATION` | `{ preferredLocation }` | Sets preferred handoff location |
+| `SIBLING_COHESION` | `{ allowDivergence: boolean }` | Controls whether siblings can have different schedules |
+
+Each rule has a **priority** (SOFT, STRONG, or HARD) and can be scoped to the whole family or a specific child with optional date ranges.
+
+### How Policy Rules Differ from Constraints
+
+Policy rules are **higher-level household defaults** that inform scheduling decisions. Unlike solver constraints (which directly affect the CP-SAT model), policy rules represent family preferences discovered through behavioral analysis. They are advisory and can be converted to solver constraints when needed.
+
+**Key difference**: Constraints are user-defined upfront. Policy rules emerge from observed behavior and are explicitly approved by parents before activation.

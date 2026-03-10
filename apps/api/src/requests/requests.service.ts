@@ -13,6 +13,10 @@ import {
   DEFAULT_CHANGE_BUDGET_PER_MONTH,
   DEFAULT_PROPOSAL_EXPIRY_HOURS,
   URGENT_PROPOSAL_EXPIRY_HOURS,
+  interpretChangeRequest,
+  type RawChangeRequestInput,
+  type InterpreterResult,
+  ApplyMode,
 } from '@adcp/shared';
 import { SchedulesService } from '../schedules/schedules.service';
 
@@ -209,5 +213,49 @@ export class RequestsService {
       used: budget.used,
       remaining: budget.budgetLimit - budget.used,
     };
+  }
+
+  /**
+   * Interpret a change request through the deterministic interpreter.
+   * Called before proposal generation to determine apply mode and consent.
+   */
+  async interpretRequest(
+    familyId: string,
+    requestId: string,
+  ): Promise<InterpreterResult> {
+    const request = await this.get(familyId, requestId);
+    const active = await this.schedulesService.getActiveSchedule(familyId);
+
+    // Get current and previous assignments for stability budget
+    const currentAssignments = active
+      ? await this.assignmentRepo.find({
+          where: { familyId, scheduleVersionId: active.id },
+          order: { date: 'ASC' },
+        })
+      : [];
+
+    // For stability budget, we need the previous version's assignments
+    // Use empty array if no previous version exists
+    const previousAssignments: Array<{ date: string; assignedTo: string }> = [];
+
+    const rawRequest: RawChangeRequestInput = {
+      id: request.id,
+      familyId,
+      requestingParent: request.requestedBy as any,
+      requestType: request.type as any,
+      dates: request.dates,
+      createdAt: request.createdAt instanceof Date
+        ? request.createdAt.toISOString()
+        : String(request.createdAt),
+    };
+
+    return interpretChangeRequest({
+      rawRequest,
+      previousAssignments,
+      currentAssignments: currentAssignments.map((a) => ({
+        date: a.date,
+        assignedTo: a.assignedTo,
+      })),
+    });
   }
 }

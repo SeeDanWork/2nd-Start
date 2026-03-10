@@ -159,4 +159,71 @@ describe('PolicySuggestionService', () => {
       expect(prev.confidenceScore).toBeGreaterThanOrEqual(curr.confidenceScore);
     }
   });
+
+  it('isolates suggestions between families — no cross-contamination', async () => {
+    // Family 1: Sunday exchanges at School
+    const fam1Exchanges: ExchangeRecord[] = [
+      { exchangeId: 'e1', familyId: 'fam-1', date: '2026-03-01', childId: 'c1', fromParentId: 'p1', toParentId: 'p2', time: '09:00', location: 'School' },
+      { exchangeId: 'e2', familyId: 'fam-1', date: '2026-03-08', childId: 'c1', fromParentId: 'p2', toParentId: 'p1', time: '09:00', location: 'School' },
+      { exchangeId: 'e3', familyId: 'fam-1', date: '2026-03-15', childId: 'c1', fromParentId: 'p1', toParentId: 'p2', time: '09:00', location: 'School' },
+      { exchangeId: 'e4', familyId: 'fam-1', date: '2026-03-22', childId: 'c1', fromParentId: 'p2', toParentId: 'p1', time: '09:00', location: 'School' },
+    ];
+
+    // Family 2: Wednesday exchanges at Park
+    const fam2Exchanges: ExchangeRecord[] = [
+      { exchangeId: 'e5', familyId: 'fam-2', date: '2026-03-04', childId: 'c2', fromParentId: 'p3', toParentId: 'p4', time: '17:00', location: 'Park' },
+      { exchangeId: 'e6', familyId: 'fam-2', date: '2026-03-11', childId: 'c2', fromParentId: 'p4', toParentId: 'p3', time: '17:00', location: 'Park' },
+      { exchangeId: 'e7', familyId: 'fam-2', date: '2026-03-18', childId: 'c2', fromParentId: 'p3', toParentId: 'p4', time: '17:00', location: 'Park' },
+      { exchangeId: 'e8', familyId: 'fam-2', date: '2026-03-25', childId: 'c2', fromParentId: 'p4', toParentId: 'p3', time: '17:00', location: 'Park' },
+    ];
+
+    const WINDOW_FAM2: BehaviorObservationWindow = {
+      familyId: 'fam-2',
+      startDate: '2026-03-01',
+      endDate: '2026-03-31',
+    };
+
+    // Run family 1
+    const service1 = createService(fam1Exchanges);
+    const s1 = await service1.generateSuggestions({ window: WINDOW });
+
+    // Run family 2 on same repos
+    const service2 = new PolicySuggestionService({
+      extractors: [new ExchangePatternEvidenceExtractor(fam2Exchanges)],
+      detectorRegistry: new PatternDetectorRegistry(),
+      evidenceRepository: evidenceRepo,
+      suggestionRepository: suggestionRepo,
+      evidenceLinkRepository: linkRepo,
+      idGenerator: (prefix) => `${prefix}-${++idCounter}`,
+    });
+    const s2 = await service2.generateSuggestions({ window: WINDOW_FAM2 });
+
+    // Both families should have generated suggestions
+    expect(s1.length).toBeGreaterThan(0);
+    expect(s2.length).toBeGreaterThan(0);
+
+    // All fam-1 suggestions belong to fam-1
+    for (const s of s1) {
+      expect(s.familyId).toBe('fam-1');
+    }
+
+    // All fam-2 suggestions belong to fam-2
+    for (const s of s2) {
+      expect(s.familyId).toBe('fam-2');
+    }
+
+    // getPendingSuggestions only returns the correct family
+    const pending1 = await service1.getPendingSuggestions({ familyId: 'fam-1' });
+    const pending2 = await service2.getPendingSuggestions({ familyId: 'fam-2' });
+
+    for (const p of pending1) expect(p.familyId).toBe('fam-1');
+    for (const p of pending2) expect(p.familyId).toBe('fam-2');
+
+    // No cross-contamination: fam-1 pending should not contain fam-2 suggestions
+    const pending1Ids = new Set(pending1.map(p => p.suggestionId));
+    const pending2Ids = new Set(pending2.map(p => p.suggestionId));
+    for (const id of pending1Ids) {
+      expect(pending2Ids.has(id)).toBe(false);
+    }
+  });
 });

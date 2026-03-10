@@ -26,6 +26,7 @@ class InMemoryPolicyRuleRepo implements IPolicyRuleRepository {
   async findById(id: string) { return this.rules.find(r => r.id === id) ?? null; }
   async findByFamilyId(fid: string) { return this.rules.filter(r => r.familyId === fid); }
   async findActiveByFamilyId(fid: string) { return this.rules.filter(r => r.familyId === fid && r.active); }
+  async findBySourceSuggestionId(sid: string) { return this.rules.find(r => r.sourceSuggestionId === sid) ?? null; }
   async save(r: TypedPolicyRule) { this.rules.push(r); }
   async update(r: TypedPolicyRule) {
     const idx = this.rules.findIndex(x => x.id === r.id);
@@ -197,5 +198,102 @@ describe('PolicySuggestionResolutionWorkflow', () => {
     expect(result.status).toBe('ACCEPTED');
     const rule = await policyRepo.findById(result.createdPolicyRuleId!);
     expect(rule!.ruleType).toBe('SIBLING_COHESION');
+  });
+
+  it('accepts SCHOOL_CLOSURE_COVERAGE_PREFERENCE with correct rule type and parameters', async () => {
+    suggestionRepo.suggestions.push(makePendingSuggestion({
+      suggestionId: 'sug-closure',
+      suggestionType: 'SCHOOL_CLOSURE_COVERAGE_PREFERENCE',
+      proposedRuleType: 'ACTIVITY_COMMITMENT',
+      proposedPriority: 'STRONG',
+      proposedParameters: { preferredResponsibleParentId: 'p1', disruptionType: 'SCHOOL_CLOSURE' },
+      proposedScope: { scopeType: 'CHILD', childId: 'c1' },
+    }));
+
+    const result = await workflow.resolveSuggestion({
+      suggestionId: 'sug-closure',
+      decision: 'ACCEPT',
+      resolvedAt: '2026-03-27T12:00:00Z',
+      resolvedBy: 'parent-p2',
+    });
+
+    expect(result.status).toBe('ACCEPTED');
+    expect(result.createdPolicyRuleId).toBeDefined();
+
+    const rule = await policyRepo.findById(result.createdPolicyRuleId!);
+    expect(rule).not.toBeNull();
+    expect(rule!.ruleType).toBe('ACTIVITY_COMMITMENT');
+    expect(rule!.priority).toBe('STRONG');
+    expect(rule!.active).toBe(true);
+    expect(rule!.familyId).toBe('fam-1');
+    expect(rule!.parameters).toEqual({ preferredResponsibleParentId: 'p1', disruptionType: 'SCHOOL_CLOSURE' });
+    expect(rule!.scope.scopeType).toBe('CHILD');
+    expect(rule!.scope.childId).toBe('c1');
+    expect(rule!.label).toBe('Auto-suggested: SCHOOL_CLOSURE_COVERAGE_PREFERENCE');
+    expect(rule!.createdAt).toBe('2026-03-27T12:00:00Z');
+    expect(rule!.updatedAt).toBe('2026-03-27T12:00:00Z');
+
+    // Verify suggestion status updated
+    const s = await suggestionRepo.findById('sug-closure');
+    expect(s!.status).toBe('ACCEPTED');
+    expect(s!.resolvedAt).toBe('2026-03-27T12:00:00Z');
+    expect(s!.resolvedBy).toBe('parent-p2');
+  });
+
+  it('accepts PREFERRED_EXCHANGE_LOCATION with correct rule type and parameters', async () => {
+    suggestionRepo.suggestions.push(makePendingSuggestion({
+      suggestionId: 'sug-loc',
+      suggestionType: 'PREFERRED_EXCHANGE_LOCATION',
+      proposedRuleType: 'EXCHANGE_LOCATION',
+      proposedPriority: 'SOFT',
+      proposedParameters: { preferredLocation: 'School' },
+      proposedScope: { scopeType: 'FAMILY' },
+    }));
+
+    const result = await workflow.resolveSuggestion({
+      suggestionId: 'sug-loc',
+      decision: 'ACCEPT',
+      resolvedAt: '2026-03-28T09:00:00Z',
+      resolvedBy: 'parent-p1',
+    });
+
+    expect(result.status).toBe('ACCEPTED');
+    expect(result.createdPolicyRuleId).toBeDefined();
+
+    const rule = await policyRepo.findById(result.createdPolicyRuleId!);
+    expect(rule).not.toBeNull();
+    expect(rule!.ruleType).toBe('EXCHANGE_LOCATION');
+    expect(rule!.priority).toBe('SOFT');
+    expect(rule!.active).toBe(true);
+    expect(rule!.familyId).toBe('fam-1');
+    expect(rule!.parameters).toEqual({ preferredLocation: 'School' });
+    expect(rule!.scope.scopeType).toBe('FAMILY');
+    expect(rule!.label).toBe('Auto-suggested: PREFERRED_EXCHANGE_LOCATION');
+
+    const s = await suggestionRepo.findById('sug-loc');
+    expect(s!.status).toBe('ACCEPTED');
+    expect(s!.resolvedBy).toBe('parent-p1');
+  });
+
+  it('SCHOOL_CLOSURE_COVERAGE_PREFERENCE with FAMILY scope defaults correctly', async () => {
+    suggestionRepo.suggestions.push(makePendingSuggestion({
+      suggestionId: 'sug-fam-scope',
+      suggestionType: 'SCHOOL_CLOSURE_COVERAGE_PREFERENCE',
+      proposedRuleType: 'ACTIVITY_COMMITMENT',
+      proposedPriority: 'HARD',
+      proposedParameters: { preferredResponsibleParentId: 'p2' },
+      proposedScope: undefined,
+    }));
+
+    const result = await workflow.resolveSuggestion({
+      suggestionId: 'sug-fam-scope',
+      decision: 'ACCEPT',
+      resolvedAt: '2026-03-28T09:00:00Z',
+      resolvedBy: 'parent-p1',
+    });
+
+    const rule = await policyRepo.findById(result.createdPolicyRuleId!);
+    expect(rule!.scope.scopeType).toBe('FAMILY');
+    expect(rule!.priority).toBe('HARD');
   });
 });

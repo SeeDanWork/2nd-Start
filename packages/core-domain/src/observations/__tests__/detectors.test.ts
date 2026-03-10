@@ -73,6 +73,50 @@ describe('PreferredExchangeLocationDetector', () => {
     expect(candidates).toHaveLength(1);
     expect(candidates[0].proposedParameters.preferredLocation).toBe('School');
   });
+
+  it('does not detect when below occurrence threshold', () => {
+    const evidence = makeExchangeEvidence(2, 0, 'School');
+    const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
+    expect(candidates).toHaveLength(0);
+  });
+
+  it('does not detect when no dominant location', () => {
+    // 2 School, 2 Park, 2 Library = no location at 70%
+    const evidence = [
+      ...makeExchangeEvidence(2, 0, 'School'),
+      ...makeExchangeEvidence(2, 0, 'Park').map((e, i) => ({ ...e, evidenceId: `park${i}`, data: { ...e.data, location: 'Park' } })),
+      ...makeExchangeEvidence(2, 0, 'Library').map((e, i) => ({ ...e, evidenceId: `lib${i}`, data: { ...e.data, location: 'Library' } })),
+    ];
+    const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
+    expect(candidates).toHaveLength(0);
+  });
+
+  it('detects at exactly the threshold boundary (3 of 4 = 75%)', () => {
+    const evidence = [
+      ...makeExchangeEvidence(3, 0, 'School'),
+      ...makeExchangeEvidence(1, 0, 'Park').map((e, i) => ({ ...e, evidenceId: `park${i}`, data: { ...e.data, location: 'Park' } })),
+    ];
+    const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].confidenceScore).toBe(0.75);
+  });
+
+  it('does not detect at exactly 70% when occurrences below minimum', () => {
+    // 2 of 2 = 100% but only 2 occurrences (below MIN_OCCURRENCES=3)
+    const evidence = makeExchangeEvidence(2, 0, 'School');
+    const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
+    expect(candidates).toHaveLength(0);
+  });
+
+  it('ignores empty location strings', () => {
+    const evidence = [
+      ...makeExchangeEvidence(3, 0, ''),
+      ...makeExchangeEvidence(1, 0, 'School').map((e, i) => ({ ...e, evidenceId: `s${i}` })),
+    ];
+    const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
+    // Empty strings are skipped, so only 1 School exchange — below threshold
+    expect(candidates).toHaveLength(0);
+  });
 });
 
 describe('SchoolClosureCoverageDetector', () => {
@@ -161,45 +205,229 @@ describe('ActivityResponsibilityDetector', () => {
     expect(candidates[0].proposedParameters.activityLabel).toBe('soccer');
     expect(candidates[0].proposedParameters.preferredResponsibleParentId).toBe('p2');
   });
+
+  it('does not detect when below occurrence threshold', () => {
+    const evidence: ObservationEvidenceRecord[] = Array.from({ length: 2 }, (_, i) => ({
+      evidenceId: `activity-a${i + 1}`,
+      familyId: 'fam-1',
+      evidenceType: 'ACTIVITY_RESPONSIBILITY',
+      date: `2026-03-${String(i + 3).padStart(2, '0')}`,
+      childId: 'c1',
+      parentId: 'p2',
+      data: { activityLabel: 'soccer', responsibleParentId: 'p2' },
+      createdAt: `2026-03-${String(i + 3).padStart(2, '0')}T00:00:00Z`,
+    }));
+
+    const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
+    expect(candidates).toHaveLength(0);
+  });
+
+  it('does not detect when no dominant parent (even split)', () => {
+    // 3 by p1, 3 by p2 = 50% each, below 70% threshold
+    const evidence: ObservationEvidenceRecord[] = [
+      ...Array.from({ length: 3 }, (_, i) => ({
+        evidenceId: `act-p1-${i}`,
+        familyId: 'fam-1',
+        evidenceType: 'ACTIVITY_RESPONSIBILITY',
+        date: `2026-03-${String(i + 1).padStart(2, '0')}`,
+        childId: 'c1',
+        parentId: 'p1',
+        data: { activityLabel: 'soccer', responsibleParentId: 'p1' },
+        createdAt: `2026-03-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
+      })),
+      ...Array.from({ length: 3 }, (_, i) => ({
+        evidenceId: `act-p2-${i}`,
+        familyId: 'fam-1',
+        evidenceType: 'ACTIVITY_RESPONSIBILITY',
+        date: `2026-03-${String(i + 10).padStart(2, '0')}`,
+        childId: 'c1',
+        parentId: 'p2',
+        data: { activityLabel: 'soccer', responsibleParentId: 'p2' },
+        createdAt: `2026-03-${String(i + 10).padStart(2, '0')}T00:00:00Z`,
+      })),
+    ];
+
+    const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
+    expect(candidates).toHaveLength(0);
+  });
+
+  it('detects at exactly the threshold boundary (3 of 4 = 75%)', () => {
+    const evidence: ObservationEvidenceRecord[] = [
+      ...Array.from({ length: 3 }, (_, i) => ({
+        evidenceId: `act-p2-${i}`,
+        familyId: 'fam-1',
+        evidenceType: 'ACTIVITY_RESPONSIBILITY',
+        date: `2026-03-${String(i + 1).padStart(2, '0')}`,
+        childId: 'c1',
+        parentId: 'p2',
+        data: { activityLabel: 'soccer', responsibleParentId: 'p2' },
+        createdAt: `2026-03-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
+      })),
+      {
+        evidenceId: 'act-p1-0',
+        familyId: 'fam-1',
+        evidenceType: 'ACTIVITY_RESPONSIBILITY',
+        date: '2026-03-10',
+        childId: 'c1',
+        parentId: 'p1',
+        data: { activityLabel: 'soccer', responsibleParentId: 'p1' },
+        createdAt: '2026-03-10T00:00:00Z',
+      },
+    ];
+
+    const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].confidenceScore).toBe(0.75);
+    expect(candidates[0].proposedParameters.preferredResponsibleParentId).toBe('p2');
+  });
+
+  it('detects separate suggestions for different activities', () => {
+    const evidence: ObservationEvidenceRecord[] = [
+      ...Array.from({ length: 3 }, (_, i) => ({
+        evidenceId: `soccer-${i}`,
+        familyId: 'fam-1',
+        evidenceType: 'ACTIVITY_RESPONSIBILITY',
+        date: `2026-03-${String(i + 1).padStart(2, '0')}`,
+        childId: 'c1',
+        parentId: 'p2',
+        data: { activityLabel: 'soccer', responsibleParentId: 'p2' },
+        createdAt: `2026-03-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
+      })),
+      ...Array.from({ length: 3 }, (_, i) => ({
+        evidenceId: `piano-${i}`,
+        familyId: 'fam-1',
+        evidenceType: 'ACTIVITY_RESPONSIBILITY',
+        date: `2026-03-${String(i + 10).padStart(2, '0')}`,
+        childId: 'c1',
+        parentId: 'p1',
+        data: { activityLabel: 'piano', responsibleParentId: 'p1' },
+        createdAt: `2026-03-${String(i + 10).padStart(2, '0')}T00:00:00Z`,
+      })),
+    ];
+
+    const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
+    expect(candidates).toHaveLength(2);
+
+    const soccer = candidates.find(c => c.proposedParameters.activityLabel === 'soccer');
+    const piano = candidates.find(c => c.proposedParameters.activityLabel === 'piano');
+    expect(soccer).toBeDefined();
+    expect(piano).toBeDefined();
+    expect(soccer!.proposedParameters.preferredResponsibleParentId).toBe('p2');
+    expect(piano!.proposedParameters.preferredResponsibleParentId).toBe('p1');
+  });
+
+  it('scopes suggestion to specific child', () => {
+    const evidence: ObservationEvidenceRecord[] = Array.from({ length: 3 }, (_, i) => ({
+      evidenceId: `act-${i}`,
+      familyId: 'fam-1',
+      evidenceType: 'ACTIVITY_RESPONSIBILITY',
+      date: `2026-03-${String(i + 1).padStart(2, '0')}`,
+      childId: 'c2',
+      parentId: 'p1',
+      data: { activityLabel: 'swimming', responsibleParentId: 'p1' },
+      createdAt: `2026-03-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
+    }));
+
+    const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].proposedScope).toEqual({ scopeType: 'CHILD', childId: 'c2' });
+  });
 });
 
 describe('SiblingDivergencePreferenceDetector', () => {
   const detector = new SiblingDivergencePreferenceDetector();
 
-  it('detects sibling divergence preference when frequent', () => {
-    // 4 proposals with 2 children assigned to different parents
+  function makeDivergentProposalEvidence(proposalCount: number, divergentCount: number): ObservationEvidenceRecord[] {
     const evidence: ObservationEvidenceRecord[] = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < proposalCount; i++) {
+      const isDivergent = i < divergentCount;
       evidence.push({
         evidenceId: `prop-${i}-c1`,
         familyId: 'fam-1',
         evidenceType: 'ACCEPTED_PROPOSAL',
-        date: `2026-03-${String(i * 7 + 1).padStart(2, '0')}`,
+        date: `2026-03-${String(i + 1).padStart(2, '0')}`,
         childId: 'c1',
         parentId: 'p1',
         relatedEntityType: 'PROPOSAL',
         relatedEntityId: `prop-${i}`,
         data: { blockLengths: [3], averageBlockLength: 3 },
-        createdAt: `2026-03-${String(i * 7 + 1).padStart(2, '0')}T00:00:00Z`,
+        createdAt: `2026-03-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
       });
       evidence.push({
         evidenceId: `prop-${i}-c2`,
         familyId: 'fam-1',
         evidenceType: 'ACCEPTED_PROPOSAL',
-        date: `2026-03-${String(i * 7 + 1).padStart(2, '0')}`,
+        date: `2026-03-${String(i + 1).padStart(2, '0')}`,
         childId: 'c2',
-        parentId: 'p2',
+        parentId: isDivergent ? 'p2' : 'p1', // divergent = different parent
         relatedEntityType: 'PROPOSAL',
         relatedEntityId: `prop-${i}`,
         data: { blockLengths: [3], averageBlockLength: 3 },
-        createdAt: `2026-03-${String(i * 7 + 1).padStart(2, '0')}T00:00:00Z`,
+        createdAt: `2026-03-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
       });
     }
+    return evidence;
+  }
+
+  it('detects sibling divergence preference when frequent', () => {
+    // 4 proposals, all divergent
+    const evidence = makeDivergentProposalEvidence(4, 4);
 
     const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
     expect(candidates).toHaveLength(1);
     expect(candidates[0].suggestionType).toBe('SIBLING_DIVERGENCE_PREFERENCE');
     expect(candidates[0].proposedParameters.allowDivergence).toBe(true);
+  });
+
+  it('does not detect when siblings always stay together', () => {
+    // 4 proposals, 0 divergent — both children always with p1
+    const evidence = makeDivergentProposalEvidence(4, 0);
+
+    const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
+    expect(candidates).toHaveLength(0);
+  });
+
+  it('does not detect for single-child families', () => {
+    // Only 1 child per proposal — no sibling pair to compare
+    const evidence: ObservationEvidenceRecord[] = Array.from({ length: 4 }, (_, i) => ({
+      evidenceId: `prop-${i}-c1`,
+      familyId: 'fam-1',
+      evidenceType: 'ACCEPTED_PROPOSAL',
+      date: `2026-03-${String(i + 1).padStart(2, '0')}`,
+      childId: 'c1',
+      parentId: 'p1',
+      relatedEntityType: 'PROPOSAL',
+      relatedEntityId: `prop-${i}`,
+      data: { blockLengths: [3], averageBlockLength: 3 },
+      createdAt: `2026-03-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
+    }));
+
+    const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
+    expect(candidates).toHaveLength(0);
+  });
+
+  it('does not detect when below minimum multi-child proposals (< 3)', () => {
+    // Only 2 multi-child proposals — below MIN_OCCURRENCES=3
+    const evidence = makeDivergentProposalEvidence(2, 2);
+
+    const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
+    expect(candidates).toHaveLength(0);
+  });
+
+  it('detects at threshold boundary (3 divergent of 3 total = 100%)', () => {
+    const evidence = makeDivergentProposalEvidence(3, 3);
+
+    const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].confidenceScore).toBe(1);
+  });
+
+  it('does not detect when divergence ratio is below 30%', () => {
+    // 10 proposals, only 2 divergent = 20% < 30% threshold
+    const evidence = makeDivergentProposalEvidence(10, 2);
+
+    const candidates = detector.detect({ familyId: 'fam-1', window: WINDOW, evidence });
+    expect(candidates).toHaveLength(0);
   });
 });
 
