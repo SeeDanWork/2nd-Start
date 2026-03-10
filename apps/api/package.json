@@ -12,7 +12,9 @@
     "migration:generate": "typeorm migration:generate",
     "migration:run": "typeorm migration:run -d dist/data-source.js",
     "migration:revert": "typeorm migration:revert -d dist/data-source.js",
-    "seed": "ts-node src/seeds/run.ts"
+    "seed": "ts-node src/seeds/run.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@adcp/shared": "*",
@@ -52,6 +54,7 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/uuid": "^9.0.0",
     "ts-node": "^10.9.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.9"
   }
 }

@@ -170,10 +170,57 @@ const scenario13: ScenarioDefinition = {
   },
 };
 
-// ─── 14. Change-of-location confirmation (stub) ────────────────
+// ─── 14. Change-of-location confirmation (FULL) ───────────────
 
-const scenario14 = stub(14, 'change-of-location', 'Change-of-location confirmation', CATEGORIES.ROUTINE,
-  'Handoff moved from school to curb/home');
+const scenario14: ScenarioDefinition = {
+  number: 14,
+  key: 'change-of-location',
+  title: 'Change-of-location confirmation',
+  category: CATEGORIES.ROUTINE,
+  description: 'Handoff moved from school to curb/home',
+  implemented: true,
+  paramsSchema: z.object({
+    handoffDate: z.string().default('2026-03-04'),
+    oldLocation: z.string().default('school'),
+    newLocation: z.string().default('curbside at home'),
+    requestedBy: z.string().default(PARENT_A_ID),
+  }),
+  seedStateBuilder: () => stateWithSchedule(),
+  triggerEvent: (state, params) => {
+    resetMessageSeq();
+    const requester = state.parents.find((p) => p.id === params.requestedBy);
+    const other = state.parents.find((p) => p.id !== params.requestedBy);
+    return {
+      state,
+      outgoingMessages: [
+        msg(14, {
+          to: [other!.id],
+          text: `${requester?.name} requests changing the ${params.handoffDate} exchange location from ${params.oldLocation} to ${params.newLocation}.`,
+          sections: [
+            { title: 'Change details', bullets: [
+              `Date: ${params.handoffDate}`,
+              `From: ${params.oldLocation}`,
+              `To: ${params.newLocation}`,
+            ]},
+          ],
+          actions: [
+            { actionId: 'approve-location', label: 'Approve', style: 'primary' },
+            { actionId: 'suggest-other', label: 'Suggest Different Location', style: 'secondary' },
+            { actionId: 'keep-original', label: 'Keep Original', style: 'secondary' },
+          ],
+          metadata: {
+            relatesToDateRange: { start: params.handoffDate, end: params.handoffDate },
+          },
+        }),
+      ],
+    };
+  },
+  expectedStateTransitions: {
+    'approve-location': (state) => state,
+    'suggest-other': (state) => state,
+    'keep-original': (state) => state,
+  },
+};
 
 export const routineScenarios: ScenarioDefinition[] = [
   scenario11, scenario12, scenario13, scenario14,

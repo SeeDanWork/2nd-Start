@@ -18,14 +18,14 @@ describe('Scenario Registry', () => {
     expect(new Set(keys).size).toBe(51);
   });
 
-  it('has 20 fully implemented scenarios', () => {
+  it('has all 51 scenarios fully implemented', () => {
     const implemented = scenarioList.filter((s) => s.implemented);
-    expect(implemented.length).toBe(20);
+    expect(implemented.length).toBe(51);
   });
 
-  it('has 31 stub scenarios', () => {
+  it('has 0 stub scenarios', () => {
     const stubs = scenarioList.filter((s) => !s.implemented);
-    expect(stubs.length).toBe(31);
+    expect(stubs.length).toBe(0);
   });
 
   it('covers all 10 categories', () => {
@@ -109,15 +109,9 @@ describe('Timeout Policies', () => {
   );
 });
 
-describe('Stub Scenarios', () => {
-  const stubs = scenarioList.filter((s) => !s.implemented);
-
-  it.each(stubs.map((s) => [s.number, s.key, s]))(
-    'stub #%i (%s) runs without errors',
-    (_num, _key, scenario) => {
-      const transcript = simulate(scenario);
-      expect(transcript.errors).toEqual([]);
-      expect(transcript.validatedMessages.length).toBe(0);
-    },
-  );
+describe('All Scenarios Implemented', () => {
+  it('no stub scenarios remain', () => {
+    const stubs = scenarioList.filter((s) => !s.implemented);
+    expect(stubs).toEqual([]);
+  });
 });

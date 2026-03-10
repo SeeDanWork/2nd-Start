@@ -91,10 +91,84 @@ const scenario15: ScenarioDefinition = {
   },
 };
 
-// ─── 16. Bundled swap request (stub) ──────────────────────────
+// ─── 16. Bundled swap request (FULL) ─────────────────────────
 
-const scenario16 = stub(16, 'bundled-swap-request', 'Bundled swap request', CATEGORIES.EXCEPTIONS,
-  'Trade multiple dates as one proposal');
+const scenario16: ScenarioDefinition = {
+  number: 16,
+  key: 'bundled-swap-request',
+  title: 'Bundled swap request',
+  category: CATEGORIES.EXCEPTIONS,
+  description: 'Trade multiple dates as one proposal',
+  implemented: true,
+  paramsSchema: z.object({
+    requestedBy: z.string().default(PARENT_A_ID),
+    dates: z.array(z.string()).default(['2026-03-10', '2026-03-11', '2026-03-12']),
+    reason: z.string().default('business trip'),
+  }),
+  seedStateBuilder: (params) => stateWithSchedule({
+    pendingProposals: [{
+      id: 'proposal-bundle-001',
+      requestedBy: params.requestedBy,
+      type: 'swap',
+      dates: params.dates,
+      status: 'pending',
+    }],
+  }),
+  triggerEvent: (state, params) => {
+    resetMessageSeq();
+    const requester = state.parents.find((p) => p.id === params.requestedBy);
+    const responder = state.parents.find((p) => p.id !== params.requestedBy);
+    return {
+      state,
+      outgoingMessages: [
+        msg(16, {
+          to: [responder!.id],
+          text: `${requester?.name} is requesting a ${params.dates.length}-day schedule change (${params.dates.join(', ')}).`,
+          sections: [
+            { title: 'Request details', bullets: [
+              `Dates: ${params.dates.join(', ')}`,
+              `Reason: ${params.reason}`,
+              `${params.dates.length} consecutive nights affected`,
+            ]},
+            { title: 'Impact', bullets: [
+              `Fairness impact: ${params.dates.length} nights shift`,
+              'Compensation days will be suggested if approved',
+              'Both parents must agree to proceed',
+            ]},
+          ],
+          actions: [
+            { actionId: 'approve-all', label: 'Approve All', style: 'primary', payload: { proposalId: 'proposal-bundle-001' } },
+            { actionId: 'decline-all', label: 'Decline All', style: 'danger' },
+            { actionId: 'partial', label: 'Approve Some Dates', style: 'secondary' },
+          ],
+          metadata: {
+            relatesToDateRange: { start: params.dates[0], end: params.dates[params.dates.length - 1] },
+          },
+        }),
+      ],
+    };
+  },
+  expectedStateTransitions: {
+    'approve-all': (state) => ({
+      ...state,
+      pendingProposals: state.pendingProposals.map((p) =>
+        p.id === 'proposal-bundle-001' ? { ...p, status: 'accepted' as const } : p,
+      ),
+    }),
+    'decline-all': (state) => ({
+      ...state,
+      pendingProposals: state.pendingProposals.map((p) =>
+        p.id === 'proposal-bundle-001' ? { ...p, status: 'declined' as const } : p,
+      ),
+    }),
+    partial: (state) => ({
+      ...state,
+      pendingProposals: state.pendingProposals.map((p) =>
+        p.id === 'proposal-bundle-001' ? { ...p, status: 'partial' as const } : p,
+      ),
+    }),
+  },
+};
 
 // ─── 17. Counterproposal selection (FULL) ─────────────────────
 
@@ -164,15 +238,132 @@ const scenario17: ScenarioDefinition = {
   },
 };
 
-// ─── 18. Partial acceptance (stub) ────────────────────────────
+// ─── 18. Partial acceptance (FULL) ───────────────────────────
 
-const scenario18 = stub(18, 'partial-acceptance', 'Partial acceptance', CATEGORIES.EXCEPTIONS,
-  'Accept some dates but not others from a bundled request');
+const scenario18: ScenarioDefinition = {
+  number: 18,
+  key: 'partial-acceptance',
+  title: 'Partial acceptance',
+  category: CATEGORIES.EXCEPTIONS,
+  description: 'Accept some dates but not others from a bundled request',
+  implemented: true,
+  paramsSchema: z.object({
+    requestedDates: z.array(z.string()).default(['2026-03-10', '2026-03-11', '2026-03-12']),
+    respondingParent: z.string().default(PARENT_B_ID),
+  }),
+  seedStateBuilder: (params) => stateWithSchedule({
+    pendingProposals: [{
+      id: 'proposal-partial-001',
+      requestedBy: PARENT_A_ID,
+      type: 'swap',
+      dates: params.requestedDates,
+      status: 'pending',
+    }],
+  }),
+  triggerEvent: (state, params) => {
+    resetMessageSeq();
+    const responder = state.parents.find((p) => p.id === params.respondingParent);
+    const requester = state.parents.find((p) => p.id !== params.respondingParent);
+    return {
+      state,
+      outgoingMessages: [
+        msg(18, {
+          to: [params.respondingParent],
+          text: `${requester?.name} requested ${params.requestedDates.length} dates. You can accept all, some, or none.`,
+          sections: [
+            { title: 'Requested dates', bullets: params.requestedDates.map((d, i) =>
+              `${d} — select individually below`,
+            )},
+          ],
+          actions: [
+            { actionId: 'accept-all', label: 'Accept All', style: 'primary' },
+            ...params.requestedDates.map((d, i) => ({
+              actionId: `accept-${d}`,
+              label: `Accept ${d} only`,
+              style: 'secondary' as const,
+              payload: { acceptedDates: [d] },
+            })),
+            { actionId: 'decline-all', label: 'Decline All', style: 'danger' },
+          ],
+        }),
+      ],
+    };
+  },
+  expectedStateTransitions: {
+    'accept-all': (state) => ({
+      ...state,
+      pendingProposals: state.pendingProposals.map((p) =>
+        p.id === 'proposal-partial-001' ? { ...p, status: 'accepted' as const } : p,
+      ),
+    }),
+    'decline-all': (state) => ({
+      ...state,
+      pendingProposals: state.pendingProposals.map((p) =>
+        p.id === 'proposal-partial-001' ? { ...p, status: 'declined' as const } : p,
+      ),
+    }),
+  },
+};
 
-// ─── 19. Request for clarification (stub) ──────────────────────
+// ─── 19. Request for clarification (FULL) ─────────────────────
 
-const scenario19 = stub(19, 'request-for-clarification', 'Request for clarification', CATEGORIES.EXCEPTIONS,
-  'What time? Which exchange location? Who drives?');
+const scenario19: ScenarioDefinition = {
+  number: 19,
+  key: 'request-for-clarification',
+  title: 'Request for clarification',
+  category: CATEGORIES.EXCEPTIONS,
+  description: 'What time? Which exchange location? Who drives?',
+  implemented: true,
+  paramsSchema: z.object({
+    requestDate: z.string().default('2026-03-10'),
+    requestedBy: z.string().default(PARENT_A_ID),
+  }),
+  seedStateBuilder: (params) => stateWithSchedule({
+    pendingProposals: [{
+      id: 'proposal-clarify-001',
+      requestedBy: params.requestedBy,
+      type: 'swap',
+      dates: [params.requestDate],
+      status: 'pending',
+    }],
+  }),
+  triggerEvent: (state, params) => {
+    resetMessageSeq();
+    const responder = state.parents.find((p) => p.id !== params.requestedBy);
+    const requester = state.parents.find((p) => p.id === params.requestedBy);
+    return {
+      state,
+      outgoingMessages: [
+        msg(19, {
+          to: [params.requestedBy],
+          text: `${responder?.name} needs more details before deciding on the ${params.requestDate} swap.`,
+          sections: [
+            { title: 'Questions', bullets: [
+              'What time would the handoff happen?',
+              'Which exchange location works?',
+              'Who handles transportation?',
+            ]},
+          ],
+          actions: [
+            { actionId: 'provide-details', label: 'Provide Details', style: 'primary' },
+            { actionId: 'use-defaults', label: 'Use Default Settings', style: 'secondary' },
+            { actionId: 'cancel-request', label: 'Cancel Request', style: 'danger' },
+          ],
+        }),
+      ],
+    };
+  },
+  expectedStateTransitions: {
+    'provide-details': (state) => state,
+    'use-defaults': (state) => state,
+    'cancel-request': (state) => ({
+      ...state,
+      pendingProposals: state.pendingProposals.map((p) =>
+        p.id === 'proposal-clarify-001' ? { ...p, status: 'cancelled' as const } : p,
+      ),
+    }),
+  },
+};
 
 // ─── 20. Time-bounded decision (FULL) ──────────────────────────
 

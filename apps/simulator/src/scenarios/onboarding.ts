@@ -81,20 +81,146 @@ const scenario1: ScenarioDefinition = {
   },
 };
 
-// ─── 2. Confirm child profile (stub) ──────────────────────────
+// ─── 2. Confirm child profile (FULL) ──────────────────────────
 
-const scenario2 = stub(2, 'confirm-child-profile', 'Confirm child profile', CATEGORIES.ONBOARDING,
-  'Confirm age band, school/daycare schedule for each child');
+const scenario2: ScenarioDefinition = {
+  number: 2,
+  key: 'confirm-child-profile',
+  title: 'Confirm child profile',
+  category: CATEGORIES.ONBOARDING,
+  description: 'Confirm age band, school/daycare schedule for each child',
+  implemented: true,
+  paramsSchema: z.object({
+    childName: z.string().default('Riley'),
+    ageBand: z.string().default('school-age'),
+    schoolDays: z.array(z.number()).default([1, 2, 3, 4, 5]),
+  }),
+  seedStateBuilder: (params) => defaultState({
+    children: [defaultChild({ name: params.childName, ageBand: params.ageBand as any })],
+  }),
+  triggerEvent: (state, params) => {
+    resetMessageSeq();
+    const child = state.children[0];
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const schoolDayStr = params.schoolDays.map(d => dayNames[d]).join(', ');
+    return {
+      state,
+      outgoingMessages: [
+        msg(2, {
+          to: [PARENT_A_ID, PARENT_B_ID],
+          text: `Please confirm ${child.name}'s profile details.`,
+          sections: [
+            { title: 'Profile', bullets: [
+              `Name: ${child.name}`,
+              `Age band: ${params.ageBand}`,
+              `School days: ${schoolDayStr}`,
+              `School hours: ${child.schoolStart} – ${child.schoolEnd}`,
+            ]},
+          ],
+          actions: [
+            { actionId: 'confirm-profile', label: 'Confirm', style: 'primary' },
+            { actionId: 'edit-profile', label: 'Edit', style: 'secondary' },
+          ],
+          metadata: { requiresBothParents: true },
+        }),
+      ],
+    };
+  },
+  expectedStateTransitions: {
+    'confirm-profile': (state) => state,
+    'edit-profile': (state) => state,
+  },
+};
 
-// ─── 3. Confirm exchange defaults (stub) ───────────────────────
+// ─── 3. Confirm exchange defaults (FULL) ──────────────────────
 
-const scenario3 = stub(3, 'confirm-exchange-defaults', 'Confirm exchange defaults', CATEGORIES.ONBOARDING,
-  'School/daycare exchange preference, fallback location');
+const scenario3: ScenarioDefinition = {
+  number: 3,
+  key: 'confirm-exchange-defaults',
+  title: 'Confirm exchange defaults',
+  category: CATEGORIES.ONBOARDING,
+  description: 'School/daycare exchange preference, fallback location',
+  implemented: true,
+  paramsSchema: z.object({
+    primaryLocation: z.string().default('school'),
+    fallbackLocation: z.string().default('curbside'),
+  }),
+  seedStateBuilder: () => defaultState(),
+  triggerEvent: (state, params) => {
+    resetMessageSeq();
+    return {
+      state,
+      outgoingMessages: [
+        msg(3, {
+          to: [PARENT_A_ID, PARENT_B_ID],
+          text: 'Set your default exchange location for handoffs.',
+          sections: [
+            { title: 'Exchange options', bullets: [
+              `Primary: ${params.primaryLocation} (school days)`,
+              `Fallback: ${params.fallbackLocation} (weekends/holidays)`,
+              'Both parents can suggest changes anytime',
+            ]},
+          ],
+          actions: [
+            { actionId: 'confirm-exchange', label: 'Confirm Locations', style: 'primary' },
+            { actionId: 'change-primary', label: 'Change Primary', style: 'secondary' },
+            { actionId: 'change-fallback', label: 'Change Fallback', style: 'secondary' },
+          ],
+          metadata: { requiresBothParents: true },
+        }),
+      ],
+    };
+  },
+  expectedStateTransitions: {
+    'confirm-exchange': (state) => state,
+    'change-primary': (state) => state,
+    'change-fallback': (state) => state,
+  },
+};
 
-// ─── 4. Confirm hard constraints (stub) ────────────────────────
+// ─── 4. Confirm hard constraints (FULL) ───────────────────────
 
-const scenario4 = stub(4, 'confirm-hard-constraints', 'Confirm hard constraints', CATEGORIES.ONBOARDING,
-  'Locked nights, work shifts, no in-person exchange');
+const scenario4: ScenarioDefinition = {
+  number: 4,
+  key: 'confirm-hard-constraints',
+  title: 'Confirm hard constraints',
+  category: CATEGORIES.ONBOARDING,
+  description: 'Locked nights, work shifts, no in-person exchange',
+  implemented: true,
+  paramsSchema: z.object({
+    parentId: z.string().default(PARENT_A_ID),
+  }),
+  seedStateBuilder: () => defaultState(),
+  triggerEvent: (state, params) => {
+    resetMessageSeq();
+    const parent = state.parents.find(p => p.id === params.parentId);
+    return {
+      state,
+      outgoingMessages: [
+        msg(4, {
+          to: [params.parentId],
+          text: `${parent?.name}, set your hard constraints. These cannot be overridden by the scheduler.`,
+          sections: [
+            { title: 'Constraint types', bullets: [
+              'Locked nights: nights you must always have the child',
+              'Work shifts: times you are unavailable for handoffs',
+              'Max consecutive: maximum nights in a row',
+              'No in-person exchange: require third-party handoffs',
+            ]},
+          ],
+          actions: [
+            { actionId: 'save-constraints', label: 'Save Constraints', style: 'primary' },
+            { actionId: 'skip', label: 'Skip (No Hard Constraints)', style: 'secondary' },
+          ],
+        }),
+      ],
+    };
+  },
+  expectedStateTransitions: {
+    'save-constraints': (state) => state,
+    skip: (state) => state,
+  },
+};
 
 // ─── 5. Resolve conflicting constraints (FULL) ────────────────
 
@@ -252,20 +378,153 @@ const scenario6: ScenarioDefinition = {
   },
 };
 
-// ─── 7. Confirm schedule start date (stub) ─────────────────────
+// ─── 7. Confirm schedule start date (FULL) ────────────────────
 
-const scenario7 = stub(7, 'confirm-schedule-start-date', 'Confirm schedule start date', CATEGORIES.ONBOARDING,
-  'Start next Monday vs today');
+const scenario7: ScenarioDefinition = {
+  number: 7,
+  key: 'confirm-schedule-start-date',
+  title: 'Confirm schedule start date',
+  category: CATEGORIES.ONBOARDING,
+  description: 'Start next Monday vs today',
+  implemented: true,
+  paramsSchema: z.object({
+    suggestedDate: z.string().default('2026-03-02'),
+  }),
+  seedStateBuilder: () => defaultState(),
+  triggerEvent: (state, params) => {
+    resetMessageSeq();
+    return {
+      state,
+      outgoingMessages: [
+        msg(7, {
+          to: [PARENT_A_ID, PARENT_B_ID],
+          text: `When should the schedule start? Suggested: ${params.suggestedDate} (next Monday).`,
+          sections: [
+            { title: 'Options', bullets: [
+              `Next Monday (${params.suggestedDate}) — clean weekly start`,
+              'Today — begin immediately',
+              'Custom date — choose your own',
+            ]},
+          ],
+          actions: [
+            { actionId: 'start-monday', label: 'Start Next Monday', style: 'primary', payload: { date: params.suggestedDate } },
+            { actionId: 'start-today', label: 'Start Today', style: 'secondary', payload: { date: SIM_DATE } },
+            { actionId: 'custom-date', label: 'Choose Date', style: 'secondary' },
+          ],
+          metadata: { requiresBothParents: true },
+        }),
+      ],
+    };
+  },
+  expectedStateTransitions: {
+    'start-monday': (state) => state,
+    'start-today': (state) => state,
+    'custom-date': (state) => state,
+  },
+};
 
-// ─── 8. Confirm special rules (stub) ───────────────────────────
+// ─── 8. Confirm special rules (FULL) ──────────────────────────
 
-const scenario8 = stub(8, 'confirm-special-rules', 'Confirm special rules', CATEGORIES.ONBOARDING,
-  'Max handoffs/week, max consecutive days away, quiet hours');
+const scenario8: ScenarioDefinition = {
+  number: 8,
+  key: 'confirm-special-rules',
+  title: 'Confirm special rules',
+  category: CATEGORIES.ONBOARDING,
+  description: 'Max handoffs/week, max consecutive days away, quiet hours',
+  implemented: true,
+  paramsSchema: z.object({
+    maxHandoffsPerWeek: z.number().default(3),
+    maxConsecutive: z.number().default(5),
+    quietHoursStart: z.string().default('21:00'),
+    quietHoursEnd: z.string().default('08:00'),
+  }),
+  seedStateBuilder: () => defaultState(),
+  triggerEvent: (state, params) => {
+    resetMessageSeq();
+    return {
+      state,
+      outgoingMessages: [
+        msg(8, {
+          to: [PARENT_A_ID, PARENT_B_ID],
+          text: 'Review the special rules for your schedule. These affect how the system generates options.',
+          sections: [
+            { title: 'Proposed rules', bullets: [
+              `Max handoffs per week: ${params.maxHandoffsPerWeek}`,
+              `Max consecutive nights away: ${params.maxConsecutive}`,
+              `Quiet hours: ${params.quietHoursStart} – ${params.quietHoursEnd} (no notifications)`,
+            ]},
+          ],
+          actions: [
+            { actionId: 'accept-rules', label: 'Accept Rules', style: 'primary' },
+            { actionId: 'customize-rules', label: 'Customize', style: 'secondary' },
+          ],
+          metadata: { requiresBothParents: true },
+        }),
+      ],
+    };
+  },
+  expectedStateTransitions: {
+    'accept-rules': (state) => state,
+    'customize-rules': (state) => state,
+  },
+};
 
-// ─── 9. Confirm pre-consent rules (stub) ───────────────────────
+// ─── 9. Confirm pre-consent rules (FULL) ──────────────────────
 
-const scenario9 = stub(9, 'confirm-pre-consent-rules', 'Confirm pre-consent rules', CATEGORIES.ONBOARDING,
-  'Auto-approve swaps under certain conditions');
+const scenario9: ScenarioDefinition = {
+  number: 9,
+  key: 'confirm-pre-consent-rules',
+  title: 'Confirm pre-consent rules',
+  category: CATEGORIES.ONBOARDING,
+  description: 'Auto-approve swaps under certain conditions',
+  implemented: true,
+  paramsSchema: z.object({}),
+  seedStateBuilder: () => defaultState(),
+  triggerEvent: (state) => {
+    resetMessageSeq();
+    return {
+      state,
+      outgoingMessages: [
+        msg(9, {
+          to: [PARENT_A_ID, PARENT_B_ID],
+          text: 'Set pre-consent rules to auto-approve certain schedule changes without waiting for a response.',
+          sections: [
+            { title: 'Available pre-consent rules', bullets: [
+              'Auto-approve same-day swaps (both parents agree in advance)',
+              'Auto-approve if fairness impact is neutral or favorable',
+              'Auto-approve emergency coverage requests',
+              'Right-of-first-refusal for childcare over 4 hours',
+            ]},
+            { title: 'Note', bullets: [
+              'Both parents must agree to each rule',
+              'Rules can be changed at any time',
+              'Court-ordered minimums are never bypassed',
+            ]},
+          ],
+          actions: [
+            { actionId: 'enable-all', label: 'Enable All', style: 'primary' },
+            { actionId: 'choose-individually', label: 'Choose Individually', style: 'secondary' },
+            { actionId: 'skip-preconsent', label: 'Skip (Manual Only)', style: 'secondary' },
+          ],
+          metadata: { requiresBothParents: true },
+        }),
+      ],
+    };
+  },
+  expectedStateTransitions: {
+    'enable-all': (state) => ({
+      ...state,
+      preConsentRules: [
+        { id: 'pc-1', type: 'same_day_swap', triggerHours: 0, enabled: true },
+        { id: 'pc-2', type: 'neutral_fairness', triggerHours: 0, enabled: true },
+        { id: 'pc-3', type: 'emergency_coverage', triggerHours: 0, enabled: true },
+        { id: 'pc-4', type: 'right_of_first_refusal', triggerHours: 4, enabled: true },
+      ],
+    }),
+    'choose-individually': (state) => state,
+    'skip-preconsent': (state) => state,
+  },
+};
 
 // ─── 10. Finalize baseline schedule (FULL) ─────────────────────
 

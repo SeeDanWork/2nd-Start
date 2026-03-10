@@ -210,8 +210,8 @@ function formatParent(role: string): string {
 
 function formatShortDate(isoDate: string): string {
   try {
-    const d = new Date(isoDate);
-    return `${d.getMonth() + 1}/${d.getDate()}`;
+    const d = new Date(isoDate + 'T00:00:00Z');
+    return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
   } catch {
     return isoDate;
   }

@@ -28,7 +28,6 @@ const scenario42: ScenarioDefinition = {
   triggerEvent: (state, params) => {
     resetMessageSeq();
     const violator = state.parents.find((p) => p.id === params.violatingParent);
-    const other = state.parents.find((p) => p.id !== params.violatingParent);
     return {
       state,
       outgoingMessages: [
@@ -62,15 +61,112 @@ const scenario42: ScenarioDefinition = {
   },
 };
 
-// ─── 43. Right-of-first-refusal trigger (stub) ────────────────
+// ─── 43. Right-of-first-refusal trigger (FULL) ────────────────
 
-const scenario43 = stub(43, 'right-of-first-refusal-trigger', 'Right-of-first-refusal trigger', CATEGORIES.COMPLIANCE,
-  'Parent leaving child with sitter; must offer other parent first');
+const scenario43: ScenarioDefinition = {
+  number: 43,
+  key: 'right-of-first-refusal-trigger',
+  title: 'Right-of-first-refusal trigger',
+  category: CATEGORIES.COMPLIANCE,
+  description: 'Parent leaving child with sitter; must offer other parent first',
+  implemented: true,
+  paramsSchema: z.object({
+    leavingParent: z.string().default(PARENT_A_ID),
+    durationHours: z.number().default(6),
+    reason: z.string().default('work event'),
+  }),
+  seedStateBuilder: () => stateWithSchedule({
+    preConsentRules: [{
+      id: 'rofr-001',
+      type: 'right_of_first_refusal',
+      triggerHours: 4,
+      enabled: true,
+    }],
+  }),
+  triggerEvent: (state, params) => {
+    resetMessageSeq();
+    const leaving = state.parents.find((p) => p.id === params.leavingParent);
+    const other = state.parents.find((p) => p.id !== params.leavingParent);
+    const child = state.children[0];
+    return {
+      state,
+      outgoingMessages: [
+        msg(43, {
+          to: [other!.id],
+          text: `${leaving?.name} will be away for ${params.durationHours} hours (${params.reason}). Right-of-first-refusal: would you like to have ${child.name} during this time?`,
+          sections: [
+            { title: 'Details', bullets: [
+              `${leaving?.name} is away for ${params.durationHours} hours`,
+              `Reason: ${params.reason}`,
+              `Right-of-first-refusal threshold: 4+ hours`,
+              `${other?.name} gets first option before a sitter is arranged`,
+            ]},
+          ],
+          actions: [
+            { actionId: 'accept-rofr', label: `I'll Take ${child.name}`, style: 'primary' },
+            { actionId: 'decline-rofr', label: 'Decline — Sitter OK', style: 'secondary' },
+          ],
+        }),
+      ],
+    };
+  },
+  expectedStateTransitions: {
+    'accept-rofr': (state) => state,
+    'decline-rofr': (state) => state,
+  },
+};
 
-// ─── 44. Parenting-plan anniversary review (stub) ──────────────
+// ─── 44. Parenting-plan anniversary review (FULL) ─────────────
 
-const scenario44 = stub(44, 'parenting-plan-anniversary-review', 'Parenting-plan anniversary review', CATEGORIES.COMPLIANCE,
-  'Annual check-in: is the current plan still working?');
+const scenario44: ScenarioDefinition = {
+  number: 44,
+  key: 'parenting-plan-anniversary-review',
+  title: 'Parenting-plan anniversary review',
+  category: CATEGORIES.COMPLIANCE,
+  description: 'Annual check-in: is the current plan still working?',
+  implemented: true,
+  paramsSchema: z.object({
+    planStartDate: z.string().default('2025-03-01'),
+    totalSwaps: z.number().default(24),
+    avgFairnessDelta: z.number().default(1.5),
+  }),
+  seedStateBuilder: () => stateWithSchedule(),
+  triggerEvent: (state, params) => {
+    resetMessageSeq();
+    return {
+      state,
+      outgoingMessages: [
+        msg(44, {
+          to: [PARENT_A_ID, PARENT_B_ID],
+          urgency: 'low',
+          text: `Your parenting plan has been active for 1 year (since ${params.planStartDate}). Here's a summary to help you decide if adjustments are needed.`,
+          sections: [
+            { title: 'Year in review', bullets: [
+              `${params.totalSwaps} schedule changes processed`,
+              `Average fairness delta: ${params.avgFairnessDelta} nights`,
+              `${state.children.length} child(ren) covered`,
+            ]},
+            { title: 'Considerations', bullets: [
+              'Has the child\u2019s age band changed? (may affect recommendations)',
+              'Are school schedules or activities different?',
+              'Do exchange logistics still work?',
+            ]},
+          ],
+          actions: [
+            { actionId: 'keep-plan', label: 'Keep Current Plan', style: 'primary' },
+            { actionId: 'review-adjustments', label: 'Review Adjustments', style: 'secondary' },
+            { actionId: 'schedule-mediator', label: 'Schedule Mediator', style: 'secondary' },
+          ],
+        }),
+      ],
+    };
+  },
+  expectedStateTransitions: {
+    'keep-plan': (state) => state,
+    'review-adjustments': (state) => state,
+    'schedule-mediator': (state) => state,
+  },
+};
 
 export const complianceScenarios: ScenarioDefinition[] = [
   scenario42, scenario43, scenario44,
