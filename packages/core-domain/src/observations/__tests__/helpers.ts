@@ -51,6 +51,7 @@ export class InMemoryPolicyRuleRepo implements IPolicyRuleRepository {
   async findById(id: string) { return this.rules.find(r => r.id === id) ?? null; }
   async findByFamilyId(fid: string) { return this.rules.filter(r => r.familyId === fid); }
   async findActiveByFamilyId(fid: string) { return this.rules.filter(r => r.familyId === fid && r.active); }
+  async findBySourceSuggestionId(sid: string) { return this.rules.find(r => r.sourceSuggestionId === sid) ?? null; }
   async save(r: TypedPolicyRule) { this.rules.push(r); }
   async update(r: TypedPolicyRule) {
     const idx = this.rules.findIndex(x => x.id === r.id);

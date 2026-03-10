@@ -121,11 +121,12 @@ describe('Resolution partial-failure safety', () => {
     ids = makeIdGenerator();
   });
 
-  it('rule save succeeds but suggestion update fails — rule exists, suggestion mutated in-memory (non-atomic)', async () => {
+  it('rule save succeeds but suggestion update fails — rule exists with sourceSuggestionId, suggestion mutated in-memory (non-atomic)', async () => {
     // The resolution workflow: saves rule first, then updates suggestion.
     // If update throws, the rule is already persisted.
+    // The rule now carries sourceSuggestionId for idempotent retry.
     // Additionally, in-memory findById returns a reference, so the mutation
-    // at lines 135-137 already changes the stored object before update() runs.
+    // already changes the stored object before update() runs.
     const suggestionRepo = new FailOnUpdateSuggestionRepo();
     const policyRepo = new InMemoryPolicyRuleRepo();
 
@@ -149,14 +150,16 @@ describe('Resolution partial-failure safety', () => {
     // Rule was saved BEFORE the update call — it persists
     expect(policyRepo.rules).toHaveLength(1);
     expect(policyRepo.rules[0].active).toBe(true);
+    // Rule carries sourceSuggestionId for idempotent retry
+    expect(policyRepo.rules[0].sourceSuggestionId).toBe('sug-1');
 
     // In-memory behavior: suggestion object was mutated directly on the
-    // reference returned by findById. The mutation at line 135 happens
-    // before the failing update() call. So the in-memory state IS changed.
+    // reference returned by findById. So the in-memory state IS changed.
     const s = await suggestionRepo.findById('sug-1');
     expect(s!.status).toBe('ACCEPTED');
-    // This documents non-atomic behavior: rule created + suggestion mutated
-    // even though update() threw. A real DB would leave suggestion as PENDING_REVIEW.
+    // In a real DB, suggestion would remain PENDING_REVIEW.
+    // But retry would be idempotent: findBySourceSuggestionId would
+    // find the existing rule and skip creating a duplicate.
   });
 
   it('rule save fails — no rule created, suggestion remains PENDING_REVIEW', async () => {
