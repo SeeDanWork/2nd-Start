@@ -9,6 +9,10 @@ import {
 } from './timeline-event.types';
 import { ConversationOrchestratorService } from '../messaging/conversation-orchestrator.service';
 import { MetricsService } from '../metrics/metrics.service';
+import { GuardrailsService } from '../guardrails/guardrails.service';
+import { PreConflictService } from '../mediation/preconflict.service';
+import { SmsService } from '../messaging/sms.service';
+import { renderHandoffReminder } from '../messaging/sms-reply-templates';
 
 /**
  * TimelineEngine — accelerated simulation through live application services.
@@ -30,6 +34,9 @@ export class TimelineEngineService {
   constructor(
     private readonly orchestrator: ConversationOrchestratorService,
     private readonly metricsService: MetricsService,
+    private readonly guardrailsService: GuardrailsService,
+    private readonly preConflictService: PreConflictService,
+    private readonly smsService: SmsService,
   ) {}
 
   // ── Lifecycle ────────────────────────────────────────────────
@@ -319,16 +326,75 @@ export class TimelineEngineService {
           break;
         }
 
+        case TimelineEventType.FAIRNESS_CHECK: {
+          // Call real metrics service to compute fairness snapshot
+          try {
+            const today = await this.metricsService.getToday(event.familyId);
+            event.result = {
+              status: 'processed',
+              fairness: today.fairness,
+              durationMs: Date.now() - startTime,
+            };
+          } catch (err: any) {
+            event.result = { status: 'skipped', reason: err.message, durationMs: Date.now() - startTime };
+          }
+          break;
+        }
+
+        case TimelineEventType.BUDGET_RESET: {
+          // Call real guardrails service to reset budgets
+          try {
+            const count = await this.guardrailsService.resetMonthlyBudgets();
+            event.result = { status: 'processed', budgetsReset: count, durationMs: Date.now() - startTime };
+          } catch (err: any) {
+            event.result = { status: 'skipped', reason: err.message, durationMs: Date.now() - startTime };
+          }
+          break;
+        }
+
+        case TimelineEventType.PRECONFLICT_ALERT: {
+          // Call real pre-conflict detection service
+          try {
+            const date = (event.payload.date as string) || state.currentDate.toISOString().split('T')[0];
+            const result = await this.preConflictService.runDailyCheck(event.familyId, date);
+            event.result = {
+              status: 'processed',
+              alertCount: result.alerts.length,
+              alerts: result.alerts.map(a => ({ metric: a.metric, severity: a.severity })),
+              durationMs: Date.now() - startTime,
+            };
+          } catch (err: any) {
+            event.result = { status: 'skipped', reason: err.message, durationMs: Date.now() - startTime };
+          }
+          break;
+        }
+
+        case TimelineEventType.HANDOFF_REMINDER: {
+          // Log the reminder as an outbound SMS in the timeline
+          const date = (event.payload.date as string) || state.currentDate.toISOString().split('T')[0];
+          const reminderText = renderHandoffReminder({
+            date,
+            fromParent: 'parent_a',
+            toParent: 'parent_b',
+            timeWindow: null,
+          });
+          state.smsLog.push({
+            timestamp: event.scheduledAt,
+            direction: 'outbound',
+            phoneNumber: 'system',
+            body: reminderText,
+            actorId: null,
+          });
+          event.result = { status: 'processed', reminder: reminderText, durationMs: Date.now() - startTime };
+          break;
+        }
+
         case TimelineEventType.ADVANCE_DAY:
-        case TimelineEventType.HANDOFF_REMINDER:
-        case TimelineEventType.FAIRNESS_CHECK:
-        case TimelineEventType.BUDGET_RESET:
-        case TimelineEventType.PRECONFLICT_ALERT:
         case TimelineEventType.PROPOSAL_EXPIRED:
         case TimelineEventType.SCHEDULE_GENERATED:
         case TimelineEventType.SCHEDULE_VERSION_ACTIVATED:
         case TimelineEventType.CHECKPOINT:
-          // System events — logged but no orchestrator call needed
+          // Control events — logged for timeline tracking
           event.result = { status: 'noted', durationMs: Date.now() - startTime };
           break;
 
