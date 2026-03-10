@@ -15,11 +15,12 @@ import {
   InviteStatus,
 } from '@adcp/shared';
 import { EmailService } from '../email/email.service';
+import { TokenStore } from './token-store';
 
-// In-memory token store for dev. Replace with Redis in production.
-const magicLinkTokens = new Map<string, { email: string; expiresAt: number }>();
-const refreshTokens = new Map<string, { userId: string; expiresAt: number }>();
-const rateLimits = new Map<string, { count: number; resetAt: number }>();
+const MAGIC_LINK_TTL_SECONDS = MAGIC_LINK_TTL_MINUTES * 60;
+const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 3600;
+const RATE_LIMIT_WINDOW_SECONDS = 3600;
+const RATE_LIMIT_MAX_COUNT = 5;
 
 @Injectable()
 export class AuthService {
@@ -30,26 +31,26 @@ export class AuthService {
     private readonly memberRepo: Repository<FamilyMembership>,
     private readonly jwtService: JwtService,
     private readonly emailService: EmailService,
+    private readonly tokenStore: TokenStore,
   ) {}
 
   async sendMagicLink(email: string): Promise<{ message: string }> {
-    const now = Date.now();
-    const key = `magic:${email.toLowerCase()}`;
-    const limit = rateLimits.get(key);
-    if (limit && limit.resetAt > now && limit.count >= 5) {
+    const rateLimitKey = `magic:${email.toLowerCase()}`;
+    const { allowed } = await this.tokenStore.checkRateLimit(
+      rateLimitKey,
+      RATE_LIMIT_MAX_COUNT,
+      RATE_LIMIT_WINDOW_SECONDS,
+    );
+    if (!allowed) {
       throw new BadRequestException('Too many magic link requests. Try again later.');
-    }
-    if (!limit || limit.resetAt <= now) {
-      rateLimits.set(key, { count: 1, resetAt: now + 3600_000 });
-    } else {
-      limit.count++;
     }
 
     const token = randomBytes(32).toString('hex');
-    magicLinkTokens.set(token, {
-      email: email.toLowerCase(),
-      expiresAt: now + MAGIC_LINK_TTL_MINUTES * 60_000,
-    });
+    await this.tokenStore.setMagicLink(
+      token,
+      email.toLowerCase(),
+      MAGIC_LINK_TTL_SECONDS,
+    );
 
     await this.emailService.sendEmail(email, 'magic_link', { token });
 
@@ -62,15 +63,11 @@ export class AuthService {
     user: User;
     isNewUser: boolean;
   }> {
-    const entry = magicLinkTokens.get(token);
+    const entry = await this.tokenStore.getMagicLink(token);
     if (!entry) {
       throw new UnauthorizedException('Invalid or expired magic link');
     }
-    if (entry.expiresAt < Date.now()) {
-      magicLinkTokens.delete(token);
-      throw new UnauthorizedException('Magic link has expired');
-    }
-    magicLinkTokens.delete(token);
+    await this.tokenStore.deleteMagicLink(token);
 
     let user = await this.userRepo.findOne({
       where: { email: entry.email, deletedAt: IsNull() },
@@ -97,12 +94,11 @@ export class AuthService {
     accessToken: string;
     refreshToken: string;
   }> {
-    const entry = refreshTokens.get(token);
-    if (!entry || entry.expiresAt < Date.now()) {
-      refreshTokens.delete(token);
+    const entry = await this.tokenStore.getRefreshToken(token);
+    if (!entry) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
-    refreshTokens.delete(token);
+    await this.tokenStore.deleteRefreshToken(token);
 
     const user = await this.userRepo.findOne({
       where: { id: entry.userId, deletedAt: IsNull() },
@@ -188,10 +184,8 @@ export class AuthService {
 
   private generateRefreshToken(user: User): string {
     const token = randomBytes(32).toString('hex');
-    refreshTokens.set(token, {
-      userId: user.id,
-      expiresAt: Date.now() + 30 * 24 * 3600_000,
-    });
+    // Fire-and-forget: token is stored asynchronously in Redis
+    this.tokenStore.setRefreshToken(token, user.id, REFRESH_TOKEN_TTL_SECONDS);
     return token;
   }
 }

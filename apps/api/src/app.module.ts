@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AuthModule } from './auth/auth.module';
 import { FamiliesModule } from './families/families.module';
 import { ChildrenModule } from './children/children.module';
@@ -22,6 +23,7 @@ import { GoogleCalendarModule } from './google-calendar/google-calendar.module';
 import { MediationModule } from './mediation/mediation.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { CalendarIntegrationModule } from './calendar-integration/calendar-integration.module';
+import { JobsModule } from './jobs/jobs.module';
 
 @Module({
   imports: [
@@ -35,6 +37,7 @@ import { CalendarIntegrationModule } from './calendar-integration/calendar-integ
       autoLoadEntities: true,
       synchronize: process.env.NODE_ENV !== 'production',
     }),
+    ScheduleModule.forRoot(),
     EmailModule,
     FamilyContextModule,
     AuthModule,
@@ -57,6 +60,7 @@ import { CalendarIntegrationModule } from './calendar-integration/calendar-integ
     FeedbackModule,
     MediationModule,
     CalendarIntegrationModule,
+    JobsModule,
   ],
 })
 export class AppModule {}

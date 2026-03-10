@@ -440,7 +440,40 @@ export class ProposalsService {
       }),
     );
 
+    // Notify all family parents + WebSocket
+    this.notifyProposalAccepted(familyId, userId, request.id, acceptance.id, calendarDiff.length);
+
     return acceptance;
+  }
+
+  private async notifyProposalAccepted(
+    familyId: string,
+    acceptedBy: string,
+    requestId: string,
+    acceptanceId: string,
+    changedDays: number,
+  ): Promise<void> {
+    try {
+      this.familyGateway.emitScheduleUpdated(familyId, { requestId, acceptanceId });
+
+      const members = await this.membershipRepo.find({ where: { familyId } });
+      const parents = members.filter(
+        (m) =>
+          m.userId &&
+          (m.role === MemberRole.PARENT_A || m.role === MemberRole.PARENT_B),
+      );
+
+      for (const parent of parents) {
+        await this.notificationService.send(
+          familyId,
+          parent.userId!,
+          NotificationType.PROPOSAL_ACCEPTED,
+          { referenceId: acceptanceId, requestId, changedDays },
+        );
+      }
+    } catch (err: any) {
+      this.logger.warn(`Acceptance notification failed (non-blocking): ${err.message}`);
+    }
   }
 
   async declineProposal(
@@ -467,7 +500,38 @@ export class ProposalsService {
       }),
     );
 
+    // Notify requesting parent that proposals were declined
+    this.notifyProposalDeclined(familyId, userId, requestId);
+
     return this.requestRepo.findOneOrFail({ where: { id: requestId } });
+
+  }
+
+  private async notifyProposalDeclined(
+    familyId: string,
+    declinedBy: string,
+    requestId: string,
+  ): Promise<void> {
+    try {
+      const members = await this.membershipRepo.find({ where: { familyId } });
+      const otherParents = members.filter(
+        (m) =>
+          m.userId &&
+          m.userId !== declinedBy &&
+          (m.role === MemberRole.PARENT_A || m.role === MemberRole.PARENT_B),
+      );
+
+      for (const parent of otherParents) {
+        await this.notificationService.send(
+          familyId,
+          parent.userId!,
+          NotificationType.PROPOSAL_EXPIRED, // Reusing EXPIRED for decline notification
+          { referenceId: requestId, requestId, action: 'declined' },
+        );
+      }
+    } catch (err: any) {
+      this.logger.warn(`Decline notification failed (non-blocking): ${err.message}`);
+    }
   }
 
   private checkAutoApprovable(
