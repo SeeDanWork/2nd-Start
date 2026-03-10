@@ -1,10 +1,11 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SMS_PROVIDER } from './sms.provider';
 import { SmsService } from './sms.service';
 import { IdentityResolverService } from './identity-resolver.service';
 import { ConversationOrchestratorService } from './conversation-orchestrator.service';
 import { SmsWebhookController } from './sms-webhook.controller';
+import { SmsOnboardingService } from './sms-onboarding.service';
 import { ConsoleSmsProvider } from './providers/console.provider';
 import { TwilioSmsProvider } from './providers/twilio.provider';
 import {
@@ -17,6 +18,7 @@ import { RequestsModule } from '../requests/requests.module';
 import { ProposalsModule } from '../proposals/proposals.module';
 import { MetricsModule } from '../metrics/metrics.module';
 import { SharingModule } from '../sharing/sharing.module';
+import { OperatorModule } from '../operator/operator.module';
 
 @Module({
   imports: [
@@ -30,6 +32,7 @@ import { SharingModule } from '../sharing/sharing.module';
     ProposalsModule,
     MetricsModule,
     SharingModule,
+    forwardRef(() => OperatorModule),
   ],
   controllers: [SmsWebhookController],
   providers: [
@@ -46,7 +49,8 @@ import { SharingModule } from '../sharing/sharing.module';
     SmsService,
     IdentityResolverService,
     ConversationOrchestratorService,
+    SmsOnboardingService,
   ],
-  exports: [SmsService, ConversationOrchestratorService],
+  exports: [SmsService, ConversationOrchestratorService, SmsOnboardingService],
 })
 export class MessagingModule {}

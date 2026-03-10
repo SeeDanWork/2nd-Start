@@ -26,6 +26,7 @@ import { CalendarIntegrationModule } from './calendar-integration/calendar-integ
 import { JobsModule } from './jobs/jobs.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { TimelineModule } from './timeline/timeline.module';
+import { OperatorModule } from './operator/operator.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { TimelineModule } from './timeline/timeline.module';
     JobsModule,
     MessagingModule,
     TimelineModule,
+    OperatorModule,
   ],
 })
 export class AppModule {}

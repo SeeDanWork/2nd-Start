@@ -10,6 +10,8 @@ import { RequestsService } from '../requests/requests.service';
 import { ProposalsService } from '../proposals/proposals.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { SharingService } from '../sharing/sharing.service';
+import { OperatorService } from '../operator/operator.service';
+import { SmsOnboardingService } from './sms-onboarding.service';
 import { RequestType, RequestStatus } from '@adcp/shared';
 import {
   renderStatusReply,
@@ -45,6 +47,8 @@ export class ConversationOrchestratorService {
     private readonly proposalsService: ProposalsService,
     private readonly metricsService: MetricsService,
     private readonly sharingService: SharingService,
+    private readonly operatorService: OperatorService,
+    private readonly smsOnboarding: SmsOnboardingService,
   ) {}
 
   /**
@@ -64,9 +68,32 @@ export class ConversationOrchestratorService {
     // 2. Resolve identity
     const identity = await this.identityResolver.resolve(phoneNumber);
 
-    // 3. Unknown number
+    // 3. Unknown number — try code registration
     if (!identity) {
+      // Check if the message is a 6-digit registration code
+      const code = text.replace(/\s/g, '');
+      if (/^\d{6}$/.test(code)) {
+        const result = await this.smsOnboarding.registerWithCode(phoneNumber, code);
+        if (result) {
+          return 'Phone registered. Reply STATUS to check your schedule, or HELP for commands.';
+        }
+        return 'Invalid or expired code. Check your code and try again.';
+      }
       return renderUnregistered();
+    }
+
+    // 3b. Kill switch — check if SMS is allowed
+    const smsCheck = this.operatorService.isSmsAllowed(identity.familyId);
+    if (!smsCheck.allowed) {
+      this.logger.warn(`SMS blocked for ${phoneNumber}: ${smsCheck.reason}`);
+      return 'SMS is temporarily paused. Try again later.';
+    }
+
+    // 3c. Rate limit — 10 inbound per parent per hour
+    const rateCheck = this.operatorService.checkRateLimit(identity.userId, 'inbound');
+    if (!rateCheck.allowed) {
+      this.logger.warn(`Rate limit exceeded for ${phoneNumber}`);
+      return 'Rate limit reached. Try again in a few minutes.';
     }
 
     // 4. Load or create conversation
