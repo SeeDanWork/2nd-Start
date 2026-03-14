@@ -13,6 +13,7 @@ import { useSocketStore } from '../src/stores/socket';
 import { useChatStore } from '../src/stores/chat';
 import { useWebHarnessSync } from '../src/hooks/useWebHarnessSync';
 import { colors } from '../src/theme/colors';
+import { useAppFonts } from '../src/theme/fonts';
 import * as SecureStore from '../src/utils/storage';
 
 const INVITE_POLL_INTERVAL_MS = 10_000;
@@ -130,12 +131,14 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       typeof window !== 'undefined' &&
       new URLSearchParams(window.location.search).has('storagePrefix');
 
-    if (!isAuthenticated && !inAuthGroup) {
+    const isPreview = segments[0] === 'preview';
+
+    if (!isAuthenticated && !inAuthGroup && !isPreview) {
       router.replace('/(auth)/welcome');
     } else if (isAuthenticated && !family && !inAuthGroup) {
       router.replace(isDevHarness ? '/(auth)/onboarding' : '/(auth)/pending-invites');
     } else if (isAuthenticated && family && inAuthGroup && !isOnboarding) {
-      router.replace('/(main)/(tabs)/');
+      router.replace('/(main)/(tabs)/calendar');
     }
   }, [isAuthenticated, isLoading, family, segments, isOnboarding]);
 
@@ -191,6 +194,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+  const fontsLoaded = useAppFonts();
   const restoreSession = useAuthStore((s) => s.restoreSession);
 
   // On web, inject dev tokens from URL query params (used by web harness)
@@ -223,6 +227,14 @@ export default function RootLayout() {
 
   // Post key state changes to parent frame (web harness)
   useWebHarnessSync();
+
+  if (!fontsLoaded) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={colors.fab} />
+      </View>
+    );
+  }
 
   return (
     <AuthGate>

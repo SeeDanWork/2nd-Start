@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,27 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  Modal,
+  Dimensions,
   Platform,
+  LayoutChangeEvent,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { colors } from '../../../src/theme/colors';
+import { fonts } from '../../../src/theme/fonts';
 import { useAuthStore } from '../../../src/stores/auth';
 import { useParentLabel, useParentNames } from '../../../src/hooks/useParentName';
 import { calendarApi } from '../../../src/api/client';
+import { ChatSheet } from '../../../src/components/chat/ChatSheet';
 
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const CELL_SIZE = 48;
+const CELL_HEIGHT = 72;
+const CELL_GAP = 4;
+const CELL_RADIUS = 8;
+const MONTHS_AHEAD = 3;
+const MONTHS_BEHIND = 1;
 
 interface CalendarDay {
   date: string;
@@ -24,49 +37,120 @@ interface CalendarDay {
   source?: string;
 }
 
-type DayCell = { date: string; dayNum: number } | null;
+interface DayCell {
+  date: string;
+  dayNum: number;
+  isOverflow: boolean; // day belongs to adjacent month
+}
 
-function getMonthRows(year: number, month: number): DayCell[][] {
+function getMonthGrid(year: number, month: number): DayCell[][] {
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
   const startPad = firstDay.getDay(); // 0=Sun
 
-  const days: DayCell[] = [];
-  for (let i = 0; i < startPad; i++) days.push(null);
+  const cells: DayCell[] = [];
+
+  // Overflow days from previous month
+  if (startPad > 0) {
+    const prevLastDay = new Date(year, month, 0);
+    for (let i = startPad - 1; i >= 0; i--) {
+      const d = prevLastDay.getDate() - i;
+      const dt = new Date(year, month - 1, d);
+      cells.push({
+        date: dt.toISOString().split('T')[0],
+        dayNum: d,
+        isOverflow: true,
+      });
+    }
+  }
+
+  // Current month days
   for (let d = 1; d <= lastDay.getDate(); d++) {
     const dt = new Date(year, month, d);
-    days.push({ date: dt.toISOString().split('T')[0], dayNum: d });
+    cells.push({
+      date: dt.toISOString().split('T')[0],
+      dayNum: d,
+      isOverflow: false,
+    });
   }
-  while (days.length % 7 !== 0) days.push(null);
+
+  // Overflow days from next month
+  const remaining = 7 - (cells.length % 7);
+  if (remaining < 7) {
+    for (let d = 1; d <= remaining; d++) {
+      const dt = new Date(year, month + 1, d);
+      cells.push({
+        date: dt.toISOString().split('T')[0],
+        dayNum: d,
+        isOverflow: true,
+      });
+    }
+  }
 
   const rows: DayCell[][] = [];
-  for (let i = 0; i < days.length; i += 7) {
-    rows.push(days.slice(i, i + 7));
+  for (let i = 0; i < cells.length; i += 7) {
+    rows.push(cells.slice(i, i + 7));
   }
   return rows;
 }
 
-function formatMonth(year: number, month: number): string {
-  const d = new Date(year, month, 1);
-  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+function formatMonthLabel(year: number, month: number): string {
+  return new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long' });
+}
+
+function formatDayLabel(date: string, dayNum: number, month: number): string {
+  const d = new Date(date);
+  // Show "Apr 1", "May 1" etc. for first day of each month
+  if (dayNum === 1) {
+    const monthName = d.toLocaleDateString('en-US', { month: 'short' });
+    return `${monthName} ${dayNum}`;
+  }
+  return String(dayNum);
 }
 
 export default function CalendarScreen() {
+  const router = useRouter();
   const { family } = useAuthStore();
-  const parentLabel = useParentLabel();
   const parentNames = useParentNames();
-  const [year, setYear] = useState(() => new Date().getFullYear());
-  const [month, setMonth] = useState(() => new Date().getMonth());
   const [calendarData, setCalendarData] = useState<Map<string, CalendarDay>>(new Map());
   const [loading, setLoading] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [chatVisible, setChatVisible] = useState(false);
+  const today = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const scrollRef = useRef<ScrollView>(null);
+  const monthOffsets = useRef<Record<string, number>>({});
+  const hasScrolled = useRef(false);
+
+  const handleMonthLayout = useCallback((key: string, e: LayoutChangeEvent) => {
+    monthOffsets.current[key] = e.nativeEvent.layout.y;
+    const now = new Date();
+    const currentKey = `${now.getFullYear()}-${now.getMonth()}`;
+    if (!hasScrolled.current && monthOffsets.current[currentKey] != null) {
+      hasScrolled.current = true;
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({ y: monthOffsets.current[currentKey], animated: false });
+      }, 50);
+    }
+  }, []);
+
+  // Generate month list: 1 month back, current, 3 months ahead
+  const months = useMemo(() => {
+    const now = new Date();
+    const result: Array<{ year: number; month: number }> = [];
+    for (let offset = -MONTHS_BEHIND; offset <= MONTHS_AHEAD; offset++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+      result.push({ year: d.getFullYear(), month: d.getMonth() });
+    }
+    return result;
+  }, []);
 
   const fetchCalendar = useCallback(async () => {
     if (!family) return;
     setLoading(true);
     try {
-      const start = new Date(year, month, 1).toISOString().split('T')[0];
-      const end = new Date(year, month + 1, 0).toISOString().split('T')[0];
+      const first = months[0];
+      const last = months[months.length - 1];
+      const start = new Date(first.year, first.month, 1).toISOString().split('T')[0];
+      const end = new Date(last.year, last.month + 1, 0).toISOString().split('T')[0];
       const { data } = await calendarApi.getCalendar(family.id, start, end);
       const map = new Map<string, CalendarDay>();
       for (const day of data.days) {
@@ -74,235 +158,213 @@ export default function CalendarScreen() {
       }
       setCalendarData(map);
     } catch {
-      // Silently handle — empty calendar shown
+      // empty calendar
     } finally {
       setLoading(false);
     }
-  }, [family, year, month]);
+  }, [family, months]);
 
   useEffect(() => {
     fetchCalendar();
   }, [fetchCalendar]);
 
-  const goToPrevMonth = () => {
-    if (month === 0) { setMonth(11); setYear(year - 1); }
-    else setMonth(month - 1);
-  };
-  const goToNextMonth = () => {
-    if (month === 11) { setMonth(0); setYear(year + 1); }
-    else setMonth(month + 1);
-  };
-
-  const monthRows = getMonthRows(year, month);
-  const today = new Date().toISOString().split('T')[0];
-  const selectedDay = selectedDate ? calendarData.get(selectedDate) : null;
+  const isPast = useCallback(
+    (date: string) => date < today,
+    [today],
+  );
 
   return (
-    <View style={styles.container}>
-      {/* Month navigation */}
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={goToPrevMonth} style={styles.navButton}>
-          <Text style={styles.navText}>{'<'}</Text>
+        <TouchableOpacity
+          style={styles.accountButton}
+          onPress={() => router.push('/(main)/(tabs)/settings')}
+        >
+          <Text style={styles.accountIcon}>{'\u{1F464}'}</Text>
         </TouchableOpacity>
-        <Text style={styles.monthTitle}>
-          {formatMonth(year, month).toUpperCase()}
-        </Text>
-        <TouchableOpacity onPress={goToNextMonth} style={styles.navButton}>
-          <Text style={styles.navText}>{'>'}</Text>
-        </TouchableOpacity>
+        <Text style={styles.title}>Schedule</Text>
       </View>
 
-      {/* Day headers */}
-      <View style={styles.dayHeaders}>
-        {DAY_NAMES.map((d) => (
-          <View key={d} style={styles.dayHeaderCell}>
-            <Text style={styles.dayHeaderText}>{d}</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Calendar grid */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator color={colors.parentA} />
+          <ActivityIndicator color={colors.fab} size="large" />
         </View>
       ) : (
-        <View style={styles.grid}>
-          {monthRows.map((row, ri) => (
-            <View key={ri} style={styles.weekRow}>
-              {row.map((cell, ci) => {
-                if (!cell) {
-                  return <View key={`pad-${ci}`} style={styles.cell} />;
-                }
-                const dayData = calendarData.get(cell.date);
-                const parent = dayData?.assignment?.assignedTo;
-                const isTransition = dayData?.assignment?.isTransition;
-                const isToday = cell.date === today;
-                const isSelected = cell.date === selectedDate;
-                const isDisruption = dayData?.source === 'disruption';
-                const isMaxConsecutive = dayData?.source === 'max_consecutive';
+        <ScrollView
+          ref={scrollRef}
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {months.map(({ year, month }) => {
+            const grid = getMonthGrid(year, month);
+            const label = formatMonthLabel(year, month);
+            const key = `${year}-${month}`;
 
-                const hasAssignment = !!parent;
-                let bgColor: string | undefined;
-                if (parent === 'parent_a') bgColor = colors.parentALight;
-                else if (parent === 'parent_b') bgColor = colors.parentBLight;
+            return (
+              <View key={key} style={styles.monthContainer} onLayout={(e) => handleMonthLayout(key, e)}>
+                {/* Month title */}
+                <Text style={styles.monthTitle}>{label}</Text>
 
-                return (
-                  <TouchableOpacity
-                    key={cell.date}
-                    style={[
-                      styles.cell,
-                      hasAssignment ? styles.cellAssigned : styles.cellUnassigned,
-                      bgColor ? { backgroundColor: bgColor } : undefined,
-                      isToday && styles.cellToday,
-                      isSelected && styles.cellSelected,
-                    ]}
-                    onPress={() => setSelectedDate(cell.date)}
-                  >
-                    <Text style={[
-                      styles.cellText,
-                      isToday && styles.cellTextToday,
-                    ]}>
-                      {cell.dayNum}
-                    </Text>
-                    {isTransition && <View style={styles.transitionDot} />}
-                    {dayData?.holidayLabel && <View style={styles.holidayDot} />}
-                    {isDisruption && (
-                      <View style={styles.disruptionTriangle} />
-                    )}
-                    {isMaxConsecutive && (
-                      <View style={styles.maxConsecutiveTriangle} />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ))}
-        </View>
-      )}
+                {/* Day-of-week header */}
+                <View style={styles.dayHeaders}>
+                  {DAY_NAMES.map((d) => (
+                    <View key={d} style={styles.dayHeaderCell}>
+                      <Text style={styles.dayHeaderText}>{d}</Text>
+                    </View>
+                  ))}
+                </View>
 
-      {/* Legend */}
-      <View style={styles.legend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendSwatch, { backgroundColor: colors.parentALight }]} />
-          <Text style={styles.legendText}>{parentNames.parent_a}</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendSwatch, { backgroundColor: colors.parentBLight }]} />
-          <Text style={styles.legendText}>{parentNames.parent_b}</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendSwatch, { backgroundColor: colors.warning }]} />
-          <Text style={styles.legendText}>Handoff</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={styles.legendTriangle} />
-          <Text style={styles.legendText}>Adjusted</Text>
-        </View>
-      </View>
+                {/* Week rows */}
+                {grid.map((row, ri) => (
+                  <View key={ri} style={styles.weekRow}>
+                    {row.map((cell) => {
+                      const dayData = calendarData.get(cell.date);
+                      const parent = dayData?.assignment?.assignedTo;
+                      const isToday = cell.date === today;
 
-      {/* Selected day detail */}
-      {selectedDay && (
-        <ScrollView style={styles.detail}>
-          <Text style={styles.detailDate}>{selectedDate}</Text>
-          {selectedDay.assignment && (
-            <View style={styles.detailRow}>
-              <View style={[
-                styles.detailBadge,
-                { backgroundColor: selectedDay.assignment.assignedTo === 'parent_a' ? colors.parentA : colors.parentB },
-              ]} />
-              <Text style={styles.detailText}>
-                Overnight: {parentLabel(selectedDay.assignment.assignedTo)}
-              </Text>
-            </View>
-          )}
-          {selectedDay.assignment?.isTransition && (
-            <View style={styles.detailRow}>
-              <View style={[styles.detailBadge, { backgroundColor: colors.warning }]} />
-              <Text style={styles.detailText}>Handoff day</Text>
-            </View>
-          )}
-          {selectedDay.handoffs.map((h, idx) => (
-            <View key={idx} style={styles.detailRow}>
-              <Text style={styles.detailText}>
-                {h.type}: {parentLabel(h.fromParent)} → {parentLabel(h.toParent)}
-              </Text>
-            </View>
-          ))}
-          {selectedDay.holidayLabel && (
-            <View style={styles.detailRow}>
-              <Text style={styles.detailHoliday}>{selectedDay.holidayLabel}</Text>
-              {selectedDay.daycareClosed && (
-                <Text style={styles.detailNote}> (daycare closed)</Text>
-              )}
-            </View>
-          )}
-          {/* Disruption info */}
-          {selectedDay.source === 'disruption' && (
-            <View style={styles.detailInfoCard}>
-              <Text style={styles.detailInfoTitle}>Disruption Override</Text>
-              <Text style={styles.detailInfoText}>
-                Schedule adjusted for a temporary change.
-              </Text>
-            </View>
-          )}
-          {selectedDay.source === 'max_consecutive' && (
-            <View style={[styles.detailInfoCard, { borderLeftColor: colors.maxConsecutive }]}>
-              <Text style={[styles.detailInfoTitle, { color: colors.maxConsecutive }]}>
-                Max Consecutive Cap
-              </Text>
-              <Text style={styles.detailInfoText}>
-                Adjusted to respect max consecutive nights rule.
-              </Text>
-            </View>
-          )}
-          {!selectedDay.assignment && (
-            <Text style={styles.detailEmpty}>No schedule data for this day.</Text>
-          )}
+                      // Determine cell style
+                      let cellStyle: any[] = [styles.cell];
+                      let textStyle: any[] = [styles.cellText];
+
+                      // Only fade days from previous months, not current month
+                      const currentMonth = new Date().getMonth();
+                      const cellMonth = new Date(cell.date).getMonth();
+                      const isPreviousMonth = cellMonth < currentMonth || (currentMonth === 0 && cellMonth === 11);
+
+                      if (cell.isOverflow) {
+                        cellStyle.push(styles.cellOverflow);
+                        textStyle.push(styles.cellTextOverflow);
+                      } else if (parent === 'parent_a') {
+                        cellStyle.push(styles.cellParentA);
+                        textStyle.push(styles.cellTextAssigned);
+                        if (isPreviousMonth) cellStyle.push(styles.cellPastMonth);
+                      } else if (parent === 'parent_b') {
+                        cellStyle.push(styles.cellParentB);
+                        textStyle.push(styles.cellTextAssigned);
+                        if (isPreviousMonth) cellStyle.push(styles.cellPastMonth);
+                      } else {
+                        cellStyle.push(styles.cellUnassigned);
+                      }
+
+                      if (isToday) {
+                        cellStyle.push(styles.cellToday);
+                        textStyle.push(styles.cellTextToday);
+                      }
+
+                      const displayLabel = formatDayLabel(cell.date, cell.dayNum, month);
+
+                      return (
+                        <View key={cell.date} style={cellStyle}>
+                          <Text style={textStyle}>{displayLabel}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))}
+              </View>
+            );
+          })}
+
+          {/* Bottom spacer for FAB */}
+          <View style={{ height: 100 }} />
         </ScrollView>
       )}
-    </View>
+
+      {/* Chat FAB */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => setChatVisible(true)}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.fabIcon}>{'\uD83D\uDCAC'}</Text>
+      </TouchableOpacity>
+
+      {/* Chat bottom sheet */}
+      <ChatSheet visible={chatVisible} onClose={() => setChatVisible(false)} />
+    </SafeAreaView>
   );
 }
 
-const CELL_GAP = 4;
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#E5E5EA' },
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 8,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 10,
+    gap: 12,
   },
-  navButton: { padding: 8 },
-  navText: { fontSize: 18, color: '#8E8E93', fontWeight: '600' },
+  accountButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 4,
+      },
+      android: { elevation: 2 },
+    }),
+  },
+  accountIcon: {
+    fontSize: 20,
+  },
+  title: {
+    fontFamily: fonts.bold,
+    fontSize: 34,
+    color: colors.text,
+    letterSpacing: 0.4,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 21,
+  },
+  monthContainer: {
+    marginBottom: 40,
+  },
   monthTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#C7C7CC',
-    letterSpacing: 1,
+    fontFamily: fonts.semiBold,
+    fontSize: 20,
+    color: colors.text,
+    opacity: 0.75,
+    textAlign: 'center',
+    marginBottom: 8,
   },
   dayHeaders: {
     flexDirection: 'row',
-    paddingHorizontal: 24,
-    marginBottom: 2,
+    gap: CELL_GAP,
+    marginBottom: CELL_GAP,
   },
   dayHeaderCell: {
+    width: CELL_SIZE,
     flex: 1,
+    height: 48,
     alignItems: 'center',
-    paddingVertical: 4,
+    justifyContent: 'center',
   },
   dayHeaderText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#8E8E93',
-    textTransform: 'uppercase',
-  },
-  grid: {
-    paddingHorizontal: 24,
+    fontFamily: fonts.semiBold,
+    fontSize: 12,
+    color: colors.textTertiary,
+    textTransform: 'lowercase',
   },
   weekRow: {
     flexDirection: 'row',
@@ -311,143 +373,89 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
-    height: 44,
-    justifyContent: 'center',
+    height: CELL_HEIGHT,
+    borderRadius: CELL_RADIUS,
     alignItems: 'center',
-    borderRadius: 4,
+    justifyContent: 'flex-end',
+    paddingBottom: 12,
   },
-  cellAssigned: {
+  cellText: {
+    fontFamily: fonts.semiBold,
+    fontSize: 12,
+    color: colors.text,
+    opacity: 0.55,
+  },
+  cellTextAssigned: {
+    opacity: 0.7,
+  },
+
+  // Parent A: gold with dark border
+  cellParentA: {
+    backgroundColor: colors.parentA,
+    borderWidth: 0.65,
+    borderColor: colors.parentABorder,
+  },
+
+  // Parent B: green, no border
+  cellParentB: {
+    backgroundColor: colors.parentB,
+  },
+
+  // Previous month days: reduced opacity
+  cellPastMonth: {
+    opacity: 0.45,
+  },
+
+  // No assignment
+  cellUnassigned: {
+    backgroundColor: colors.unassigned,
+  },
+
+  // Overflow (adjacent month)
+  cellOverflow: {
+    backgroundColor: colors.overflow,
+    borderWidth: 0.5,
+    borderColor: colors.overflowBorder,
+  },
+  cellTextOverflow: {
+    opacity: 0.2,
+  },
+
+  // Today highlight
+  cellToday: {
+    borderWidth: 1,
+    borderColor: colors.todayBorder,
+    opacity: 1,
+  },
+  cellTextToday: {
+    color: colors.todayText,
+    opacity: 1,
+  },
+
+  // Chat FAB
+  fab: {
+    position: 'absolute',
+    bottom: 30,
+    right: 21,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: colors.fab,
+    borderWidth: 1.25,
+    borderColor: colors.text,
+    alignItems: 'center',
+    justifyContent: 'center',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.12,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.32,
+        shadowRadius: 25,
       },
-      android: {
-        elevation: 3,
-      },
-      web: {
-        boxShadow: '0px 8px 16px rgba(0, 0, 0, 0.15)',
-      },
+      android: { elevation: 12 },
     }),
   },
-  cellUnassigned: {
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-  },
-  cellToday: {
-    borderWidth: 2,
-    borderColor: '#3A3A3C',
-  },
-  cellSelected: {
-    borderWidth: 2,
-    borderColor: '#1A1A2E',
-  },
-  cellText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#8E8E93',
-    opacity: 0.65,
-  },
-  cellTextToday: {
-    fontWeight: '700',
-    opacity: 1,
-    color: '#3A3A3C',
-  },
-  transitionDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: colors.warning,
-    position: 'absolute',
-    bottom: 3,
-  },
-  holidayDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: colors.success,
-    position: 'absolute',
-    bottom: 3,
-    right: '25%',
-  },
-  disruptionTriangle: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: 0,
-    height: 0,
-    borderTopWidth: 8,
-    borderTopColor: colors.disruption,
-    borderLeftWidth: 8,
-    borderLeftColor: 'transparent',
-  },
-  maxConsecutiveTriangle: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: 0,
-    height: 0,
-    borderTopWidth: 8,
-    borderTopColor: colors.maxConsecutive,
-    borderLeftWidth: 8,
-    borderLeftColor: 'transparent',
-  },
-  loadingContainer: {
-    height: 260,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  legend: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    marginHorizontal: 24,
-    flexWrap: 'wrap',
-  },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendSwatch: { width: 12, height: 12, borderRadius: 3 },
-  legendText: { fontSize: 12, color: '#8E8E93' },
-  legendTriangle: {
-    width: 0,
-    height: 0,
-    borderTopWidth: 8,
-    borderTopColor: colors.disruption,
-    borderLeftWidth: 8,
-    borderLeftColor: 'transparent',
-  },
-  detail: {
-    flex: 1,
-    padding: 16,
-    marginHorizontal: 16,
-    marginTop: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
-    borderRadius: 12,
-  },
-  detailDate: { fontSize: 16, fontWeight: '700', color: '#3A3A3C', marginBottom: 8 },
-  detailRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  detailBadge: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
-  detailText: { fontSize: 14, color: '#3A3A3C' },
-  detailHoliday: { fontSize: 14, color: colors.success, fontWeight: '600' },
-  detailNote: { fontSize: 12, color: '#8E8E93' },
-  detailEmpty: { fontSize: 14, color: '#8E8E93', fontStyle: 'italic' },
-  detailInfoCard: {
-    marginTop: 8,
-    padding: 10,
-    borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.disruption,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-  },
-  detailInfoTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.disruption,
-    marginBottom: 2,
-  },
-  detailInfoText: {
-    fontSize: 12,
-    color: '#8E8E93',
+  fabIcon: {
+    fontSize: 28,
   },
 });

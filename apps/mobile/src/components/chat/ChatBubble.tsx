@@ -255,14 +255,16 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   bubbleBot: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.chatBubbleAI,
     borderTopLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
   },
   bubbleWide: {
     maxWidth: '100%',
   },
   bubbleUser: {
-    backgroundColor: colors.parentA,
+    backgroundColor: colors.chatBubbleUser,
     borderTopRightRadius: 4,
   },
   text: {
@@ -273,7 +275,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   textUser: {
-    color: '#FFFFFF',
+    color: colors.text,
   },
   chipsContainer: {
     marginTop: 4,

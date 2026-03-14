@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { colors } from '../../theme/colors';
+import { fonts } from '../../theme/fonts';
 import { ChatMessage } from '../../chat/types';
 import { ChatBubble } from './ChatBubble';
 import { OptionDetailModal } from './OptionDetailModal';
@@ -183,8 +184,8 @@ export function ChatScreen({ mode }: ChatScreenProps) {
         <View style={styles.inputBar}>
           <TextInput
             style={styles.input}
-            placeholder="Type a message..."
-            placeholderTextColor={colors.neutral}
+            placeholder="Send a message."
+            placeholderTextColor="#A3A3A8"
             value={inputText}
             onChangeText={setInputText}
             onSubmitEditing={handleSend}
@@ -197,7 +198,7 @@ export function ChatScreen({ mode }: ChatScreenProps) {
             disabled={!inputText.trim()}
             activeOpacity={0.7}
           >
-            <Text style={styles.sendButtonText}>{'\u2191'}</Text>
+            <Text style={styles.sendButtonText}>{'\u27A4'}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -226,37 +227,36 @@ const styles = StyleSheet.create({
   inputBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     backgroundColor: colors.background,
   },
   input: {
     flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 15,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 7,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontFamily: fonts.regular,
+    fontSize: 16,
     color: colors.text,
+    letterSpacing: 0.2,
     maxHeight: 100,
   },
   sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.parentA,
+    width: 33,
+    height: 33,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 8,
+    marginLeft: 6,
   },
   sendButtonDisabled: {
-    backgroundColor: colors.border,
+    opacity: 0.3,
   },
   sendButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
+    color: colors.text,
+    fontSize: 20,
   },
 });
